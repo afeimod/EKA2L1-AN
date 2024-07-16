@@ -617,14 +617,14 @@ namespace eka2l1::vfs {
                 return false;
             }
 
-            if (attribute & io_attrib_include_dir) {
-                if ((dir_entry_found_cur_.entry.file_attributes & (int)Fat::EntryAttribute::DIRECTORY) == 0) {
+            if ((attribute & io_attrib_include_dir) == 0) {
+                if ((dir_entry_found_cur_.entry.file_attributes & (int)Fat::EntryAttribute::DIRECTORY) != 0) {
                     continue;
                 }
             }
 
-            if (attribute & io_attrib_include_file) {
-                if ((dir_entry_found_cur_.entry.file_attributes & (int)Fat::EntryAttribute::ARCHIVE) == 0) {
+            if ((attribute & io_attrib_include_file) == 0) {
+                if ((dir_entry_found_cur_.entry.file_attributes & (int)Fat::EntryAttribute::ARCHIVE) != 0) {
                     continue;
                 }
             }

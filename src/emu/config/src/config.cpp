@@ -295,5 +295,9 @@ namespace eka2l1::config {
             }
         }
 #endif
+
+        if (current_mmc_id.empty()) {
+            current_mmc_id = mmc_id;
+        }
     }
 }

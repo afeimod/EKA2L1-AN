@@ -916,37 +916,31 @@ namespace eka2l1 {
     }
 
     ngage_game_card_install_error system_impl::find_singular_ngage_game(const std::string &system_apps_folder_path, apa_app_registry &result, std::string *folder_1, std::string *folder_2) {
-        std::unique_ptr<common::dir_iterator> apps_folder_ite = common::make_directory_iterator(system_apps_folder_path, "");
-        apps_folder_ite->detail = true;
+        auto apps_folder_ite = io_->open_dir(common::utf8_to_ucs2(system_apps_folder_path), {}, io_attrib_include_dir | io_attrib_include_file);
 
         std::string specific_app;
         std::string specific_app_2;
 
-        if (apps_folder_ite->is_valid()) {
-            common::dir_entry app_folder_entry;
-            while (apps_folder_ite->next_entry(app_folder_entry) == 0) {
-                if (app_folder_entry.type == common::FILE_DIRECTORY) {
-                    if ((app_folder_entry.name == ".") || (app_folder_entry.name == "..") ||
-                        // Blacklist
-                        (common::compare_ignore_case(app_folder_entry.name.c_str(), "Browser") == 0)) {
-                        continue;
-                    }
-                    if (!specific_app.empty()) {
-                        if (specific_app_2.empty()) {
-                            specific_app_2 = app_folder_entry.name;
-                        } else {
-                            return ngage_game_card_more_than_one_data_folder;
-                        }
+        while (auto app_folder_entry = apps_folder_ite->get_next_entry()) {
+            if (app_folder_entry->type == io_component_type::dir) {
+                if ((app_folder_entry->name == ".") || (app_folder_entry->name == "..") ||
+                    // Blacklist
+                    (common::compare_ignore_case(app_folder_entry->name.c_str(), "Browser") == 0)) {
+                    continue;
+                }
+                if (!specific_app.empty()) {
+                    if (specific_app_2.empty()) {
+                        specific_app_2 = app_folder_entry->name;
                     } else {
-                        specific_app = app_folder_entry.name;
+                        return ngage_game_card_more_than_one_data_folder;
                     }
+                } else {
+                    specific_app = app_folder_entry->name;
                 }
             }
+        }
 
-            if (specific_app.empty()) {
-                return ngage_game_card_no_game_data_folder;
-            }
-        } else {
+        if (specific_app.empty()) {
             return ngage_game_card_no_game_data_folder;
         }
 
@@ -967,11 +961,16 @@ namespace eka2l1 {
         }
 
         const std::string aif_file = eka2l1::add_path(system_apps_folder_path, eka2l1::add_path(specific_app, specific_app + ".aif"));
-        if (!common::exists(aif_file)) {
+        if (!io_->exist(common::utf8_to_ucs2(aif_file))) {
             return ngage_game_card_no_game_registeration_info;
         }
 
-        common::ro_std_file_stream aif_file_stream(aif_file, true);
+        auto aif_file_handle = io_->open_file(common::utf8_to_ucs2(aif_file), READ_MODE | BIN_MODE);
+        if (!aif_file_handle) {
+            return ngage_game_card_no_game_registeration_info;
+        }
+
+        eka2l1::ro_file_stream aif_file_stream(aif_file_handle.get());
 
         if (!eka2l1::read_registeration_info_aif(reinterpret_cast<common::ro_stream*>(&aif_file_stream), result,
                                             drive_e, get_system_language())) {
@@ -986,17 +985,17 @@ namespace eka2l1 {
             *folder_2 = specific_app_2;
         }
 
+        aif_file_handle->close();
         return ngage_game_card_install_success;
     }
 
     bool system_impl::get_ngage_game_info_mounted(apa_app_registry &result) {
-        std::optional<std::u16string> path_apps = io_->get_raw_path(u"E:\\system\\apps\\");
-        if (!path_apps.has_value()) {
+        if (!io_->exist(u"E:\\system\\apps\\")) {
             return false;
         }
 
         std::string folder_1, folder_2;
-        if (!find_singular_ngage_game(common::ucs2_to_utf8(path_apps.value()), result, &folder_1, &folder_2) == ngage_game_card_install_success) {
+        if (!find_singular_ngage_game(R"(E:\system\apps\)", result, &folder_1, &folder_2) == ngage_game_card_install_success) {
             return false;
         }
 

@@ -455,6 +455,32 @@ bool run_ngage_game_option_handler(eka2l1::common::arg_parser *parser, void *use
     return true;
 }
 
+bool run_ngage_aaru_option_handler(eka2l1::common::arg_parser *parser, void *userdata, std::string *err) {
+    desktop::emulator *emu = reinterpret_cast<desktop::emulator *>(userdata);
+    const char *path = parser->next_token();
+
+    if (!path) {
+        *err = "Missing N-Gage Aaru ROM path after --ngage/-ng switch!";
+        return false;
+    }
+
+    if (!eka2l1::common::exists(path)) {
+        *err = "The N-Gage Aaru ROM file does not exist!";
+        return false;
+    }
+
+    eka2l1::io_system *io = emu->symsys->get_io_system();
+    io->unmount(drive_e);
+
+    if (!io->mount_physical_path(drive_e, drive_media::mmc, io_attrib_removeable | io_attrib_write_protected,
+        eka2l1::common::utf8_to_ucs2(path))) {
+        *err = "Unable to load N-Gage Aaru ROM! Check the file integrity!";
+        return false;
+    }
+
+    return run_ngage_game_option_handler(parser, userdata, err);
+}
+
 #if ENABLE_PYTHON_SCRIPTING
 bool python_docgen_option_handler(eka2l1::common::arg_parser *parser, void *userdata, std::string *err) {
     try {
