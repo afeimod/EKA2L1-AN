@@ -37,7 +37,7 @@
     <message>
       <location filename="../src/aboutdialog.cpp" line="50"/>
       <source>&lt;i&gt;Commit &lt;b&gt;%1&lt;/b&gt; branch &lt;b&gt;%2&lt;/b&gt;&lt;i&gt;&lt;br&gt;</source>
-      <translation type="unfinished">&lt;i&gt;Commit &lt;b&gt;%1&lt;/b&gt; branch &lt;b&gt;%2&lt;/b&gt;&lt;i&gt;&lt;br&gt;</translation>
+      <translation>&lt;i&gt;Bağlı &lt;b&gt;%1&lt;/b&gt; alt dal &lt;b&gt;%2&lt;/b&gt;&lt;i&gt;&lt;br&gt;</translation>
     </message>
     <message>
       <location filename="../src/aboutdialog.cpp" line="53"/>
@@ -1052,12 +1052,12 @@
     <message>
       <location filename="../src/mainwindow.cpp" line="1656"/>
       <source>The JAR can not be installed for this current device! Only S60v1 devices can install this JAR at the moment</source>
-      <translation type="unfinished">The JAR can not be installed for this current device! Only S60v1 devices can install this JAR at the moment</translation>
+      <translation>JAR bu mevcut cihaz için yüklenemez! Şu anda yalnızca S60v1 cihazları bu JAR'ı yükleyebilir</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1660"/>
       <source>An unexpected error has happened. Error code: %1</source>
-      <translation type="unfinished">An unexpected error has happened. Error code: %1</translation>
+      <translation>Beklenmedik bir hata meydana geldi. Hata kodu: %1</translation>
     </message>
   </context>
   <context>
@@ -1075,7 +1075,7 @@
     <message>
       <location filename="../src/package_manager_dialog.ui" line="66"/>
       <source>UID</source>
-      <translation type="unfinished">UID</translation>
+      <translation>Kullanıcı Kimliği</translation>
     </message>
     <message>
       <location filename="../src/package_manager_dialog.ui" line="71"/>
@@ -1090,42 +1090,42 @@
     <message>
       <location filename="../src/package_manager_dialog.ui" line="81"/>
       <source>Drives</source>
-      <translation type="unfinished">Drives</translation>
+      <translation>Sürücüler</translation>
     </message>
     <message>
       <location filename="../src/package_manager_dialog.ui" line="89"/>
       <source>Uninstall</source>
-      <translation type="unfinished">Uninstall</translation>
+      <translation>Kaldır</translation>
     </message>
     <message>
       <location filename="../src/package_manager_dialog.ui" line="94"/>
       <source>List files</source>
-      <translation type="unfinished">List files</translation>
+      <translation>Dosyaları Listele</translation>
     </message>
     <message>
       <location filename="../src/package_manager_dialog.cpp" line="126"/>
       <source>Uninstall failed!</source>
-      <translation type="unfinished">Uninstall failed!</translation>
+      <translation>Kaldırma Başarısız!</translation>
     </message>
     <message>
       <location filename="../src/package_manager_dialog.cpp" line="126"/>
       <source>Failed to uninstall the package</source>
-      <translation type="unfinished">Failed to uninstall the package</translation>
+      <translation>Paket kaldırma başarısız</translation>
     </message>
     <message>
       <location filename="../src/package_manager_dialog.cpp" line="143"/>
       <source>%1&apos;s files</source>
-      <translation type="unfinished">%1&apos;s files</translation>
+      <translation>%1&apos; dosyaları</translation>
     </message>
     <message>
       <location filename="../src/package_manager_dialog.cpp" line="152"/>
       <source>Installed</source>
-      <translation type="unfinished">Installed</translation>
+      <translation>Kuruldu</translation>
     </message>
     <message>
       <location filename="../src/package_manager_dialog.cpp" line="156"/>
       <source>Delete on uninstall</source>
-      <translation type="unfinished">Delete on uninstall</translation>
+      <translation>Kaldır'dan sil</translation>
     </message>
   </context>
   <context>
@@ -1143,52 +1143,52 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="48"/>
       <source>Application</source>
-      <translation type="unfinished">Application</translation>
+      <translation>Uygulama</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="60"/>
       <source>&lt;b&gt;Configuration for:&lt;/b&gt; None</source>
-      <translation type="unfinished">&lt;b&gt;Configuration for:&lt;/b&gt; None</translation>
+      <translation>&lt;b&gt;Şunun için yapılandırma:&lt;/b&gt; Yok</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="136"/>
       <source>Time delay (0-1000us)</source>
-      <translation type="unfinished">Time delay (0-1000us)</translation>
+      <translation>Süre gecikmesi (0-1000us)</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="192"/>
       <source>Screen scale factor</source>
-      <translation type="unfinished">Screen scale factor</translation>
+      <translation>Ekran ölçek faktörü</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="200"/>
       <source>Fit the window</source>
-      <translation type="unfinished">Fit the window</translation>
+      <translation>Pencereye sığdır</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="230"/>
       <source>Save screen scale and rotations</source>
-      <translation type="unfinished">Save screen scale and rotations</translation>
+      <translation>Ekran ölçeğini ve dönüşleri kaydet</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="240"/>
       <source>Inherit these settings for child processes</source>
-      <translation type="unfinished">Inherit these settings for child processes</translation>
+      <translation>Bu ayarları alt süreçlere aktar</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="247"/>
       <source>Use shader for upscaling</source>
-      <translation type="unfinished">Use shader for upscaling</translation>
+      <translation>Yükseltme için gölgelendirici kullan</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="263"/>
       <source>Upscale shader</source>
-      <translation type="unfinished">Upscale shader</translation>
+      <translation>Yükseltilmiş gölgelendirici</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="279"/>
       <source>Hide system applications across all devices</source>
-      <translation type="unfinished">Hide system applications across all devices</translation>
+      <translation>Sistem uygulamalarını tüm cihazlarda gizle</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="282"/>
@@ -1243,27 +1243,27 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="382"/>
       <source>Log filter</source>
-      <translation type="unfinished">Log filter</translation>
+      <translation>Günlüğü filtrele</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="399"/>
       <source>Apply</source>
-      <translation type="unfinished">Apply</translation>
+      <translation>Uygula</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="408"/>
       <source>Show log console (Windows only)</source>
-      <translation type="unfinished">Show log console (Windows only)</translation>
+      <translation>Günlük konsolunu göster (yalnızca Windows)</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="418"/>
       <source>Data</source>
-      <translation type="unfinished">Data</translation>
+      <translation>Veri</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="426"/>
       <source>Emulator data path</source>
-      <translation type="unfinished">Emulator data path</translation>
+      <translation>Emülator veri yolu</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="436"/>
@@ -1276,27 +1276,27 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="445"/>
       <source>Clear all UI configurations</source>
-      <translation type="unfinished">Clear all UI configurations</translation>
+      <translation>Tüm UI yapılandırmalarını sil</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="456"/>
       <source>Interface</source>
-      <translation type="unfinished">Interface</translation>
+      <translation>Arayüz</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="462"/>
       <source>Emulator display</source>
-      <translation type="unfinished">Emulator display</translation>
+      <translation>Emülator ekranı</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="540"/>
       <source>Pick</source>
-      <translation type="unfinished">Pick</translation>
+      <translation>Seç</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="598"/>
       <source>Hide mouse cursor</source>
-      <translation type="unfinished">Hide mouse cursor</translation>
+      <translation>Fare imlecini gizle</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="605"/>
