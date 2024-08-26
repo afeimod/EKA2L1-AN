@@ -165,8 +165,8 @@
     <string name="pref_screen_scale_type_fit">Pencereye sığdır</string>
     <string name="pref_screen_scale_type_none">Olduğu gibi</string>
     <string name="pref_screen_use_notch">Çentik kullan</string>
-    <string name="pref_screen_scale_use_shader">Use shader for upscaling</string>
-    <string name="pref_screen_upscale_shader">Upscale shader</string>
+    <string name="pref_screen_scale_use_shader">Yükseltme için gölgelendirici kullan</string>
+    <string name="pref_screen_upscale_shader">Yükseltilmiş gölgelendirici</string>
     <string name="pref_screen_default_shader">Varsayılan</string>
     <string name="default_label">"%s (varsayılan)"</string>
     <string name="not_saved_exists">Zaten var</string>
