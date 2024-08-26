@@ -6,7 +6,7 @@
     <message>
       <location filename="../src/utils.cpp" line="126"/>
       <source>EKA2L1 - Symbian OS emulator</source>
-      <translation>EKA2L1 - Symbian OS emulator</translation>
+      <translation>EKA2L1 - Symbian OS Emülatörü</translation>
     </message>
   </context>
   <context>
@@ -14,7 +14,7 @@
     <message>
       <location filename="../src/symbian_input_dialog.ui" line="14"/>
       <source>Enter the text</source>
-      <translation>Metin girin</translation>
+      <translation>Metni Gir</translation>
     </message>
     <message>
       <location filename="../src/symbian_input_dialog.ui" line="31"/>
@@ -209,12 +209,12 @@
     <message>
       <location filename="../src/btnet_dialog.cpp" line="127"/>
       <source>Relaunch needed</source>
-      <translation type="unfinished">Relaunch needed</translation>
+      <translation>Yeniden başlatma gerekli</translation>
     </message>
     <message>
       <location filename="../src/btnet_dialog.cpp" line="127"/>
       <source>This change will be effective on the next launch of the emulator.</source>
-      <translation type="unfinished">This change will be effective on the next launch of the emulator.</translation>
+      <translation>Bu değişiklik emülatörün bir sonraki açılışında geçerli olacaktır.</translation>
     </message>
   </context>
   <context>
@@ -512,7 +512,7 @@
     <message>
       <location filename="../src/btnmap/editor_widget.cpp" line="151"/>
       <source>Enter profile name</source>
-      <translation type="unfinished">Enter profile name</translation>
+      <translation>Profil adı gir</translation>
     </message>
     <message>
       <location filename="../src/btnmap/editor_widget.cpp" line="164"/>
@@ -1306,17 +1306,17 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="612"/>
       <source>By default, the emulator only allows resizing the emulator display to the minimum of the phone screen&apos;s size, multiply with the system display scale, to suit most users&apos;s eyes</source>
-      <translation type="unfinished">By default, the emulator only allows resizing the emulator display to the minimum of the phone screen&apos;s size, multiply with the system display scale, to suit most users&apos;s eyes</translation>
+      <translation>Varsayılan olarak emülatör yalnızca emülatör ekranının telefon ekranının minimum boyutuna yeniden boyutlandırılmasına izin verir, çoğu kullanıcının gözlerine uyacak şekilde sistem ekran ölçeğiyle büyütülür</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="615"/>
       <source>Allow resizing display to phone screen&apos;s true size in pixels</source>
-      <translation type="unfinished">Allow resizing display to phone screen&apos;s true size in pixels</translation>
+      <translation>Ekranı telefon ekranının piksel cinsinden gerçek boyutuna göre yeniden boyutlandırmaya izin ver</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="627"/>
       <source>User interface</source>
-      <translation type="unfinished">User interface</translation>
+      <translation>Kullanıcı arayüzü</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="662"/>
@@ -1341,7 +1341,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="633"/>
       <source>Enable this will make window has the constant name of &quot;EKA2L1&quot;, with no additional info.</source>
-      <translation type="unfinished">Enable this will make window has the constant name of &quot;EKA2L1&quot;, with no additional info.</translation>
+      <translation>Bunu etkinleştirerek pencerenin ek bilgi olmadan &quot;EKA2L1&quot; sabit adına sahip olmasını sağlayabilirsiniz.</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="470"/>
@@ -1351,32 +1351,32 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="491"/>
       <source>Image</source>
-      <translation type="unfinished">Image</translation>
+      <translation>Resim</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="527"/>
       <source>Color</source>
-      <translation type="unfinished">Color</translation>
+      <translation>Renk</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="562"/>
       <source>Opacity</source>
-      <translation type="unfinished">Opacity</translation>
+      <translation>Opaklık</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="585"/>
       <source>TextLabel</source>
-      <translation type="unfinished">TextLabel</translation>
+      <translation>Metin Etiketi</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="639"/>
       <source>Disable window name with emulator version</source>
-      <translation type="unfinished">Disable window name with emulator version</translation>
+      <translation>Emülatör sürümü ile pencere adını devre dışı bırak</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="646"/>
       <source>Disable status bar</source>
-      <translation type="unfinished">Disable status bar</translation>
+      <translation>Durum çubuğunu devre dışı bırak</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="712"/>
@@ -1386,24 +1386,24 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="718"/>
       <source>Graphics</source>
-      <translation type="unfinished">Graphics</translation>
+      <translation>Grafikler</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="726"/>
       <source>This allows emulated softwares to have recording abilities, and prevent flashing in some old S60v1/S60v2 games.
 Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
-      <translation type="unfinished">This allows emulated softwares to have recording abilities, and prevent flashing in some old S60v1/S60v2 games.
-Preferred option will automatically enable this on S60v1/S60v2 devices.</translation>
+      <translation>Bu, emüle edilmiş yazılımların kayıt yeteneklerine sahip olmasını sağlar ve bazı eski S60v1 / S60v2 oyunlarında parlamayı önler.
+Öncelikli seçenek bunu S60v1/S60v2 cihazlarında otomatik olarak etkinleştirecektir.</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="730"/>
       <source>Screen buffer sync</source>
-      <translation type="unfinished">Screen buffer sync</translation>
+      <translation>Ekran arabellek senkronizasyonu</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="744"/>
       <source>Preferred</source>
-      <translation type="unfinished">Preferred</translation>
+      <translation>Tercih edilen</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="749"/>
@@ -1551,7 +1551,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="1076"/>
       <source>SF2 bank</source>
-      <translation type="unfinished">SF2 bank</translation>
+      <translation>SF2 bank</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1103"/>
@@ -1562,22 +1562,22 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="1117"/>
       <source>HSB bank</source>
-      <translation type="unfinished">HSB bank</translation>
+      <translation>HSB bank</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1161"/>
       <source>MIDI backend</source>
-      <translation type="unfinished">MIDI backend</translation>
+      <translation>MIDI arka uç</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1175"/>
       <source>TinySoundFont (High-quality, support SF2)</source>
-      <translation type="unfinished">TinySoundFont (High-quality, support SF2)</translation>
+      <translation>TinySoundFont (Yüksek kaliteli, SF2 desteği)</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1180"/>
       <source>MiniBAE (Lower-quality, support HSB)</source>
-      <translation type="unfinished">MiniBAE (Lower-quality, support HSB)</translation>
+      <translation>MiniBAE (Düşük kalite, HSB desteği)</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1198"/>
@@ -1607,12 +1607,12 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="1322"/>
       <source>Note: One of the bindings is associated with a mouse button, touchscreen functionalities will be disabled.</source>
-      <translation type="unfinished">Note: One of the bindings is associated with a mouse button, touchscreen functionalities will be disabled.</translation>
+      <translation>Not: Atamalardan biri bir fare düğmesiyle ilişkilidir, dokunmatik ekran işlevleri devre dışı bırakılacaktır.</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1340"/>
       <source>Left softkey</source>
-      <translation type="unfinished">Left softkey</translation>
+      <translation>Sol yazılım tuşu</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1378"/>
@@ -1622,7 +1622,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="1410"/>
       <source>Right softkey</source>
-      <translation type="unfinished">Right softkey</translation>
+      <translation>Sağ yazılım tuşu</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1446"/>
@@ -1632,7 +1632,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="1478"/>
       <source>Middle softkey</source>
-      <translation type="unfinished">Middle softkey</translation>
+      <translation>Orta yazılım tuşu</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1510"/>
@@ -1642,7 +1642,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="1546"/>
       <source>Green softkey</source>
-      <translation type="unfinished">Green softkey</translation>
+      <translation>Yeşil yazılım tuşu</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1578"/>
@@ -1652,7 +1652,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="1610"/>
       <source>Red softkey</source>
-      <translation type="unfinished">Red softkey</translation>
+      <translation>Kırmızı yazılım tuşu</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1646"/>
@@ -1717,108 +1717,108 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.cpp" line="445"/>
       <source>Choose the data folder</source>
-      <translation type="unfinished">Choose the data folder</translation>
+      <translation>Veri klasörünü seç</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="447"/>
       <location filename="../src/settings_dialog.cpp" line="1112"/>
       <location filename="../src/settings_dialog.cpp" line="1137"/>
       <source>Relaunch needed</source>
-      <translation type="unfinished">Relaunch needed</translation>
+      <translation>Yeniden başlatma gerekli</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="447"/>
       <source>This change requires relaunching the emulator.&lt;br&gt;Do you want to continue?</source>
-      <translation type="unfinished">This change requires relaunching the emulator.&lt;br&gt;Do you want to continue?</translation>
+      <translation>Bu değişiklikle emülatör yeniden başlatılmalı.&lt;br&gt;Devam etmek istiyor musun?</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="529"/>
       <source>Please wait</source>
-      <translation type="unfinished">Please wait</translation>
+      <translation>Lütfen bekleyin</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="530"/>
       <source>Validation is in process. Please do not exit or launch applications until this operation is done.</source>
-      <translation type="unfinished">Validation is in process. Please do not exit or launch applications until this operation is done.</translation>
+      <translation>Doğrulama işlemi devam ediyor. Lütfen bu işlem tamamlanana kadar uygulamalardan çıkmayın veya uygulamaları başlatma.</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="550"/>
       <source>Validation done!</source>
-      <translation type="unfinished">Validation done!</translation>
+      <translation>Doğrulama tamamlandı!</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="550"/>
       <source>The validation has successfully completed!</source>
-      <translation type="unfinished">The validation has successfully completed!</translation>
+      <translation>Doğrulama başarıyla tamamlandı!</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="561"/>
       <source>Enter new device name</source>
-      <translation type="unfinished">Enter new device name</translation>
+      <translation>Yeni cihaz adı gir</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="658"/>
       <source>Unbind</source>
-      <translation type="unfinished">Unbind</translation>
+      <translation>Bağlantıyı Kes</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="707"/>
       <source>Waiting for input</source>
-      <translation type="unfinished">Waiting for input</translation>
+      <translation>Giriş için bekliyor</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="722"/>
       <location filename="../src/settings_dialog.cpp" line="768"/>
       <source>Mouse button %1</source>
-      <translation type="unfinished">Mouse button %1</translation>
+      <translation>Fare Düğmesi %1</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="724"/>
       <source>Controller %1 : Button %2</source>
-      <translation type="unfinished">Controller %1 : Button %2</translation>
+      <translation>Kontrolcü %1 : Tuş %2</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="835"/>
       <location filename="../src/settings_dialog.cpp" line="859"/>
       <source>Enter profile name</source>
-      <translation type="unfinished">Enter profile name</translation>
+      <translation>Profil adı gir</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="843"/>
       <source>Profile creation failed</source>
-      <translation type="unfinished">Profile creation failed</translation>
+      <translation>Profil oluşturma başarısız</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="843"/>
       <location filename="../src/settings_dialog.cpp" line="867"/>
       <source>A profile with that name already exists!</source>
-      <translation type="unfinished">A profile with that name already exists!</translation>
+      <translation>Bu isimle profil adı zaten oluşturuldu!</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="867"/>
       <source>Profile rename failed</source>
-      <translation type="unfinished">Profile rename failed</translation>
+      <translation>Profil yeniden adlandırma başarısız</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="882"/>
       <source>Profile deletion failed</source>
-      <translation type="unfinished">Profile deletion failed</translation>
+      <translation>Profil silme başarısız</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="882"/>
       <source>This is the only profile left!</source>
-      <translation type="unfinished">This is the only profile left!</translation>
+      <translation>Bir profil kaldı!</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="920"/>
       <source>&lt;b&gt;Configuration for:&lt;/b&gt; %1</source>
-      <translation type="unfinished">&lt;b&gt;Configuration for:&lt;/b&gt; %1</translation>
+      <translation>&lt;b&gt;Şunun için yapılandırma:&lt;/b&gt; %1</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="923"/>
       <location filename="../src/settings_dialog.cpp" line="928"/>
       <source>None</source>
-      <translation type="unfinished">None</translation>
+      <translation>Yok</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1035"/>
@@ -1838,92 +1838,92 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.cpp" line="1047"/>
       <source>Unidentified error!</source>
-      <translation type="unfinished">Unidentified error!</translation>
+      <translation>Tanımlanamayan hata!</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1054"/>
       <source>IMEI valid!</source>
-      <translation type="unfinished">IMEI valid!</translation>
+      <translation>IMEI doğrulandı!</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1054"/>
       <source>The IMEI sequence is valid!</source>
-      <translation type="unfinished">The IMEI sequence is valid!</translation>
+      <translation>IMEI dizisi geçerli!</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1057"/>
       <source>IMEI invalid!</source>
-      <translation type="unfinished">IMEI invalid!</translation>
+      <translation>IMEI geçersiz!</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1067"/>
       <source>Your IMEI is invalid because: %1.&lt;br&gt;Do you want to edit the current IMEI instead of closing? Choosing &quot;No&quot; will save the current IMEI value.</source>
-      <translation type="unfinished">Your IMEI is invalid because: %1.&lt;br&gt;Do you want to edit the current IMEI instead of closing? Choosing &quot;No&quot; will save the current IMEI value.</translation>
+      <translation>IMEI geçersiz çünkü: %1.&quot;.&lt;br&gt;Kapatmak yerine mevcut IMEI'yi düzenlemek istiyor musun? &quot;Hayırı&quot; seçmek mevcut IMEI değerini kaydedecektir.</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1069"/>
       <source>Cancel closing</source>
-      <translation type="unfinished">Cancel closing</translation>
+      <translation>Kapatmayı iptal et</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1112"/>
       <source>This change will be effective on the next launch of the emulator.</source>
-      <translation type="unfinished">This change will be effective on the next launch of the emulator.</translation>
+      <translation>Bu değişiklik emülatörün bir sonraki açılışında geçerli olacaktır.</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1120"/>
       <source>Confirmation</source>
-      <translation type="unfinished">Confirmation</translation>
+      <translation>Doğrulama</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1120"/>
       <source>Are you sure about this? Your current theme will be reset, all message boxes that have been disabled will be re-enabled, and all recent mounts will be cleared.</source>
-      <translation type="unfinished">Are you sure about this? Your current theme will be reset, all message boxes that have been disabled will be re-enabled, and all recent mounts will be cleared.</translation>
+      <translation>Emin misin? Mevcut teman sıfırlanacak, devre dışı bırakılan tüm mesaj kutuları yeniden etkinleştirilecek ve tüm son bağlantılar silinecektir.</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1137"/>
       <source>The language will be updated on the next launch of the emulator.</source>
-      <translation type="unfinished">The language will be updated on the next launch of the emulator.</translation>
+      <translation>Lisan, emülatörün bir sonraki açılışında güncellenecektir.</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1164"/>
       <source>Pick the screen background color</source>
-      <translation type="unfinished">Pick the screen background color</translation>
+      <translation>Ekran arka plan rengini seç</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1229"/>
       <source>Successfully changed</source>
-      <translation type="unfinished">Successfully changed</translation>
+      <translation>Başarıyla değiştirildi</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1229"/>
       <source>Next time the application requests to play a new MIDI, the choosen backend will be used!</source>
-      <translation type="unfinished">Next time the application requests to play a new MIDI, the choosen backend will be used!</translation>
+      <translation>Uygulama bir dahaki sefere yeni bir MIDI çalmayı talep ettiğinde seçilen arka uç kullanılacaktır!</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1242"/>
       <source>Choose the HSB bank file</source>
-      <translation type="unfinished">Choose the HSB bank file</translation>
+      <translation>HSB bank dosyası seç</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1265"/>
       <source>Choose the SF2 bank file</source>
-      <translation type="unfinished">Choose the SF2 bank file</translation>
+      <translation>SF2 bank dosyası seç</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1301"/>
       <source>Emulator reset needed</source>
-      <translation type="unfinished">Emulator reset needed</translation>
+      <translation>Emülatör sıfırlama gerek</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1301"/>
       <source>This change will be effective after resetting the emulator through Emulation menu, or on the next launch of the emulator.</source>
-      <translation type="unfinished">This change will be effective after resetting the emulator through Emulation menu, or on the next launch of the emulator.</translation>
+      <translation>Bu değişiklik, emülatörün Emülasyon menüsünden sıfırlanmasından sonra veya emülatörün bir sonraki açılışında geçerli olacaktır.</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1383"/>
       <source>Choose the background image</source>
-      <translation type="unfinished">Choose the background image</translation>
+      <translation>Arka plan resmini seç</translation>
     </message>
   </context>
   <context>
@@ -1931,27 +1931,27 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/update_dialog.ui" line="14"/>
       <source>New update available</source>
-      <translation type="unfinished">New update available</translation>
+      <translation>Yeni güncelleme mevcut</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="43"/>
       <source>A new update has been released on GitHub!</source>
-      <translation type="unfinished">A new update has been released on GitHub!</translation>
+      <translation>Yeni güncelleme GitHub'da yayınlandı!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="61"/>
       <source>Changelog</source>
-      <translation type="unfinished">Changelog</translation>
+      <translation>Değişiklik Notları</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="84"/>
       <source>Downloading update ... %p%</source>
-      <translation type="unfinished">Downloading update ... %p%</translation>
+      <translation>Güncelleme indiriliyor ... %p%</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="91"/>
       <source>Do not automatically check for update when startup</source>
-      <translation type="unfinished">Do not automatically check for update when startup</translation>
+      <translation>Açılışta otomatik olarak güncelleme kontrolü yapma</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="126"/>
@@ -1961,7 +1961,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/update_dialog.ui" line="139"/>
       <source>Ignore</source>
-      <translation type="unfinished">Ignore</translation>
+      <translation>Yoksay</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="149"/>
@@ -1971,94 +1971,94 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/update_dialog.cpp" line="107"/>
       <source>Update success</source>
-      <translation type="unfinished">Update success</translation>
+      <translation>Güncelleme başarılı</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="113"/>
       <source>Update failed</source>
-      <translation type="unfinished">Update failed</translation>
+      <translation>Güncelleme başarısız</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="142"/>
       <source>The emulator is already updated to lastest version!</source>
-      <translation type="unfinished">The emulator is already updated to lastest version!</translation>
+      <translation>Emülatör zaten son sürümde!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="152"/>
       <source>The release channel is not available. Please check your internet connection!</source>
-      <translation type="unfinished">The release channel is not available. Please check your internet connection!</translation>
+      <translation>Yayın kanalı mevcut değil. İnternet bağlantını kontrol et!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="158"/>
       <source>Failed to get information about the newest update from GitHub!</source>
-      <translation type="unfinished">Failed to get information about the newest update from GitHub!</translation>
+      <translation>GitHub'dan en yeni güncelleme hakkında bilgi alınamadı!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="190"/>
       <source>Can&apos;t find the download link of newest update for your platform!</source>
-      <translation type="unfinished">Can&apos;t find the download link of newest update for your platform!</translation>
+      <translation>Platformun için en yeni güncellemenin indirme bağlantısı bulunamadı!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="196"/>
       <source>Failed to get update download link from GitHub!</source>
-      <translation type="unfinished">Failed to get update download link from GitHub!</translation>
+      <translation>GitHub'daki güncelleme indirme bağlantısı alınamadı!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="214"/>
       <source>Error retrieving changelog from GitHub...</source>
-      <translation type="unfinished">Error retrieving changelog from GitHub...</translation>
+      <translation>GitHub'dan güncelleme notları alınırken hata oluştu...</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="238"/>
       <source>Changelog (update commit: %1)</source>
-      <translation type="unfinished">Changelog (update commit: %1)</translation>
+      <translation>Değişiklik Notları (güncelleme kodu: %1)</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="259"/>
       <source>Updater unsupported</source>
-      <translation type="unfinished">Updater unsupported</translation>
+      <translation>Güncelleyici desteklenmiyor</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="259"/>
       <source>The updater is not yet supported on your platform!</source>
-      <translation type="unfinished">The updater is not yet supported on your platform!</translation>
+      <translation>Güncelleyici henüz platformunda desteklenmiyor!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="303"/>
       <location filename="../src/update_dialog.cpp" line="363"/>
       <source>Update error</source>
-      <translation type="unfinished">Update error</translation>
+      <translation>Güncelleme Hatası</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="303"/>
       <source>Can&apos;t not open temporary file for storing the update files!</source>
-      <translation type="unfinished">Can&apos;t not open temporary file for storing the update files!</translation>
+      <translation>Güncelleme dosyalarını saklamak için geçici dosya açılamıyor!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="387"/>
       <source>Failed to download update with error: %1</source>
-      <translation type="unfinished">Failed to download update with error: %1</translation>
+      <translation>Güncelleme şu hatadan indirilemedi: %1</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="395"/>
       <source>Downloaded update is not in zip format!</source>
-      <translation type="unfinished">Downloaded update is not in zip format!</translation>
+      <translation>İndirilen güncelleme zip formatında değil!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="424"/>
       <source>Failed to update the updater program!</source>
-      <translation type="unfinished">Failed to update the updater program!</translation>
+      <translation>Güncelleyici program güncellenemedi!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="432"/>
       <source>Update zip file is corrupted!</source>
-      <translation type="unfinished">Update zip file is corrupted!</translation>
+      <translation>Güncelleme zip dosyası bozuk!</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="439"/>
       <location filename="../src/update_dialog.cpp" line="454"/>
       <source>Can&apos;t find the updater program in the update archive file!</source>
-      <translation type="unfinished">Can&apos;t find the updater program in the update archive file!</translation>
+      <translation>Güncelleme arşiv dosyasında güncelleyici programı bulunamadı!</translation>
     </message>
   </context>
   <context>
@@ -2066,7 +2066,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/update_notice_dialog.ui" line="14"/>
       <source>Update news</source>
-      <translation type="unfinished">Update news</translation>
+      <translation>Güncelleme haberleri</translation>
     </message>
   </context>
   <context>
@@ -2074,53 +2074,53 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/updater.ui" line="14"/>
       <source>EKA2L1 Updater</source>
-      <translation type="unfinished">EKA2L1 Updater</translation>
+      <translation>EKA2L1 Güncelleyici</translation>
     </message>
     <message>
       <location filename="../src/updater.ui" line="59"/>
       <source>Updating...</source>
-      <translation type="unfinished">Updating...</translation>
+      <translation>Güncelleniyor...</translation>
     </message>
     <message>
       <location filename="../src/updater.ui" line="85"/>
       <source>Extracting ... %p%</source>
-      <translation type="unfinished">Extracting ... %p%</translation>
+      <translation>Ayıklanıyor... %p%</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="93"/>
       <source>Update failed</source>
-      <translation type="unfinished">Update failed</translation>
+      <translation>Güncelleme başarısız</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="101"/>
       <source>Downloaded update is not a zip file!</source>
-      <translation type="unfinished">Downloaded update is not a zip file!</translation>
+      <translation>İndirilen güncelleme bir zip dosyası değil!</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="124"/>
       <location filename="../src/updater.cpp" line="177"/>
       <source>The downloaded archive zip is corrupted</source>
-      <translation type="unfinished">The downloaded archive zip is corrupted</translation>
+      <translation>İndirilen zip arşivi bozuk</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="180"/>
       <source>Extracted: %1</source>
-      <translation type="unfinished">Extracted: %1</translation>
+      <translation>Ayıklanan: %1</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="199"/>
       <source>Update&apos;s archive file does not exist!</source>
-      <translation type="unfinished">Update&apos;s archive file does not exist!</translation>
+      <translation>Güncelleme arşiv dosyası mevcut değil!</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="214"/>
       <source>Update success</source>
-      <translation type="unfinished">Update success</translation>
+      <translation>Güncelleme başarılı</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="214"/>
       <source>Update success. Relaunch the emulator?</source>
-      <translation type="unfinished">Update success. Relaunch the emulator?</translation>
+      <translation>Güncelleme başarılı. Emülatör yeniden başlatılsın mı?</translation>
     </message>
   </context>
 </TS>
