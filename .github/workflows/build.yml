@@ -233,24 +233,24 @@ jobs:
       run: echo "::set-output name=value::$(git rev-parse --short HEAD)"
       
     - name: Download Windows Artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4.1.7
       with:
         name: "eka2l1-${{ steps.git_short_sha.outputs.value }}-windows-latest"
         path: windows-files
 
     - name: Download MacOS Artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4.1.7
       with:
         name: "eka2l1-${{ steps.git_short_sha.outputs.value }}-macos-latest"
         path: mac-files
         
     - name: Download Ubuntu Artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4.1.7
       with:
         name: "eka2l1-${{ steps.git_short_sha.outputs.value }}-ubuntu-20.04"
         
     - name: Download Android Artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4.1.7
       with:
         name: "eka2l1-${{ steps.git_short_sha.outputs.value }}"
         
