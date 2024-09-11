@@ -83,7 +83,7 @@
     <message>
       <location filename="../src/applistwidget.cpp" line="63"/>
       <source>Search</source>
-      <translation type="unfinished">Search</translation>
+      <translation>جستجو</translation>
     </message>
   </context>
   <context>
@@ -121,7 +121,7 @@
     <message>
       <location filename="../src/applistwidget.cpp" line="834"/>
       <source>Rename</source>
-      <translation type="unfinished">Rename</translation>
+      <translation>تغییر نام</translation>
     </message>
     <message>
       <location filename="../src/applistwidget.cpp" line="835"/>
@@ -242,7 +242,7 @@
     <message>
       <location filename="../src/btnetplay_friends_dialog.cpp" line="134"/>
       <source>Remove</source>
-      <translation type="unfinished">Remove</translation>
+      <translation>حذف</translation>
     </message>
     <message>
       <location filename="../src/btnetplay_friends_dialog.cpp" line="135"/>
@@ -482,7 +482,7 @@
     <message>
       <location filename="../src/btnmap/editor_widget.ui" line="153"/>
       <source>Remove</source>
-      <translation type="unfinished">Remove</translation>
+      <translation>حذف</translation>
     </message>
     <message>
       <location filename="../src/btnmap/editor_widget.ui" line="181"/>
@@ -634,7 +634,7 @@
     <message>
       <location filename="../src/mainwindow.ui" line="162"/>
       <source>About</source>
-      <translation type="unfinished">About</translation>
+      <translation>درباره</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.ui" line="167"/>
@@ -654,7 +654,7 @@
     <message>
       <location filename="../src/mainwindow.ui" line="182"/>
       <source>Settings</source>
-      <translation type="unfinished">Settings</translation>
+      <translation>تنظیمات</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.ui" line="190"/>
@@ -1070,7 +1070,7 @@
     <message>
       <location filename="../src/package_manager_dialog.ui" line="29"/>
       <source>Search</source>
-      <translation type="unfinished">Search</translation>
+      <translation>جستجو</translation>
     </message>
     <message>
       <location filename="../src/package_manager_dialog.ui" line="66"/>
@@ -1133,7 +1133,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="20"/>
       <source>Settings</source>
-      <translation type="unfinished">Settings</translation>
+      <translation>تنظیمات</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="36"/>
@@ -1428,7 +1428,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="777"/>
       <source>Devices</source>
-      <translation type="unfinished">Devices</translation>
+      <translation>دستگاه ها</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="794"/>
@@ -1439,7 +1439,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
       <location filename="../src/settings_dialog.ui" line="817"/>
       <location filename="../src/settings_dialog.ui" line="1291"/>
       <source>Rename</source>
-      <translation type="unfinished">Rename</translation>
+      <translation>تغییر نام</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="828"/>
