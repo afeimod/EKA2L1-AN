@@ -323,7 +323,7 @@
     <message>
       <location filename="../src/device_install_dialog.ui" line="125"/>
       <source>Install</source>
-      <translation type="unfinished">Install</translation>
+      <translation>نصب</translation>
     </message>
     <message>
       <location filename="../src/device_install_dialog.ui" line="138"/>
@@ -589,7 +589,7 @@
     <message>
       <location filename="../src/mainwindow.ui" line="73"/>
       <source>Install</source>
-      <translation type="unfinished">Install</translation>
+      <translation>نصب</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.ui" line="83"/>
