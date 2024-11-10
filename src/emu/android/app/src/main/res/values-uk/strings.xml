@@ -122,7 +122,7 @@
     <string name="pref_background_image_view">Вигляд</string>
     <string name="pref_background_image_empty">Not set</string>
     <string name="pref_background_image_clear">Clear</string>
-    <string name="pref_background_image_fail_to_set">Fail to set background image!</string>
+    <string name="pref_background_image_fail_to_set">Не вдалося встановити фоновий малюнок!</string>
     <string name="background_image">Background image</string>
     <string name="background_image_opacity">BG image opacity</string>
     <string name="background_image_keep_aspect_ratio">Keep BG image aspect ratio</string>
