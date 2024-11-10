@@ -746,7 +746,7 @@
     <message>
       <location filename="../src/mainwindow.ui" line="340"/>
       <source>Stretch to fill window (ignore aspect ratio)</source>
-      <translation type="unfinished">Stretch to fill window (ignore aspect ratio)</translation>
+      <translation>Розтягнути на все вікно (ігнорувати пропорції)</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="268"/>
