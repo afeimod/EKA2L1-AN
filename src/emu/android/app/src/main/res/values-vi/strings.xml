@@ -41,7 +41,7 @@
     <string name="choose_installation_type_instruction">Dùng gói dữ liệu có sẵn để nhanh chóng sử dụng giả lập, hoặc bắt đầu bằng việc cài đặt thiết bị sử dụng ROM/sụn (firmware).</string>
     <string name="preconfigured_pack">Gói dữ liệu tinh chỉnh sẵn</string>
     <string name="rom_or_firmware">ROM/sụn</string>
-    <string name="save_launch_file_success">Launch file saved as %s!</string>
+    <string name="save_launch_file_success">Đã lưu file khởi chạy tại %s!</string>
     <string name="install">Cài đặt</string>
     <string name="rescan_devices">Quét lại các thiết bị</string>
     <string name="device_dump">Dump của thiết bị</string>
