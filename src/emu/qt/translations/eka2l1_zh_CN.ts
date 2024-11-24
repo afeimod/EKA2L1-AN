@@ -714,12 +714,12 @@
     <message>
       <location filename="../src/mainwindow.ui" line="294"/>
       <source>Friends&apos;s IP addresses</source>
-      <translation type="unfinished">Friends&apos;s IP addresses</translation>
+      <translation>好友的IP地址</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.ui" line="299"/>
       <source>Button mapping editor</source>
-      <translation type="unfinished">Button mapping editor</translation>
+      <translation>按键映射编辑器</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.ui" line="304"/>
@@ -729,12 +729,12 @@
     <message>
       <location filename="../src/mainwindow.ui" line="309"/>
       <source>N-Gage card game</source>
-      <translation type="unfinished">N-Gage card game</translation>
+      <translation>N-Gage游戏</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.ui" line="314"/>
       <source>Check for update</source>
-      <translation type="unfinished">Check for update</translation>
+      <translation>检查更新</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.ui" line="319"/>
@@ -744,12 +744,12 @@
     <message>
       <location filename="../src/mainwindow.ui" line="329"/>
       <source>Configure</source>
-      <translation type="unfinished">Configure</translation>
+      <translation>配置</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.ui" line="340"/>
       <source>Stretch to fill window (ignore aspect ratio)</source>
-      <translation type="unfinished">Stretch to fill window (ignore aspect ratio)</translation>
+      <translation>拉伸以填充窗口（忽略宽高比）</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="268"/>
@@ -785,72 +785,72 @@
     <message>
       <location filename="../src/mainwindow.cpp" line="686"/>
       <source>Installing &lt;b&gt;%1&lt;/b&gt;</source>
-      <translation type="unfinished">Installing &lt;b&gt;%1&lt;/b&gt;</translation>
+      <translation>正在安装 &lt;b&gt;%1&lt;/b&gt;</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="699"/>
       <source>Choose the N-Gage game card folder</source>
-      <translation type="unfinished">Choose the N-Gage game card folder</translation>
+      <translation>选择N-Gage游戏资料文件夹</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="707"/>
       <source>Installing N-Gage game...</source>
-      <translation type="unfinished">Installing N-Gage game...</translation>
+      <translation>正在安装N-Gage游戏...</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="730"/>
       <source>Install success!</source>
-      <translation type="unfinished">Install success!</translation>
+      <translation>安装成功！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="730"/>
       <source>Successfully install N-Gage card game: &lt;b&gt;%1&lt;/b&gt;</source>
-      <translation type="unfinished">Successfully install N-Gage card game: &lt;b&gt;%1&lt;/b&gt;</translation>
+      <translation>成功安装N-Gage游戏: &lt;b&gt;%1&lt;/b&gt;</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="736"/>
       <source>Can&apos;t find the game data folder!</source>
-      <translation type="unfinished">Can&apos;t find the game data folder!</translation>
+      <translation>无法找到游戏数据文件夹！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="740"/>
       <source>There is more than one game in the given card game folder!</source>
-      <translation type="unfinished">There is more than one game in the given card game folder!</translation>
+      <translation>在指定的游戏文件夹中有不止一个游戏！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="744"/>
       <source>The game information file does not exist in the card game folder!</source>
-      <translation type="unfinished">The game information file does not exist in the card game folder!</translation>
+      <translation>游戏信息文件在游戏文件夹中不存在！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="748"/>
       <source>The game information file has been corrupted. Please check your data&apos;s validity!</source>
-      <translation type="unfinished">The game information file has been corrupted. Please check your data&apos;s validity!</translation>
+      <translation>游戏信息文件已损坏。请检查您的数据是否有效！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="752"/>
       <source>General error occured...</source>
-      <translation type="unfinished">General error occured...</translation>
+      <translation>发生了一般错误...</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="757"/>
       <location filename="../src/mainwindow.cpp" line="759"/>
       <location filename="../src/mainwindow.cpp" line="1664"/>
       <source>Install failed</source>
-      <translation type="unfinished">Install failed</translation>
+      <translation>安装失败</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="757"/>
       <source>Installation failed with error:
   -%1</source>
-      <translation type="unfinished">Installation failed with error:
+      <translation>安装失败，错误:
   -%1</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="759"/>
       <source>Installation of %1% failed with error:
   -%2</source>
-      <translation type="unfinished">Installation of %1% failed with error:
+      <translation>安装 %1%失败，错误：
   -%2</translation>
     </message>
     <message>
@@ -922,7 +922,7 @@
     <message>
       <location filename="../src/mainwindow.cpp" line="1034"/>
       <source>Fail to launch the selected application!</source>
-      <translation type="unfinished">Fail to launch the selected application!</translation>
+      <translation>无法启动选中的应用程序！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1051"/>
@@ -992,72 +992,72 @@
     <message>
       <location filename="../src/mainwindow.cpp" line="1482"/>
       <source>Continue to modify friends&apos; IP addresses</source>
-      <translation type="unfinished">Continue to modify friends&apos; IP addresses</translation>
+      <translation>继续修改好友的IP地址</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1483"/>
       <source>This dialog will show all stored IP addresses, which has the potential of revealing others&apos; personal information.&lt;br&gt;Do you wish to continue?</source>
-      <translation type="unfinished">This dialog will show all stored IP addresses, which has the potential of revealing others&apos; personal information.&lt;br&gt;Do you wish to continue?</translation>
+      <translation>这个对话框会显示所有保存的IP地址，可能会泄露他人信息，确定继续吗？</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1500"/>
       <source>Bluetooth manager service not available!</source>
-      <translation type="unfinished">Bluetooth manager service not available!</translation>
+      <translation>蓝牙管理服务不可用！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1500"/>
       <source>The emulated device does not have a bluetooth manager service! Bluetooth is not supported.</source>
-      <translation type="unfinished">The emulated device does not have a bluetooth manager service! Bluetooth is not supported.</translation>
+      <translation>模拟设备没有蓝牙管理器服务！蓝牙不支持。</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1617"/>
       <source>Choose the JAR file to install</source>
-      <translation type="unfinished">Choose the JAR file to install</translation>
+      <translation>选择要安装的JAR文件</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1617"/>
       <source>JAR file (*.jar)</source>
-      <translation type="unfinished">JAR file (*.jar)</translation>
+      <translation>JAR文件 (*.jar)</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1625"/>
       <source>%1 version %2 (by %3) has been installed!</source>
-      <translation type="unfinished">%1 version %2 (by %3) has been installed!</translation>
+      <translation>%1 版本 %2 (通过 %3) 已经安装！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1628"/>
       <source>Install success</source>
-      <translation type="unfinished">Install success</translation>
+      <translation>安装成功</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1640"/>
       <source>Can not add the JAR to the apps database!</source>
-      <translation type="unfinished">Can not add the JAR to the apps database!</translation>
+      <translation>无法将JAR添加到应用数据库！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1644"/>
       <source>The given file is not a valid JAR file!</source>
-      <translation type="unfinished">The given file is not a valid JAR file!</translation>
+      <translation>给定文件不是有效的JAR文件！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1648"/>
       <source>Can not find the JAR file!</source>
-      <translation type="unfinished">Can not find the JAR file!</translation>
+      <translation>找不到JAR文件！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1652"/>
       <source>The JAR needs MIDP-2.0, but the emulator only support MIDP-1.0 JAR running on S60v1 devices!</source>
-      <translation type="unfinished">The JAR needs MIDP-2.0, but the emulator only support MIDP-1.0 JAR running on S60v1 devices!</translation>
+      <translation>这个JAR需要MIDP-2.0，但模拟器器只支持MIDP-1.0 JAR在S60v1设备上运行！</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1656"/>
       <source>The JAR can not be installed for this current device! Only S60v1 devices can install this JAR at the moment</source>
-      <translation type="unfinished">The JAR can not be installed for this current device! Only S60v1 devices can install this JAR at the moment</translation>
+      <translation>无法为当前设备安装JAR！目前只有S60v1设备可以安装此JAR</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1660"/>
       <source>An unexpected error has happened. Error code: %1</source>
-      <translation type="unfinished">An unexpected error has happened. Error code: %1</translation>
+      <translation>发生意外错误。错误代码: %1</translation>
     </message>
   </context>
   <context>
@@ -1188,7 +1188,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="279"/>
       <source>Hide system applications across all devices</source>
-      <translation type="unfinished">Hide system applications across all devices</translation>
+      <translation>隐藏所有设备的系统应用程序</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="282"/>
@@ -1243,17 +1243,17 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="382"/>
       <source>Log filter</source>
-      <translation type="unfinished">Log filter</translation>
+      <translation>日志过滤器</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="399"/>
       <source>Apply</source>
-      <translation type="unfinished">Apply</translation>
+      <translation>应用</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="408"/>
       <source>Show log console (Windows only)</source>
-      <translation type="unfinished">Show log console (Windows only)</translation>
+      <translation>显示日志控制台（仅适用于Windows）</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="418"/>
@@ -1351,27 +1351,27 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="491"/>
       <source>Image</source>
-      <translation type="unfinished">Image</translation>
+      <translation>图像</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="527"/>
       <source>Color</source>
-      <translation type="unfinished">Color</translation>
+      <translation>颜色</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="562"/>
       <source>Opacity</source>
-      <translation type="unfinished">Opacity</translation>
+      <translation>不透明度</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="585"/>
       <source>TextLabel</source>
-      <translation type="unfinished">TextLabel</translation>
+      <translation>文本标签</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="639"/>
       <source>Disable window name with emulator version</source>
-      <translation type="unfinished">Disable window name with emulator version</translation>
+      <translation>在窗口名称中禁用模拟器版本</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="646"/>
@@ -1551,7 +1551,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/settings_dialog.ui" line="1076"/>
       <source>SF2 bank</source>
-      <translation type="unfinished">SF2 bank</translation>
+      <translation>SF2 bank</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1103"/>
@@ -1562,7 +1562,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/settings_dialog.ui" line="1117"/>
       <source>HSB bank</source>
-      <translation type="unfinished">HSB bank</translation>
+      <translation>HSB bank</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1161"/>
@@ -1923,7 +1923,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/settings_dialog.cpp" line="1383"/>
       <source>Choose the background image</source>
-      <translation type="unfinished">Choose the background image</translation>
+      <translation>选择背景图片</translation>
     </message>
   </context>
   <context>
@@ -1931,27 +1931,27 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/update_dialog.ui" line="14"/>
       <source>New update available</source>
-      <translation type="unfinished">New update available</translation>
+      <translation>新的可用更新</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="43"/>
       <source>A new update has been released on GitHub!</source>
-      <translation type="unfinished">A new update has been released on GitHub!</translation>
+      <translation>GitHub上发布了一个新的更新！</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="61"/>
       <source>Changelog</source>
-      <translation type="unfinished">Changelog</translation>
+      <translation>更新日志</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="84"/>
       <source>Downloading update ... %p%</source>
-      <translation type="unfinished">Downloading update ... %p%</translation>
+      <translation>正在下载更新... %p%</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="91"/>
       <source>Do not automatically check for update when startup</source>
-      <translation type="unfinished">Do not automatically check for update when startup</translation>
+      <translation>启动时不自动检查更新</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="126"/>
@@ -1961,7 +1961,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/update_dialog.ui" line="139"/>
       <source>Ignore</source>
-      <translation type="unfinished">Ignore</translation>
+      <translation>忽略</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.ui" line="149"/>
@@ -1971,17 +1971,17 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/update_dialog.cpp" line="107"/>
       <source>Update success</source>
-      <translation type="unfinished">Update success</translation>
+      <translation>更新成功</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="113"/>
       <source>Update failed</source>
-      <translation type="unfinished">Update failed</translation>
+      <translation>更新失败</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="142"/>
       <source>The emulator is already updated to lastest version!</source>
-      <translation type="unfinished">The emulator is already updated to lastest version!</translation>
+      <translation>模拟器已更新为最新版本！</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="152"/>
@@ -2032,33 +2032,33 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/update_dialog.cpp" line="303"/>
       <source>Can&apos;t not open temporary file for storing the update files!</source>
-      <translation type="unfinished">Can&apos;t not open temporary file for storing the update files!</translation>
+      <translation>不能打开临时文件来存储更新文件！</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="387"/>
       <source>Failed to download update with error: %1</source>
-      <translation type="unfinished">Failed to download update with error: %1</translation>
+      <translation>无法下载更新错误: %1</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="395"/>
       <source>Downloaded update is not in zip format!</source>
-      <translation type="unfinished">Downloaded update is not in zip format!</translation>
+      <translation>下载的更新不是zip格式！</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="424"/>
       <source>Failed to update the updater program!</source>
-      <translation type="unfinished">Failed to update the updater program!</translation>
+      <translation>更新更新程序失败！</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="432"/>
       <source>Update zip file is corrupted!</source>
-      <translation type="unfinished">Update zip file is corrupted!</translation>
+      <translation>更新zip文件已损坏！</translation>
     </message>
     <message>
       <location filename="../src/update_dialog.cpp" line="439"/>
       <location filename="../src/update_dialog.cpp" line="454"/>
       <source>Can&apos;t find the updater program in the update archive file!</source>
-      <translation type="unfinished">Can&apos;t find the updater program in the update archive file!</translation>
+      <translation>在更新文件中未找到更新程序！</translation>
     </message>
   </context>
   <context>
@@ -2066,7 +2066,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/update_notice_dialog.ui" line="14"/>
       <source>Update news</source>
-      <translation type="unfinished">Update news</translation>
+      <translation>更新消息</translation>
     </message>
   </context>
   <context>
@@ -2074,53 +2074,53 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/updater.ui" line="14"/>
       <source>EKA2L1 Updater</source>
-      <translation type="unfinished">EKA2L1 Updater</translation>
+      <translation>EKA2L1更新器</translation>
     </message>
     <message>
       <location filename="../src/updater.ui" line="59"/>
       <source>Updating...</source>
-      <translation type="unfinished">Updating...</translation>
+      <translation>更新中...</translation>
     </message>
     <message>
       <location filename="../src/updater.ui" line="85"/>
       <source>Extracting ... %p%</source>
-      <translation type="unfinished">Extracting ... %p%</translation>
+      <translation>正在提取... %p%</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="93"/>
       <source>Update failed</source>
-      <translation type="unfinished">Update failed</translation>
+      <translation>更新失败</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="101"/>
       <source>Downloaded update is not a zip file!</source>
-      <translation type="unfinished">Downloaded update is not a zip file!</translation>
+      <translation>下载的更新不是zip格式！</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="124"/>
       <location filename="../src/updater.cpp" line="177"/>
       <source>The downloaded archive zip is corrupted</source>
-      <translation type="unfinished">The downloaded archive zip is corrupted</translation>
+      <translation>下载的压缩包已损坏</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="180"/>
       <source>Extracted: %1</source>
-      <translation type="unfinished">Extracted: %1</translation>
+      <translation>已提取：%1</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="199"/>
       <source>Update&apos;s archive file does not exist!</source>
-      <translation type="unfinished">Update&apos;s archive file does not exist!</translation>
+      <translation>更新的存档文件不存在！</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="214"/>
       <source>Update success</source>
-      <translation type="unfinished">Update success</translation>
+      <translation>更新成功</translation>
     </message>
     <message>
       <location filename="../src/updater.cpp" line="214"/>
       <source>Update success. Relaunch the emulator?</source>
-      <translation type="unfinished">Update success. Relaunch the emulator?</translation>
+      <translation>更新成功。重新启动模拟器？</translation>
     </message>
   </context>
 </TS>
