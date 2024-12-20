@@ -1301,7 +1301,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="605"/>
       <source>Enable nearest neighbor filtering</source>
-      <translation type="unfinished">Enable nearest neighbor filtering</translation>
+      <translation>فعال کردن فیلتر نزدیکترین فرد</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="612"/>
@@ -1321,7 +1321,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="662"/>
       <source>Language</source>
-      <translation type="unfinished">Language</translation>
+      <translation>زبان</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="684"/>
@@ -1336,7 +1336,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="697"/>
       <source>Dark</source>
-      <translation type="unfinished">Dark</translation>
+      <translation>تاریک</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="633"/>
@@ -1526,7 +1526,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="1037"/>
       <source>Real-time accuracy</source>
-      <translation type="unfinished">Real-time accuracy</translation>
+      <translation>دقت زمان واقعی</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1045"/>
