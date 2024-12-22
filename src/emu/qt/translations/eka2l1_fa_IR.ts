@@ -144,17 +144,17 @@
     <message>
       <location filename="../src/btnet_dialog.ui" line="55"/>
       <source>Off</source>
-      <translation type="unfinished">Off</translation>
+      <translation>خاموش</translation>
     </message>
     <message>
       <location filename="../src/btnet_dialog.ui" line="60"/>
       <source>Direct IP</source>
-      <translation type="unfinished">Direct IP</translation>
+      <translation>IP مستقیم</translation>
     </message>
     <message>
       <location filename="../src/btnet_dialog.ui" line="65"/>
       <source>LAN</source>
-      <translation type="unfinished">LAN</translation>
+      <translation>LAN</translation>
     </message>
     <message>
       <location filename="../src/btnet_dialog.ui" line="115"/>
@@ -1138,7 +1138,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="36"/>
       <source>General</source>
-      <translation type="unfinished">General</translation>
+      <translation>عمومی</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="48"/>
@@ -1193,7 +1193,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="282"/>
       <source>Hide system applications</source>
-      <translation type="unfinished">Hide system applications</translation>
+      <translation>پنهان کردن اپلیکیشن های سیستمی</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="301"/>
@@ -1326,12 +1326,12 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="684"/>
       <source>Theme</source>
-      <translation type="unfinished">Theme</translation>
+      <translation>Theme</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="692"/>
       <source>Light</source>
-      <translation type="unfinished">Light</translation>
+      <translation>روشن</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="697"/>
@@ -1381,7 +1381,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="712"/>
       <source>System</source>
-      <translation type="unfinished">System</translation>
+      <translation>سیستم</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="718"/>
@@ -1531,17 +1531,17 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.ui" line="1045"/>
       <source>Low</source>
-      <translation type="unfinished">Low</translation>
+      <translation>کم</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1050"/>
       <source>Mid</source>
-      <translation type="unfinished">Mid</translation>
+      <translation>متوسط</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1055"/>
       <source>High</source>
-      <translation type="unfinished">High</translation>
+      <translation>زیاد</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1068"/>
