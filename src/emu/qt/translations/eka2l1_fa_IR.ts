@@ -6,7 +6,7 @@
     <message>
       <location filename="../src/utils.cpp" line="126"/>
       <source>EKA2L1 - Symbian OS emulator</source>
-      <translation/>
+      <translation>EKA2L1-شبیه ساز سیستم عامل Symbian</translation>
     </message>
   </context>
   <context>
@@ -57,17 +57,17 @@
     <message>
       <location filename="../src/aboutdialog.cpp" line="92"/>
       <source>&lt;b&gt;Icon:&lt;/b&gt;&lt;br&gt;</source>
-      <translation type="unfinished">&lt;b&gt;Icon:&lt;/b&gt;&lt;br&gt;</translation>
+      <translation>&lt;b&gt;نماد:&lt;/b&gt;&lt;br&gt;</translation>
     </message>
     <message>
       <location filename="../src/aboutdialog.cpp" line="106"/>
       <source>&lt;b&gt;Honors:&lt;/b&gt;&lt;br&gt;</source>
-      <translation type="unfinished">&lt;b&gt;Honors:&lt;/b&gt;&lt;br&gt;</translation>
+      <translation>&lt;b&gt;افتخارات:&lt;/b&gt;&lt;br&gt;</translation>
     </message>
     <message>
       <location filename="../src/aboutdialog.cpp" line="120"/>
       <source>&lt;b&gt;Translators:&lt;/b&gt;&lt;br&gt;</source>
-      <translation type="unfinished">&lt;b&gt;Translators:&lt;/b&gt;&lt;br&gt;</translation>
+      <translation>&lt;b&gt;مترجمان:&lt;/b&gt;&lt;br&gt;</translation>
     </message>
   </context>
   <context>
@@ -91,12 +91,12 @@
     <message>
       <location filename="../src/applistwidget.cpp" line="724"/>
       <source>&lt;br&gt;App UID: 0x%1</source>
-      <translation type="unfinished">&lt;br&gt;App UID: 0x%1</translation>
+      <translation>&lt;br&gt;UID برنامه: 0x%1</translation>
     </message>
     <message>
       <location filename="../src/applistwidget.cpp" line="796"/>
       <source>Enter a new name</source>
-      <translation type="unfinished">Enter a new name</translation>
+      <translation>یک نام جدید وارد کنید</translation>
     </message>
     <message>
       <location filename="../src/applistwidget.cpp" line="805"/>
@@ -159,12 +159,12 @@
     <message>
       <location filename="../src/btnet_dialog.ui" line="115"/>
       <source>Server address</source>
-      <translation type="unfinished">Server address</translation>
+      <translation>آدرس سرور</translation>
     </message>
     <message>
       <location filename="../src/btnet_dialog.ui" line="134"/>
       <source>Enable UPnP (for IPv4 public play)</source>
-      <translation type="unfinished">Enable UPnP (for IPv4 public play)</translation>
+      <translation>فعال کردن UPnP (برای بازی عمومی IPv4)</translation>
     </message>
     <message>
       <location filename="../src/btnet_dialog.ui" line="166"/>
@@ -184,7 +184,7 @@
     <message>
       <location filename="../src/btnet_dialog.ui" line="228"/>
       <source>Password</source>
-      <translation type="unfinished">Password</translation>
+      <translation>گذرواژه</translation>
     </message>
     <message>
       <location filename="../src/btnet_dialog.ui" line="238"/>
@@ -1346,7 +1346,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="470"/>
       <source>Background</source>
-      <translation type="unfinished">Background</translation>
+      <translation>پس زمینه</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="491"/>
@@ -1712,7 +1712,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
     <message>
       <location filename="../src/settings_dialog.cpp" line="307"/>
       <source>Default</source>
-      <translation type="unfinished">Default</translation>
+      <translation>پیش فرض</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.cpp" line="445"/>
