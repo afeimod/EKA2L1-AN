@@ -40,7 +40,7 @@
     <string name="choose_installation_type">اختر نوع التثبيت</string>
     <string name="choose_installation_type_instruction">استخدم حُزْمَة بيانات موجودة مقدما لتبدأ باستخدام التطبيق بسرعة، أو ابدأ بتثبيت جهاز جديد باستخدام ROM/firmware الخاص به.</string>
     <string name="preconfigured_pack">حُزْمَة معدة مسبقاً</string>
-    <string name="rom_or_firmware">ROM/Firmware</string>
+    <string name="rom_or_firmware">الروم/البرنامج الثابت</string>
     <string name="save_launch_file_success">مِلَفّ التشغيل محفوظ ك %s!</string>
     <string name="install">تثبيت</string>
     <string name="rescan_devices">إعادة فحص الأجهزة</string>
