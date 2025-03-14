@@ -1358,7 +1358,7 @@
     <message>
       <location filename="../src/settings_dialog.ui" line="562"/>
       <source>Opacity</source>
-      <translation type="unfinished">Opacity</translation>
+      <translation>Непрозорість</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="585"/>
