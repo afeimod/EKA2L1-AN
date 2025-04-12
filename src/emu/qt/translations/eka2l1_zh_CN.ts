@@ -116,7 +116,7 @@
     <message>
       <location filename="../src/applistwidget.cpp" line="814"/>
       <source>An error occured while trying to delete the app!</source>
-      <translation>试图删除应用时出错！</translation>
+      <translation>尝试删除应用时出错！</translation>
     </message>
     <message>
       <location filename="../src/applistwidget.cpp" line="834"/>
@@ -315,7 +315,7 @@
     <message>
       <location filename="../src/device_install_dialog.ui" line="99"/>
       <source>Firmware (VPL)</source>
-      <translation>固件(VPL)</translation>
+      <translation>固件（VPL）</translation>
     </message>
     <message>
       <location filename="../src/device_install_dialog.ui" line="125"/>
@@ -410,7 +410,7 @@
     <message>
       <location filename="../src/device_install_dialog.cpp" line="266"/>
       <source>VPL file (*.vpl);;All files (*.*)</source>
-      <translation>VPL文件 (*.vpl);;所有文件 (*.*)</translation>
+      <translation>VPL 文件 (*.vpl);;所有文件 (*.*)</translation>
     </message>
     <message>
       <location filename="../src/device_install_dialog.cpp" line="275"/>
@@ -420,7 +420,7 @@
     <message>
       <location filename="../src/device_install_dialog.cpp" line="276"/>
       <source>ROM file (*.rom *.ROM);;All files (*.*)</source>
-      <translation>ROM文件 (*.rom *.ROM);;所有文件 (*.*)</translation>
+      <translation>ROM 文件 (*.rom *.ROM);;所有文件 (*.*)</translation>
     </message>
     <message>
       <location filename="../src/device_install_dialog.cpp" line="300"/>
@@ -430,7 +430,7 @@
     <message>
       <location filename="../src/device_install_dialog.cpp" line="301"/>
       <source>RPKG file (*.rpkg *.RPKG);;All files (*.*</source>
-      <translation>RPKG文件 (*.rpkg *.RPKG);;所有文件 (*.*</translation>
+      <translation>RPKG 文件 (*.rpkg *.RPKG);;所有文件 (*.*)</translation>
     </message>
   </context>
   <context>
@@ -974,7 +974,7 @@
     <message>
       <location filename="../src/mainwindow.cpp" line="1152"/>
       <source>SIS file (*.sis *.sisx)</source>
-      <translation>SIS文件(*.sis *.sisx)</translation>
+      <translation>SIS 文件 (*.sis *.sisx)</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1347"/>
@@ -1004,8 +1004,7 @@
     <message>
       <location filename="../src/mainwindow.cpp" line="1500"/>
       <source>The emulated device does not have a bluetooth manager service! Bluetooth is not supported.</source>
-      <translation>模拟设备没有蓝牙管理器服务！蓝牙不支持。
-</translation>
+      <translation>模拟的设备没有蓝牙管理器服务！蓝牙不被支持。</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1617"/>
@@ -1015,7 +1014,7 @@
     <message>
       <location filename="../src/mainwindow.cpp" line="1617"/>
       <source>JAR file (*.jar)</source>
-      <translation>JAR文件 (*.jar)</translation>
+      <translation>JAR 文件 (*.jar)</translation>
     </message>
     <message>
       <location filename="../src/mainwindow.cpp" line="1625"/>
@@ -1416,12 +1415,12 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/settings_dialog.ui" line="764"/>
       <source>Allow the emulator to perform native GPU acceleration for Symbian&apos;s GLES1 API.</source>
-      <translation>允许模拟器为塞班 GLES1 API 执行原生的 GPU 加速。</translation>
+      <translation>允许模拟器为塞班 GLES1 API 执行原生 GPU 加速。</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="767"/>
       <source>Enable GPU accelerated GLES1</source>
-      <translation>启用 GPU 加速 GLES1</translation>
+      <translation>启用 GPU 加速的 GLES1</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="777"/>
@@ -1615,7 +1614,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/settings_dialog.ui" line="1378"/>
       <source>Up arrow</source>
-      <translation>上方向键</translation>
+      <translation>向上键</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1410"/>
@@ -1625,8 +1624,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/settings_dialog.ui" line="1446"/>
       <source>Left arrow</source>
-      <translation>左方向键
-</translation>
+      <translation>向左键</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1478"/>
@@ -1636,7 +1634,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/settings_dialog.ui" line="1510"/>
       <source>Right arrow</source>
-      <translation>右方向键</translation>
+      <translation>向右键</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1546"/>
@@ -1646,7 +1644,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</source>
     <message>
       <location filename="../src/settings_dialog.ui" line="1578"/>
       <source>Down arrow</source>
-      <translation>下方向键</translation>
+      <translation>向下键</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1610"/>
