@@ -1557,7 +1557,7 @@ Preferred option will automatically enable this on S60v1/S60v2 devices.</transla
       <location filename="../src/settings_dialog.ui" line="1103"/>
       <location filename="../src/settings_dialog.ui" line="1144"/>
       <source>Reset</source>
-      <translation type="unfinished">Reset</translation>
+      <translation>بازنشانی</translation>
     </message>
     <message>
       <location filename="../src/settings_dialog.ui" line="1117"/>
