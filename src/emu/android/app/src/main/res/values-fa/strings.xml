@@ -180,16 +180,16 @@
     <string name="error_name_exists">از قبل وجود دارد، نام دیگری را وارد کنید</string>
     <string name="extensive_logging">ورود به سیستم</string>
     <string name="mapping_dialog_title">یک دکمه را فشار دهید</string>
-    <string name="mapping_dialog_message" formatted="false">Current mapping: %1$s</string>
-    <string name="reset_mapping">Reset</string>
-    <string name="layout_edit_finished">Edit mode finished</string>
-    <string name="layout_edit_finish">Finish edit mode</string>
-    <string name="layout_edit_mode">Keylayout edit mode</string>
-    <string name="layout_scale_mode">Keylayout resize mode</string>
-    <string name="layout_switch">Switch keylayout</string>
-    <string name="hide_buttons">Hide buttons</string>
-    <string name="confirmation_required">Confirmation required</string>
-    <string name="force_close_confirmation">Force-closing the application may result in data loss or even break it completely!\nProceed?</string>
+    <string name="mapping_dialog_message" formatted="false">چیدمان فعلی: %1$s</string>
+    <string name="reset_mapping">بازنشانی</string>
+    <string name="layout_edit_finished">حالت ویرایش بسته شد</string>
+    <string name="layout_edit_finish">بستن حالت ویرایش</string>
+    <string name="layout_edit_mode">حالت ویرایش چیدمان صفحه کلید</string>
+    <string name="layout_scale_mode">حالت تغییر اندازه صفحه کلید</string>
+    <string name="layout_switch">تغییر حالت صفحه کلید</string>
+    <string name="hide_buttons">مخفی کردن کلید ها</string>
+    <string name="confirmation_required">نیازمند تأییدیه</string>
+    <string name="force_close_confirmation">به اجبار بستن برنامه ممکن است باعث از دست رفتن داده شود یا حتی برنامه را کاملا از کار بیاندازد\nانجام شود؟</string>
     <string name="log_saved">Log has been saved</string>
     <string name="enter_text">Enter the text</string>
     <string name="about_icon_by">&lt;BR&gt;Icon by: </string>
