@@ -120,7 +120,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_launchApp(JNIEnv *env, jclass clazz, jint uid) {
     // Launch the real app...
     if (!state || !state->launcher) {
-        LOG_ERROR(FRONTEND_CMDLINE, "Attempted to launch app but emulator state is not initialized!");
+        LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Attempted to launch app but emulator state is not initialized!");
         return;
     }
     
