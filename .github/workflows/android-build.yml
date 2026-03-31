@@ -1,0 +1,160 @@
+# EKA2L1 Android Build GitHub Actions Workflow
+# Manual trigger only - builds Android APK with layout feature
+
+name: Android Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: 'master'
+        type: string
+
+env:
+  JAVA_VERSION: '17'
+
+jobs:
+  # ============================================
+  # Android Debug Build
+  # ============================================
+  build-android-debug:
+    name: Build Android Debug APK
+    runs-on: ubuntu-latest
+    if: github.event.inputs.build_type == 'debug'
+    
+    steps:
+      # Checkout selected branch
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 1
+          submodules: recursive
+          
+      # Set up JDK
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          
+      # Build debug APK
+      - name: Build debug APK
+        run: |
+          cd src/emu/android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          CI: true
+          
+      # Upload debug APK artifact
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: eka2l1-debug-apk
+          path: src/emu/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+  # ============================================
+  # Android Release Build
+  # ============================================
+  build-android-release:
+    name: Build Android Release APK
+    runs-on: ubuntu-latest
+    if: github.event.inputs.build_type == 'release'
+    
+    steps:
+      # Checkout selected branch
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 1
+          submodules: recursive
+          
+      # Set up JDK
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          
+      # Build release APK
+      - name: Build release APK
+        run: |
+          cd src/emu/android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          CI: true
+          
+      # Upload release APK artifact
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: eka2l1-release-apk
+          path: src/emu/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
+
+  # ============================================
+  # Android Build with Signing (Production)
+  # ============================================
+  build-android-signed:
+    name: Build & Sign Android Release APK
+    runs-on: ubuntu-latest
+    if: github.event.inputs.build_type == 'release'
+    
+    steps:
+      # Checkout selected branch
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 1
+          submodules: recursive
+          
+      # Set up JDK
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          
+      # Build release APK
+      - name: Build release APK
+        run: |
+          cd src/emu/android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+        env:
+          CI: true
+          
+      # Sign APK
+      - name: Sign APK
+        id: sign_apk
+        uses: r0adkll/sign-android-release@v1
+        with:
+          releaseDirectory: src/emu/android/app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+          
+      # Upload signed APK
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: eka2l1-signed-apk
+          path: src/emu/android/app/build/outputs/apk/release/*.apk
+          retention-days: 90
+
