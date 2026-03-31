@@ -251,6 +251,9 @@ namespace eka2l1::android {
             pkgmngr->load_registries();
             pkgmngr->migrate_legacy_registries();
 
+            // Re-register draw callback now that all necessary components are initialized
+            on_system_reset(symsys.get());
+
             register_draw_callback();
 
             stage_two_inited = true;

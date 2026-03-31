@@ -27,7 +27,7 @@ std::unique_ptr<std::thread> os_thread_obj;
 std::unique_ptr<std::thread> ui_thread_obj;
 std::unique_ptr<std::thread> gr_thread_obj;
 
-namespace eka2l1::android {
+namespace eKA2L1::android {
     static constexpr const char *os_thread_name = "Symbian OS thread";
     static constexpr const char *graphics_driver_thread_name = "Graphics thread";
 
@@ -45,6 +45,12 @@ namespace eka2l1::android {
         // TODO: Configurable
         state.graphics_driver = drivers::create_graphics_driver(drivers::graphic_api::opengl,
                 state.window->get_window_system_info());
+        
+        if (!state.graphics_driver) {
+            LOG_ERROR(FRONTEND_CMDLINE, "Failed to create graphics driver!");
+            return -1;
+        }
+        
         state.symsys->set_graphics_driver(state.graphics_driver.get());
 
         drivers::emu_window_android *window = state.window.get();
@@ -174,6 +180,11 @@ namespace eka2l1::android {
     }
 
     void press_key(emulator &state, int key, int key_state) {
+        if (!state.winserv) {
+            LOG_WARN(FRONTEND_CMDLINE, "Attempted to press key but winserv is not initialized!");
+            return;
+        }
+        
         eka2l1::drivers::input_event evt;
         evt.type_ = eka2l1::drivers::input_event_type::key_raw;
         evt.key_.state_ = static_cast<eka2l1::drivers::key_state>(key_state);
@@ -182,6 +193,11 @@ namespace eka2l1::android {
     }
 
     void touch_screen(emulator &state, int x, int y, int z, int action, int pointer_id) {
+        if (!state.winserv) {
+            LOG_WARN(FRONTEND_CMDLINE, "Attempted to touch screen but winserv is not initialized!");
+            return;
+        }
+        
         eka2l1::drivers::input_event evt;
         evt.type_ = eka2l1::drivers::input_event_type::touch;
         evt.mouse_.pos_x_ = static_cast<int>(x);

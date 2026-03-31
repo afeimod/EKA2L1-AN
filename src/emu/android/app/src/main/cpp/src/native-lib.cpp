@@ -85,6 +85,9 @@ extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getApps(
     JNIEnv *env,
     jclass clazz) {
+    if (!state || !state->launcher) {
+        return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+    }
     std::vector<std::string> info = state->launcher->get_apps();
     jobjectArray japps = env->NewObjectArray(static_cast<jsize>(info.size()),
         env->FindClass("java/lang/String"),
@@ -95,6 +98,10 @@ Java_com_github_eka2l1_emu_Emulator_getApps(
 }
 
 static void redraw_screens_immediately() {
+    if (!state || !state->graphics_driver) {
+        return;
+    }
+    
     state->graphics_driver->wait_for(&state->present_status);
 
     eka2l1::drivers::graphics_command_builder builder;
@@ -112,12 +119,21 @@ static void redraw_screens_immediately() {
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_launchApp(JNIEnv *env, jclass clazz, jint uid) {
     // Launch the real app...
+    if (!state || !state->launcher) {
+        LOG_ERROR(FRONTEND_CMDLINE, "Attempted to launch app but emulator state is not initialized!");
+        return;
+    }
+    
     state->launcher->launch_app(uid);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_surfaceChanged(JNIEnv *env, jclass clazz, jobject surface,
     jint width, jint height) {
+    if (!state || !state->window) {
+        return;
+    }
+    
     s_surf = ANativeWindow_fromSurface(env, surface);
     state->window->surface_changed(s_surf, width, height);
     if (!inited) {
@@ -136,6 +152,10 @@ Java_com_github_eka2l1_emu_Emulator_surfaceRedrawNeeded(JNIEnv *env, jclass claz
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_surfaceDestroyed(JNIEnv *env, jclass clazz) {
+    if (!state) {
+        return;
+    }
+    
     pause_threads(*state);
     ANativeWindow_release(s_surf);
     s_surf = nullptr;
@@ -145,17 +165,26 @@ Java_com_github_eka2l1_emu_Emulator_surfaceDestroyed(JNIEnv *env, jclass clazz) 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_pressKey(JNIEnv *env, jclass clazz, jint key,
     jint keyState) {
+    if (!state) {
+        return;
+    }
     press_key(*state, key, keyState);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_touchScreen(JNIEnv *env, jclass clazz, jint x, jint y,
     jint z, jint action, jint pointer_id) {
+    if (!state) {
+        return;
+    }
     touch_screen(*state, x, y, z, action, pointer_id);
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_github_eka2l1_emu_Emulator_installApp(JNIEnv *env, jclass clazz, jstring path) {
+    if (!state || !state->launcher) {
+        return -1;
+    }
     const char *cstr = env->GetStringUTFChars(path, nullptr);
     std::string cpath = std::string(cstr);
     env->ReleaseStringUTFChars(path, cstr);
@@ -176,22 +205,34 @@ extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getDevices(
     JNIEnv *env,
     jclass clazz) {
+    if (!state || !state->launcher) {
+        return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+    }
     return retrieve_jni_string_array_from_vector(env, state->launcher->get_devices());
 }
 
 extern "C"
 JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getDeviceFirmwareCodes(JNIEnv *env, jclass clazz) {
+    if (!state || !state->launcher) {
+        return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+    }
     return retrieve_jni_string_array_from_vector(env, state->launcher->get_device_firwmare_codes());
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_setCurrentDevice(JNIEnv *env, jclass clazz, jint id, jboolean is_temp) {
+    if (!state || !state->launcher) {
+        return;
+    }
     state->launcher->set_current_device(id, is_temp);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_setDeviceName(JNIEnv *env, jclass clazz, jint id, jstring new_name) {
+    if (!state || !state->launcher) {
+        return;
+    }
     const char *cstr = env->GetStringUTFChars(new_name, nullptr);
     state->launcher->set_device_name(id, cstr);
     env->ReleaseStringUTFChars(new_name, cstr);
@@ -199,17 +240,26 @@ Java_com_github_eka2l1_emu_Emulator_setDeviceName(JNIEnv *env, jclass clazz, jin
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_rescanDevices(JNIEnv *env, jclass clazz) {
+    if (!state || !state->launcher) {
+        return;
+    }
     state->launcher->rescan_devices();
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_github_eka2l1_emu_Emulator_getCurrentDevice(JNIEnv *env, jclass clazz) {
+    if (!state || !state->launcher) {
+        return -1;
+    }
     return state->launcher->get_current_device();
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_github_eka2l1_emu_Emulator_installDevice(JNIEnv *env, jclass clazz, jstring rpkg_path,
     jstring rom_path, jboolean install_rpkg) {
+    if (!state || !state->launcher) {
+        return -1;
+    }
     const char *cstr = env->GetStringUTFChars(rpkg_path, nullptr);
     std::string crpkg_path = std::string(cstr);
     env->ReleaseStringUTFChars(rpkg_path, cstr);
@@ -222,6 +272,9 @@ Java_com_github_eka2l1_emu_Emulator_installDevice(JNIEnv *env, jclass clazz, jst
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_github_eka2l1_emu_Emulator_doesRomNeedRPKG(JNIEnv *env, jclass clazz, jstring rom_path) {
+    if (!state || !state->launcher) {
+        return false;
+    }
     const char *cstr = env->GetStringUTFChars(rom_path, nullptr);
     const bool result = state->launcher->does_rom_need_rpkg(cstr);
 
@@ -233,6 +286,9 @@ extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getPackages(
     JNIEnv *env,
     jclass clazz) {
+    if (!state || !state->launcher) {
+        return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+    }
     std::vector<std::string> info = state->launcher->get_packages();
     jobjectArray jpackages = env->NewObjectArray(static_cast<jsize>(info.size()),
         env->FindClass("java/lang/String"),
@@ -244,11 +300,17 @@ Java_com_github_eka2l1_emu_Emulator_getPackages(
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_uninstallPackage(JNIEnv *env, jclass clazz, jint uid, jint ext_index) {
+    if (!state || !state->launcher) {
+        return;
+    }
     state->launcher->uninstall_package(uid, ext_index);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_mountSdCard(JNIEnv *env, jclass clazz, jstring path) {
+    if (!state || !state->launcher) {
+        return;
+    }
     const char *cstr = env->GetStringUTFChars(path, nullptr);
     std::string cpath = std::string(cstr);
     env->ReleaseStringUTFChars(path, cstr);
@@ -258,26 +320,41 @@ Java_com_github_eka2l1_emu_Emulator_mountSdCard(JNIEnv *env, jclass clazz, jstri
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_loadConfig(JNIEnv *env, jclass clazz) {
+    if (!state || !state->launcher) {
+        return;
+    }
     state->launcher->load_config();
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_setLanguage(JNIEnv *env, jclass clazz, jint language_id) {
+    if (!state || !state->launcher) {
+        return;
+    }
     state->launcher->set_language(language_id);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_setRtosLevel(JNIEnv *env, jclass clazz, jint level) {
+    if (!state || !state->launcher) {
+        return;
+    }
     state->launcher->set_rtos_level(level);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_updateAppSetting(JNIEnv *env, jclass clazz, jint uid) {
+    if (!state || !state->launcher) {
+        return;
+    }
     state->launcher->update_app_setting(uid);
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getAppIcon(JNIEnv *env, jclass clazz, jlong uid) {
+    if (!state || !state->launcher) {
+        return nullptr;
+    }
     jobjectArray jicons = state->launcher->get_app_icon(env, uid);
     return jicons;
 }
@@ -286,6 +363,9 @@ extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getLanguageIds(
     JNIEnv *env,
     jclass clazz) {
+    if (!state || !state->launcher) {
+        return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+    }
     std::vector<std::string> language_ids = state->launcher->get_language_ids();
     jobjectArray jlanguage_ids = env->NewObjectArray(static_cast<jsize>(language_ids.size()),
         env->FindClass("java/lang/String"),
@@ -299,6 +379,9 @@ extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getLanguageNames(
     JNIEnv *env,
     jclass clazz) {
+    if (!state || !state->launcher) {
+        return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+    }
     std::vector<std::string> language_names = state->launcher->get_language_names();
     jobjectArray jlanguage_names = env->NewObjectArray(static_cast<jsize>(language_names.size()),
         env->FindClass("java/lang/String"),
@@ -315,6 +398,9 @@ Java_com_github_eka2l1_emu_Emulator_setScreenParams(JNIEnv *env, jclass clazz,
                                                     jint scale_type, jint gravity,
                                                     jstring bg_img_path, jfloat bg_img_opacity,
                                                     jboolean bg_img_keep_aspect) {
+    if (!state || !state->launcher) {
+        return;
+    }
     const char *cstr = env->GetStringUTFChars(bg_img_path, nullptr);
     std::string cpath = std::string(cstr);
     env->ReleaseStringUTFChars(bg_img_path, cstr);
@@ -343,6 +429,9 @@ Java_com_github_eka2l1_emu_Emulator_runTest(JNIEnv *env, jclass clazz, jstring t
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_submitInput(JNIEnv *env, jclass clazz, jstring text) {
+    if (!state || !state->launcher) {
+        return;
+    }
     const char *cstr = env->GetStringUTFChars(text, nullptr);
     std::string ctext = std::string(cstr);
     state->launcher->on_finished_text_input(ctext, false);
@@ -388,12 +477,15 @@ Java_com_github_eka2l1_emu_EmulatorCamera_doesCameraAllowNewFrame(JNIEnv *env, j
     eka2l1::drivers::camera::collection_android *collection = reinterpret_cast
             <eka2l1::drivers::camera::collection_android *>(eka2l1::drivers::camera::get_collection());
 
-    return collection->reserved_wants_new_frame(index);
+    return collection ? collection->reserved_wants_new_frame(index) : false;
 }
 
 extern "C"
 JNIEXPORT jint JNICALL
 Java_com_github_eka2l1_emu_Emulator_installNGageGame(JNIEnv *env, jclass clazz, jstring path) {
+    if (!state || !state->launcher) {
+        return -1;
+    }
     const char *cstr = env->GetStringUTFChars(path, nullptr);
     std::string cpath = std::string(cstr);
     env->ReleaseStringUTFChars(path, cstr);
@@ -404,24 +496,36 @@ extern "C"
 JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_submitQuestionDialogResponse(JNIEnv *env, jclass clazz,
                                                                  jint value) {
+    if (!state || !state->launcher) {
+        return;
+    }
     state->launcher->on_question_dialog_finished(value);
 }
 
 extern "C"
 JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getSuccessInstalledLicenseGames(JNIEnv *env, jclass clazz) {
+    if (!state || !state->launcher) {
+        return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+    }
     return retrieve_jni_string_array_from_vector(env, state->launcher->get_success_installed_license_games());
 }
 
 extern "C"
 JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getFailedInstalledLicenseGames(JNIEnv *env, jclass clazz) {
+    if (!state || !state->launcher) {
+        return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+    }
     return retrieve_jni_string_array_from_vector(env, state->launcher->get_failed_installed_license_games());
 }
 
 extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_github_eka2l1_emu_Emulator_installNG2Licenses(JNIEnv *env, jclass clazz, jstring content) {
+    if (!state || !state->launcher) {
+        return false;
+    }
     const char *cstr = env->GetStringUTFChars(content, nullptr);
     std::string content_cpp = std::string(cstr);
     env->ReleaseStringUTFChars(content, cstr);
@@ -432,6 +536,9 @@ Java_com_github_eka2l1_emu_Emulator_installNG2Licenses(JNIEnv *env, jclass clazz
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_setCurrentMMCID(JNIEnv *env, jclass clazz, jstring new_mmcid) {
+    if (!state || !state->launcher) {
+        return;
+    }
     const char *cstr = env->GetStringUTFChars(new_mmcid, nullptr);
     std::string mmc_id_str = std::string(cstr);
     env->ReleaseStringUTFChars(new_mmcid, cstr);
@@ -441,6 +548,9 @@ Java_com_github_eka2l1_emu_Emulator_setCurrentMMCID(JNIEnv *env, jclass clazz, j
 extern "C"
 JNIEXPORT jboolean JNICALL
 Java_com_github_eka2l1_emu_Emulator_saveScreenshotTo(JNIEnv *env, jclass clazz, jstring file_path) {
+    if (!state || !state->launcher) {
+        return false;
+    }
     const char *cstr = env->GetStringUTFChars(file_path, nullptr);
     std::string file_path_std = std::string(cstr);
     env->ReleaseStringUTFChars(file_path, cstr);
