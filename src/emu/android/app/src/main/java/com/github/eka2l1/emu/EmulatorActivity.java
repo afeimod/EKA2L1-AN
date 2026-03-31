@@ -225,31 +225,34 @@ public class EmulatorActivity extends AppCompatActivity {
         displayWidth = display.getWidth();
         displayHeight = display.getHeight();
 
-        androidToSymbian = (params.keyMappings != null) ? params.keyMappings : KeyMapper.getDefaultKeyMap();
+        androidToSymbian = (params != null && params.keyMappings != null) ? params.keyMappings : KeyMapper.getDefaultKeyMap();
 
-        if (params.showKeyboard) {
+        if (params != null && params.showKeyboard) {
             setVirtualKeyboard(uidStr);
         }
-        if (params.showKeyboard && keyboard instanceof FixedKeyboard) {
+        if (params != null && params.showKeyboard && keyboard instanceof FixedKeyboard) {
             setOrientation(ORIENTATION_PORTRAIT);
-        } else {
+        } else if (params != null) {
             setOrientation(params.orientation);
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             getWindow().getAttributes().layoutInDisplayCutoutMode =
-                    params.screenShowNotch ?
+                    (params != null && params.screenShowNotch) ?
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES :
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER;
         }
 
-        final boolean hasBackground = ProfilesManager.getBackgroundFile(configDir).exists();
+        final boolean hasBackground = params != null && ProfilesManager.getBackgroundFile(configDir).exists();
 
-        Emulator.setScreenParams(params.screenBackgroundColor, params.screenScaleRatio,
-                params.screenScaleType, params.screenGravity,
+        Emulator.setScreenParams(
+                params != null ? params.screenBackgroundColor : 0,
+                params != null ? params.screenScaleRatio : 100,
+                params != null ? params.screenScaleType : 0,
+                params != null ? params.screenGravity : 2,
                 hasBackground ? ProfilesManager.getBackgroundPath(configDir.getAbsolutePath()) : "",
-                Math.max(0.0f, Math.min(params.screenBackgroundImageOpacity / 100.0f, 1.0f)),
-                params.screenBackgroundImageKeepAspectRatio);
+                params != null ? Math.max(0.0f, Math.min(params.screenBackgroundImageOpacity / 100.0f, 1.0f)) : 1.0f,
+                params != null && hasBackground ? params.screenBackgroundImageKeepAspectRatio : false);
     }
 
     @Override
@@ -325,7 +328,7 @@ public class EmulatorActivity extends AppCompatActivity {
             inflater.inflate(R.menu.emulator_keys, menu);
         }
         actionScreenshot = menu.findItem(R.id.action_screenshot);
-        if (!getSupportActionBar().isShowing()) {
+        if (getSupportActionBar() != null && !getSupportActionBar().isShowing()) {
             actionScreenshot.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         }
         return super.onCreateOptionsMenu(menu);
@@ -371,7 +374,8 @@ public class EmulatorActivity extends AppCompatActivity {
         }
 
         SimpleDateFormat fileNameDateFormat = new SimpleDateFormat("yyyyMMdd-hhmmss");
-        String fileName = destDir + getString(R.string.screenshot) + "_" +  getSupportActionBar().getTitle() + "_" + fileNameDateFormat.format(new Date()) + ".png";
+        String title = getSupportActionBar() != null ? getSupportActionBar().getTitle().toString() : "";
+        String fileName = destDir + getString(R.string.screenshot) + "_" + title + "_" + fileNameDateFormat.format(new Date()) + ".png";
 
         if (Emulator.saveScreenshotTo(fileName)) {
             Toast.makeText(this, getString(R.string.take_screenshot_success, fileName), Toast.LENGTH_LONG).show();
@@ -434,6 +438,10 @@ public class EmulatorActivity extends AppCompatActivity {
     }
 
     private void setVirtualKeyboard(String appDirName) {
+        if (params == null) {
+            return;
+        }
+        
         int vkType = params.vkType;
         if (vkType == VirtualKeyboard.CUSTOMIZABLE_TYPE) {
             keyboard = new VirtualKeyboard(this);
@@ -505,7 +513,7 @@ public class EmulatorActivity extends AppCompatActivity {
     }
 
     private int convertAndroidKeyCode(int keyCode) {
-        return androidToSymbian.get(keyCode, Integer.MAX_VALUE);
+        return androidToSymbian != null ? androidToSymbian.get(keyCode, Integer.MAX_VALUE) : Integer.MAX_VALUE;
     }
 
     private void onPermissionResult(Map<String, Boolean> status) {
@@ -534,8 +542,12 @@ public class EmulatorActivity extends AppCompatActivity {
         @Override
         public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
             Rect offsetViewBounds = new Rect(0, 0, width, height);
-            rootView.offsetDescendantRectToMyCoords(view, offsetViewBounds);
-            overlayView.setTargetBounds(offsetViewBounds);
+            if (rootView != null) {
+                rootView.offsetDescendantRectToMyCoords(view, offsetViewBounds);
+            }
+            if (overlayView != null) {
+                overlayView.setTargetBounds(offsetViewBounds);
+            }
             displayWidth = width;
             displayHeight = height;
             updateScreenSize();
@@ -590,6 +602,9 @@ public class EmulatorActivity extends AppCompatActivity {
         @Override
         @SuppressLint("ClickableViewAccessibility")
         public boolean onTouch(View v, MotionEvent event) {
+            // Check if params is null or touch input is disabled
+            boolean touchEnabled = (params != null) && params.touchInput;
+            
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     if (keyboard != null) {
@@ -601,7 +616,7 @@ public class EmulatorActivity extends AppCompatActivity {
                     float x = event.getX(index);
                     float y = event.getY(index);
                     float z = event.getPressure(index) * 0x7FFFFFFF;    // Max pressure
-                    if ((keyboard == null || !keyboard.pointerPressed(id, x, y)) && params.touchInput) {
+                    if ((keyboard == null || !keyboard.pointerPressed(id, x, y)) && touchEnabled) {
                         Emulator.touchScreen((int) x, (int) y, (int)z, 0, id);
                     }
                     break;
@@ -614,7 +629,7 @@ public class EmulatorActivity extends AppCompatActivity {
                             x = event.getHistoricalX(p, h);
                             y = event.getHistoricalY(p, h);
                             z = event.getHistoricalPressure(p, h) * 0x7FFFFFFF;    // Max pressure
-                            if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && params.touchInput) {
+                            if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && touchEnabled) {
                                 Emulator.touchScreen((int) x, (int) y, (int)z, 1, id);
                             }
                         }
@@ -624,7 +639,7 @@ public class EmulatorActivity extends AppCompatActivity {
                         x = event.getX(p);
                         y = event.getY(p);
                         z = event.getPressure(p) * 0x7FFFFFFF;    // Max pressure
-                        if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && params.touchInput) {
+                        if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && touchEnabled) {
                             Emulator.touchScreen((int) x, (int) y, (int)z, 1, id);
                         }
                     }
@@ -638,7 +653,7 @@ public class EmulatorActivity extends AppCompatActivity {
                     id = event.getPointerId(index);
                     x = event.getX(index);
                     y = event.getY(index);
-                    if ((keyboard == null || !keyboard.pointerReleased(id, x, y)) && params.touchInput) {
+                    if ((keyboard == null || !keyboard.pointerReleased(id, x, y)) && touchEnabled) {
                         Emulator.touchScreen((int) x, (int) y, (int)0, 2, id);
                     }
                     break;
