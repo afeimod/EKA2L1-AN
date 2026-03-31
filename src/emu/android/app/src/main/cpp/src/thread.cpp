@@ -27,7 +27,7 @@ std::unique_ptr<std::thread> os_thread_obj;
 std::unique_ptr<std::thread> ui_thread_obj;
 std::unique_ptr<std::thread> gr_thread_obj;
 
-namespace eKA2L1::android {
+namespace eka2l1::android {
     static constexpr const char *os_thread_name = "Symbian OS thread";
     static constexpr const char *graphics_driver_thread_name = "Graphics thread";
 
@@ -36,24 +36,24 @@ namespace eKA2L1::android {
         eka2l1::common::set_thread_name(graphics_driver_thread_name);
         eka2l1::common::set_thread_priority(eka2l1::common::thread_priority_high);
 
-        state.window = std::make_unique<drivers::emu_window_android>();
+        state.window = std::make_unique<eka2l1::drivers::emu_window_android>();
         state.window->init("Hello there", eka2l1::vec2(0, 0),
-            drivers::emu_window_flag_maximum_size);
+            eka2l1::drivers::emu_window_flag_maximum_size);
         state.window->set_userdata(&state);
 
         // We got window and context ready (OpenGL, let makes stuff now)
         // TODO: Configurable
-        state.graphics_driver = drivers::create_graphics_driver(drivers::graphic_api::opengl,
+        state.graphics_driver = eka2l1::drivers::create_graphics_driver(eka2l1::drivers::graphic_api::opengl,
                 state.window->get_window_system_info());
         
         if (!state.graphics_driver) {
-            LOG_ERROR(FRONTEND_CMDLINE, "Failed to create graphics driver!");
+            LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Failed to create graphics driver!");
             return -1;
         }
         
         state.symsys->set_graphics_driver(state.graphics_driver.get());
 
-        drivers::emu_window_android *window = state.window.get();
+        eka2l1::drivers::emu_window_android *window = state.window.get();
 
         window->surface_change_hook = [&state](void *new_surface) {
             state.graphics_driver->update_surface(new_surface);
@@ -86,7 +86,7 @@ namespace eKA2L1::android {
         int result = graphics_driver_thread_initialization(state);
 
         if (result != 0) {
-            LOG_ERROR(FRONTEND_CMDLINE, "Graphics driver initialization failed with code {}", result);
+            LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Graphics driver initialization failed with code {}", result);
             return;
         }
 
@@ -96,7 +96,7 @@ namespace eKA2L1::android {
         result = graphics_driver_thread_deinitialization(state);
 
         if (result != 0) {
-            LOG_ERROR(FRONTEND_CMDLINE, "Graphics driver deinitialization failed with code {}", result);
+            LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Graphics driver deinitialization failed with code {}", result);
             return;
         }
     }
@@ -112,7 +112,7 @@ namespace eKA2L1::android {
                 state.symsys->loop();
 #if !defined(NDEBUG)
             } catch (std::exception &exc) {
-                LOG_ERROR(FRONTEND_CMDLINE, "Main loop exited with exception: ", exc.what());
+                LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Main loop exited with exception: ", exc.what());
                 state.should_emu_quit = true;
                 break;
             }
@@ -181,7 +181,7 @@ namespace eKA2L1::android {
 
     void press_key(emulator &state, int key, int key_state) {
         if (!state.winserv) {
-            LOG_WARN(FRONTEND_CMDLINE, "Attempted to press key but winserv is not initialized!");
+            LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Attempted to press key but winserv is not initialized!");
             return;
         }
         
@@ -194,7 +194,7 @@ namespace eKA2L1::android {
 
     void touch_screen(emulator &state, int x, int y, int z, int action, int pointer_id) {
         if (!state.winserv) {
-            LOG_WARN(FRONTEND_CMDLINE, "Attempted to touch screen but winserv is not initialized!");
+            LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Attempted to touch screen but winserv is not initialized!");
             return;
         }
         
