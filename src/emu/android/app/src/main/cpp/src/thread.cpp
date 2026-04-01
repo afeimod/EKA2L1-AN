@@ -70,6 +70,16 @@ namespace eka2l1::android {
         });
 
         state.graphics_init_done.set();
+        
+        // Wait for main thread to finish init_threads call before proceeding
+        // This ensures register_draw_callback is called at the right time
+        state.graphics_sema.wait();
+        
+        // Now register draw callback since window and graphics_driver are ready
+        if (state.stage_two_inited) {
+            state.register_draw_callback();
+        }
+        
         return 0;
     }
 
@@ -147,7 +157,7 @@ namespace eka2l1::android {
     }
 
     void init_threads(emulator &state) {
-        // Continue graphics initialization
+        // Continue graphics initialization - signal graphics thread to proceed
         state.graphics_sema.notify();
     }
 

@@ -98,7 +98,7 @@ Java_com_github_eka2l1_emu_Emulator_getApps(
 }
 
 static void redraw_screens_immediately() {
-    if (!state || !state->graphics_driver) {
+    if (!state || !state->window || !state->graphics_driver || !state->launcher) {
         return;
     }
     
@@ -119,8 +119,18 @@ static void redraw_screens_immediately() {
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_launchApp(JNIEnv *env, jclass clazz, jint uid) {
     // Launch the real app...
-    if (!state || !state->launcher) {
-        LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Attempted to launch app but emulator state is not initialized!");
+    // Wait for graphics initialization to complete before launching app
+    if (state) {
+        state->graphics_init_done.wait();
+    }
+    
+    if (!state || !state->launcher || !state->window || !state->graphics_driver) {
+        LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Attempted to launch app but emulator state is not fully initialized!");
+        LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "state={}, launcher={}, window={}, graphics_driver={}", 
+            (void*)state.get(), 
+            (void*)(state ? state->launcher.get() : nullptr),
+            (void*)(state ? state->window.get() : nullptr),
+            (void*)(state ? state->graphics_driver.get() : nullptr));
         return;
     }
     
@@ -130,12 +140,21 @@ Java_com_github_eka2l1_emu_Emulator_launchApp(JNIEnv *env, jclass clazz, jint ui
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_surfaceChanged(JNIEnv *env, jclass clazz, jobject surface,
     jint width, jint height) {
-    if (!state || !state->window) {
+    if (!state) {
+        return;
+    }
+    
+    // Wait for graphics thread to initialize window and graphics_driver
+    state->graphics_init_done.wait();
+    
+    if (!state->window) {
+        LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Window not initialized yet when surfaceChanged is called!");
         return;
     }
     
     s_surf = ANativeWindow_fromSurface(env, surface);
     state->window->surface_changed(s_surf, width, height);
+    
     if (!inited) {
         init_threads(*state);
         inited = true;

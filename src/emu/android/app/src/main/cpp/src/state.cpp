@@ -60,38 +60,47 @@ namespace eka2l1::android {
     }
 
     void emulator::register_draw_callback() {
-        if (winserv) {
-            // TODO: Clean these handles up somewhere (+ threads too!)
-            eka2l1::epoc::screen *screens = winserv->get_screens();
-            while (screens) {
-                std::size_t change_handle = screens->add_screen_redraw_callback(this, [](void *userdata,
+        if (!winserv) {
+            LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Cannot register draw callback: winserv is null!");
+            return;
+        }
+        
+        if (!window || !graphics_driver || !launcher) {
+            LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Cannot register draw callback: window={}, graphics_driver={}, launcher={}",
+                (void*)window.get(), (void*)graphics_driver.get(), (void*)launcher.get());
+            return;
+        }
+        
+        // TODO: Clean these handles up somewhere (+ threads too!)
+        eka2l1::epoc::screen *screens = winserv->get_screens();
+        while (screens) {
+            std::size_t change_handle = screens->add_screen_redraw_callback(this, [](void *userdata,
                                                                                            eka2l1::epoc::screen *scr, const bool is_dsa) {
-                    emulator *state_ptr = reinterpret_cast<emulator*>(userdata);
-                    if (!state_ptr->graphics_driver) {
-                        return;
-                    }
+                emulator *state_ptr = reinterpret_cast<emulator*>(userdata);
+                if (!state_ptr->graphics_driver || !state_ptr->launcher || !state_ptr->window) {
+                    return;
+                }
 
-                    // Check if previous presenting is done yet (to prevent input delay because frame
-                    // submit request is too fast)
-                    state_ptr->graphics_driver->wait_for(&state_ptr->present_status);
+                // Check if previous presenting is done yet (to prevent input delay because frame
+                // submit request is too fast)
+                state_ptr->graphics_driver->wait_for(&state_ptr->present_status);
 
-                    drivers::graphics_command_builder builder;
-                    state_ptr->launcher->draw(builder, scr, state_ptr->window->window_fb_size().x,
+                drivers::graphics_command_builder builder;
+                state_ptr->launcher->draw(builder, scr, state_ptr->window->window_fb_size().x,
                                               state_ptr->window->window_fb_size().y);
 
-                    // Submit, present, and wait for the presenting
-                    // Don't wait for present to be done, let the game during this time to do
-                    // something meaningful. (Callback tied to draw thread)
-                    state_ptr->present_status = -100;
-                    builder.present(&state_ptr->present_status);
+                // Submit, present, and wait for the presenting
+                // Don't wait for present to be done, let the game during this time to do
+                // something meaningful. (Callback tied to draw thread)
+                state_ptr->present_status = -100;
+                builder.present(&state_ptr->present_status);
 
-                    drivers::command_list retrieved = builder.retrieve_command_list();
-                    state_ptr->graphics_driver->submit_command_list(retrieved);
-                });
+                drivers::command_list retrieved = builder.retrieve_command_list();
+                state_ptr->graphics_driver->submit_command_list(retrieved);
+            });
 
-                screen_change_handles.push_back(change_handle);
-                screens = screens->next;
-            }
+            screen_change_handles.push_back(change_handle);
+            screens = screens->next;
         }
     }
 
@@ -115,7 +124,7 @@ namespace eka2l1::android {
             log::filterings->parse_filter_string(conf.log_filter);
         }
 
-        LOG_INFO(FRONTEND_CMDLINE, "EKA2L1 v0.0.1 ({}-{})", GIT_BRANCH, GIT_COMMIT_HASH);
+        LOG_INFO(eka2l1::FRONTEND_CMDLINE, "EKA2L1 v0.0.1 ({}-{})", GIT_BRANCH, GIT_COMMIT_HASH);
 
         app_settings = std::make_unique<config::app_settings>(&conf);
         system_create_components comp;
@@ -132,8 +141,8 @@ namespace eka2l1::android {
             symsys->startup();
 
             if (!symsys->set_device(conf.device)) {
-                LOG_ERROR(FRONTEND_CMDLINE, "Failed to set a device, device index is out of range (device index in config file is: {})", conf.device);
-                LOG_INFO(FRONTEND_CMDLINE, "We are setting the default device back to the first device on the installed list for you");
+                LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Failed to set a device, device index is out of range (device index in config file is: {})", conf.device);
+                LOG_INFO(eka2l1::FRONTEND_CMDLINE, "We are setting the default device back to the first device on the installed list for you");
 
                 conf.device = 0;
                 symsys->rescan_devices(drive_z);
@@ -165,11 +174,11 @@ namespace eka2l1::android {
             device *dvc = dvcmngr->get_current();
 
             if (!dvc) {
-                LOG_ERROR(FRONTEND_CMDLINE, "No current device is available. Stage two initialisation abort");
+                LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "No current device is available. Stage two initialisation abort");
                 return false;
             }
 
-            LOG_INFO(FRONTEND_CMDLINE, "Device being used: {} ({})", dvc->model, dvc->firmware_code);
+            LOG_INFO(eka2l1::FRONTEND_CMDLINE, "Device being used: {} ({})", dvc->model, dvc->firmware_code);
 
             // Mount the drive Z after the ROM was loaded. The ROM load than a new FS will be
             // created for ROM purpose.
@@ -201,7 +210,7 @@ namespace eka2l1::android {
             // Create sensor driver
             sensor_driver = drivers::sensor_driver::instantiate();
             if (!sensor_driver) {
-                LOG_WARN(FRONTEND_CMDLINE, "Failed to create sensor driver");
+                LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Failed to create sensor driver");
             }
 
             symsys->set_sensor_driver(sensor_driver.get());
@@ -251,10 +260,10 @@ namespace eka2l1::android {
             pkgmngr->load_registries();
             pkgmngr->migrate_legacy_registries();
 
-            // Re-register draw callback now that all necessary components are initialized
+            // Re-register draw callback after all necessary components are initialized
+            // Note: register_draw_callback is now called after window and graphics_driver are ready
+            // (in emulator_entry after graphics thread signals graphics_init_done)
             on_system_reset(symsys.get());
-
-            register_draw_callback();
 
             stage_two_inited = true;
         }
