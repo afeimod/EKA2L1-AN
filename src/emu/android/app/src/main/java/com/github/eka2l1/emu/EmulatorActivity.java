@@ -557,7 +557,7 @@ public class EmulatorActivity extends AppCompatActivity {
             // Delay game launch to ensure graphics are fully initialized
             // This prevents black screen issues caused by race conditions
             if (!launched) {
-                surfaceView.post(() -> {
+                view.post(() -> {
                     if (!launched) {
                         // First ensure keyboard is visible before launching game
                         if (keyboard != null) {
