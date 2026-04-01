@@ -70,12 +70,6 @@ namespace eka2l1::android {
         });
 
         state.graphics_init_done.set();
-        
-        // Now register draw callback since window and graphics_driver are ready
-        if (state.stage_two_inited) {
-            state.register_draw_callback();
-        }
-        
         return 0;
     }
 

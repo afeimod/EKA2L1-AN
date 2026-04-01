@@ -260,12 +260,11 @@ namespace eka2l1::android {
             pkgmngr->load_registries();
             pkgmngr->migrate_legacy_registries();
 
-            // Re-register draw callback after all necessary components are initialized
-            // Note: register_draw_callback is now called after window and graphics_driver are ready
-            // (in emulator_entry after graphics thread signals graphics_init_done)
-            on_system_reset(symsys.get());
-
+            // Mark stage_two_inited BEFORE calling on_system_reset
+            // so that register_draw_callback() will be called inside on_system_reset
             stage_two_inited = true;
+
+            on_system_reset(symsys.get());
         }
 
         return true;

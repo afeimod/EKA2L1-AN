@@ -178,7 +178,9 @@ Java_com_github_eka2l1_emu_Emulator_surfaceDestroyed(JNIEnv *env, jclass clazz) 
     pause_threads(*state);
     ANativeWindow_release(s_surf);
     s_surf = nullptr;
-    state->window->surface_changed(s_surf, 0, 0);
+    if (state->window) {
+        state->window->surface_changed(s_surf, 0, 0);
+    }
 }
 
 extern "C" JNIEXPORT void JNICALL
