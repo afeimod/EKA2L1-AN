@@ -553,9 +553,26 @@ public class EmulatorActivity extends AppCompatActivity {
             updateScreenSize();
 
             Emulator.surfaceChanged(holder.getSurface(), width, height);
+            
+            // Delay game launch to ensure graphics are fully initialized
+            // This prevents black screen issues caused by race conditions
             if (!launched) {
-                Emulator.launchApp((int) uid);
-                launched = true;
+                surfaceView.post(() -> {
+                    if (!launched) {
+                        // First ensure keyboard is visible before launching game
+                        if (keyboard != null) {
+                            keyboard.show();
+                        }
+                        // Small delay to let surface stabilize
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        Emulator.launchApp((int) uid);
+                        launched = true;
+                    }
+                });
             }
         }
 
@@ -607,7 +624,8 @@ public class EmulatorActivity extends AppCompatActivity {
             
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    if (keyboard != null) {
+                    // Only show keyboard if it's not already visible and game is launched
+                    if (keyboard != null && launched) {
                         keyboard.show();
                     }
                 case MotionEvent.ACTION_POINTER_DOWN:
