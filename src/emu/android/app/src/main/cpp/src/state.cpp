@@ -109,8 +109,9 @@ namespace eka2l1::android {
                 eka2l1::get_winserv_name_by_epocver(symsys->get_symbian_version_use())));
 
         if (stage_two_inited) {
-            register_draw_callback();
             the_sys->initialize_user_parties();
+            // Note: register_draw_callback() is now called from graphics_driver_thread_initialization()
+            // after window and graphics_driver are created, to ensure proper initialization order
         }
     }
 
@@ -260,11 +261,14 @@ namespace eka2l1::android {
             pkgmngr->load_registries();
             pkgmngr->migrate_legacy_registries();
 
-            // Mark stage_two_inited BEFORE calling on_system_reset
-            // so that register_draw_callback() will be called inside on_system_reset
+            // Mark stage_two_inited first
             stage_two_inited = true;
 
+            // Initialize user parties and set winserv
             on_system_reset(symsys.get());
+            
+            // Note: register_draw_callback() will be called from graphics thread
+            // after window and graphics_driver are created
         }
 
         return true;

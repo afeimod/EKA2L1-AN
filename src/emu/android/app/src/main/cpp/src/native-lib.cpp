@@ -19,6 +19,8 @@
 
 #include <jni.h>
 #include <string>
+#include <thread>
+#include <chrono>
 
 #include <android/state.h>
 #include <android/thread.h>
@@ -144,15 +146,33 @@ Java_com_github_eka2l1_emu_Emulator_surfaceChanged(JNIEnv *env, jclass clazz, jo
         return;
     }
     
-    // Wait for graphics thread to initialize window and graphics_driver
-    state->graphics_init_done.wait();
+    // Apply surface and initialize graphics if not already done
+    ANativeWindow *new_surf = ANativeWindow_fromSurface(env, surface);
+    s_surf = new_surf;
     
     if (!state->window) {
-        LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Window not initialized yet when surfaceChanged is called!");
-        return;
+        // Window not ready yet, wait for graphics thread to initialize
+        LOG_INFO(eka2l1::FRONTEND_CMDLINE, "Waiting for graphics initialization...");
+        
+        // Wait with polling to avoid deadlock
+        int wait_count = 0;
+        while (!state->window && wait_count < 100) {
+            // Small delay to avoid busy waiting
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            wait_count++;
+        }
+        
+        if (!state->window) {
+            LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Graphics initialization timed out!");
+            if (new_surf) {
+                ANativeWindow_release(new_surf);
+            }
+            s_surf = nullptr;
+            return;
+        }
+        LOG_INFO(eka2l1::FRONTEND_CMDLINE, "Graphics initialized, continuing...");
     }
     
-    s_surf = ANativeWindow_fromSurface(env, surface);
     state->window->surface_changed(s_surf, width, height);
     
     if (!inited) {

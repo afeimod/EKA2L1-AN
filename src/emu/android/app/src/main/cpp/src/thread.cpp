@@ -70,6 +70,14 @@ namespace eka2l1::android {
         });
 
         state.graphics_init_done.set();
+        
+        // Register draw callback after window and graphics_driver are created
+        // This ensures all necessary components are initialized before registering callbacks
+        if (state.stage_two_inited) {
+            LOG_INFO(eka2l1::FRONTEND_CMDLINE, "Registering draw callbacks from graphics thread...");
+            state.register_draw_callback();
+        }
+        
         return 0;
     }
 
