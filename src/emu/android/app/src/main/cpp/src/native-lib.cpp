@@ -126,6 +126,13 @@ Java_com_github_eka2l1_emu_Emulator_launchApp(JNIEnv *env, jclass clazz, jint ui
         state->graphics_init_done.wait();
     }
     
+    // Additional safety check with retry mechanism
+    int retry_count = 0;
+    while ((!state || !state->launcher || !state->window || !state->graphics_driver) && retry_count < 50) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        retry_count++;
+    }
+    
     if (!state || !state->launcher || !state->window || !state->graphics_driver) {
         LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Attempted to launch app but emulator state is not fully initialized!");
         LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "state={}, launcher={}, window={}, graphics_driver={}", 
