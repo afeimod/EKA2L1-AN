@@ -71,10 +71,6 @@ namespace eka2l1::android {
 
         state.graphics_init_done.set();
         
-        // Wait for main thread to finish init_threads call before proceeding
-        // This ensures register_draw_callback is called at the right time
-        state.graphics_sema.wait();
-        
         // Now register draw callback since window and graphics_driver are ready
         if (state.stage_two_inited) {
             state.register_draw_callback();
@@ -84,11 +80,8 @@ namespace eka2l1::android {
     }
 
     static int graphics_driver_thread_deinitialization(emulator &state) {
-        if (state.stage_two_inited)
-            state.graphics_sema.wait();
-
+        // graphics_sema was already notified by init_threads(), no need to wait again
         state.graphics_driver.reset();
-
         return 0;
     }
 
