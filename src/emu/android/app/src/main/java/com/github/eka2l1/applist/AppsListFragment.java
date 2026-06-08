@@ -373,12 +373,12 @@ public class AppsListFragment extends Fragment {
                 } else {
                     Toast.makeText(getContext(), R.string.completed, Toast.LENGTH_SHORT).show();
                 }
+                // Refresh the installed-app list now that the SD card
+                // (which often carries the games) is mounted.
+                prepareApps();
                 ex.shutdown();
             });
         });
-    }
-
-        prepareApps();
     }
 
     private void installNGageGame(String path) {

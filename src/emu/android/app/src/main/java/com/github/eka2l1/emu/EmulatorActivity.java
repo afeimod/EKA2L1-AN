@@ -112,8 +112,6 @@ public class EmulatorActivity extends AppCompatActivity {
     private ProfileModel params;
     private MenuItem actionScreenshot;
 
-    @SuppressLint("ClickableViewAccessibility")
-    @Override
     // Single-thread executor for native bridge calls. Anything that talks
     // to the emulator core (launch_app, install, getApps) goes through here
     // so the Android UI thread never blocks on a long native operation,
