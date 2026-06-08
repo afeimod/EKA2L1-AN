@@ -214,6 +214,46 @@ public class Emulator {
         }
     }
 
+    /**
+     * Called from native code when it detects the bundled 'resources'
+     * directory is missing on disk. Re-runs the asset copy unconditionally
+     * so we can recover from a silent failure on Android 11+ scoped-storage
+     * devices where the user-selected external storage directory turned out
+     * to be read-only after the initial copy.
+     */
+    public static synchronized boolean reExtractBundledResources() {
+        try {
+            File resourcesDir = new File(emulatorDir, "resources");
+            if (resourcesDir.exists()) {
+                FileUtils.deleteDirectory(resourcesDir);
+            }
+            FileUtils.copyAssetFolder(context, "resources", resourcesDir.getPath());
+
+            File patchDir = new File(emulatorDir, "patch");
+            if (patchDir.exists()) {
+                FileUtils.deleteDirectory(patchDir);
+            }
+            FileUtils.copyAssetFolder(context, "patch", patchDir.getPath());
+
+            File compatDirFile = new File(emulatorDir, "compat");
+            if (compatDirFile.exists()) {
+                FileUtils.deleteDirectory(compatDirFile);
+            }
+            FileUtils.copyAssetFolder(context, "compat", compatDirFile.getPath());
+
+            File scriptsDirFile = new File(emulatorDir, "scripts");
+            if (scriptsDirFile.exists()) {
+                FileUtils.deleteDirectory(scriptsDirFile);
+            }
+            FileUtils.copyAssetFolder(context, "scripts", scriptsDirFile.getPath());
+
+            return resourcesDir.exists();
+        } catch (Throwable t) {
+            android.util.Log.e("EKA2L1", "reExtractBundledResources failed", t);
+            return false;
+        }
+    }
+
     private static void copyFolder(String folderName, boolean shouldUpdate) {
         File patchFolder = new File(emulatorDir, folderName);
         if (shouldUpdate || !patchFolder.exists()) {

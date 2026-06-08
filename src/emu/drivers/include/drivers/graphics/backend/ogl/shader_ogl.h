@@ -20,6 +20,10 @@ namespace eka2l1::drivers {
         bool create(graphics_driver *driver, const char *data, const std::size_t size, const shader_module_type type,
             std::string *compile_log = nullptr) override;
 
+        bool is_valid() const {
+            return shader != 0;
+        }
+
         std::uint32_t shader_handle() const {
             return shader;
         }

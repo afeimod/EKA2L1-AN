@@ -1,79 +1,110 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+ xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
+ <!--
+ Android11+ (API30+) compatibility notes:
+ * WRITE_EXTERNAL_STORAGE and READ_EXTERNAL_STORAGE are deprecated and have
+ no effect on apps targeting API30+. We declare them with maxSdkVersion
+ so older devices still get the runtime prompts.
+ * requestLegacyExternalStorage is only honored when targetSdkVersion <=29.
+ On API30+ it is silently ignored, so we MUST switch to MANAGE_EXTERNAL_STORAGE
+ (or use the app-private getExternalFilesDir() which never needs a permission).
+ * granular media permissions (READ_MEDIA_IMAGES/VIDEO/AUDIO) replace
+ READ_EXTERNAL_STORAGE on API33+.
+ -->
+ <uses-permission android:name="android.permission.CAMERA" />
+ <uses-permission android:name="android.permission.VIBRATE" />
+ <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+ <uses-permission android:name="android.permission.INTERNET" />
+ <uses-permission android:name="android.permission.RECORD_AUDIO" />
+ <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
 
-    <uses-feature
-        android:glEsVersion="0x00030000"
-        android:required="true" />
+ <!-- Legacy storage permissions (Android <=29 only). -->
+ <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+ android:maxSdkVersion="29" />
+ <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+ android:maxSdkVersion="32" />
 
-    <application
-        android:allowBackup="false"
-        android:hasFragileUserData="true"
-        android:icon="@mipmap/ic_ducky"
-        android:label="@string/app_name"
-        android:preserveLegacyExternalStorage="true"
-        android:requestLegacyExternalStorage="true"
-        android:roundIcon="@mipmap/ic_ducky_round"
-        android:supportsRtl="true"
-        android:theme="@style/AppTheme"
-        tools:targetApi="r">
-        <activity
-            android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
+ <!-- Granular media permissions (Android13+). -->
+ <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+ <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+ <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-        <activity
-            android:name=".config.ConfigActivity"
-            android:noHistory="true" />
-        <activity
-            android:name=".filepicker.FilteredFilePickerActivity"
-            android:theme="@style/FilePickerTheme" />
-        <activity
-            android:name=".emu.EmulatorActivity"
-            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
-            android:exported="true"
-            android:theme="@style/AppTheme.NoActionBar">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
+ <!--
+ MANAGE_EXTERNAL_STORAGE is required if the app needs broad access to
+ /sdcard on API30+. We mark it not-required so the Play Store won't
+ reject the upload, but the Java side requests it via Intent if the user
+ opts in to a custom storage path. The default path uses
+ getExternalFilesDir(), which never needs any permission.
+ -->
+ <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+ tools:ignore="ScopedStorage" />
 
-                <data android:scheme="file" />
-                <data android:scheme="content" />
-                <data android:mimeType="application/json" />
-                <data android:pathPattern=".*.json" />
-            </intent-filter>
-        </activity>
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.provider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/nnf_provider_paths" />
-        </provider>
-        <provider
-            android:name=".storage.DocumentProvider"
-            android:authorities="${applicationId}.documentProvider"
-            android:exported="true"
-            android:grantUriPermissions="true"
-            android:permission="android.permission.MANAGE_DOCUMENTS">
-            <intent-filter>
-                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
-            </intent-filter>
-        </provider>
-    </application>
+ <uses-feature
+ android:glEsVersion="0x00030000"
+ android:required="true" />
+
+ <application
+ android:allowBackup="false"
+ android:hasFragileUserData="true"
+ android:icon="@mipmap/ic_ducky"
+ android:label="@string/app_name"
+ android:preserveLegacyExternalStorage="true"
+ android:requestLegacyExternalStorage="true"
+ android:roundIcon="@mipmap/ic_ducky_round"
+ android:supportsRtl="true"
+ android:theme="@style/AppTheme"
+ tools:targetApi="r">
+ <activity
+ android:name=".MainActivity"
+ android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+ android:exported="true">
+ <intent-filter>
+ <action android:name="android.intent.action.MAIN" />
+
+ <category android:name="android.intent.category.LAUNCHER" />
+ </intent-filter>
+ </activity>
+ <activity
+ android:name=".config.ConfigActivity"
+ android:noHistory="true" />
+ <activity
+ android:name=".filepicker.FilteredFilePickerActivity"
+ android:theme="@style/FilePickerTheme" />
+ <activity
+ android:name=".emu.EmulatorActivity"
+ android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+ android:exported="true"
+ android:theme="@style/AppTheme.NoActionBar">
+ <intent-filter>
+ <action android:name="android.intent.action.VIEW" />
+
+ <data android:scheme="file" />
+ <data android:scheme="content" />
+ <data android:mimeType="application/json" />
+ <data android:pathPattern=".*.json" />
+ </intent-filter>
+ </activity>
+ <provider
+ android:name="androidx.core.content.FileProvider"
+ android:authorities="${applicationId}.provider"
+ android:exported="false"
+ android:grantUriPermissions="true">
+ <meta-data
+ android:name="android.support.FILE_PROVIDER_PATHS"
+ android:resource="@xml/nnf_provider_paths" />
+ </provider>
+ <provider
+ android:name=".storage.DocumentProvider"
+ android:authorities="${applicationId}.documentProvider"
+ android:exported="true"
+ android:grantUriPermissions="true"
+ android:permission="android.permission.MANAGE_DOCUMENTS">
+ <intent-filter>
+ <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+ </intent-filter>
+ </provider>
+ </application>
 
 </manifest>

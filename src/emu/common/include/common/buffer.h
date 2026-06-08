@@ -298,14 +298,20 @@ namespace eka2l1 {
             }
 
             bool valid() override {
-                return fi_;
+                return fi_ != nullptr;
             }
 
             std::uint64_t read(void *buf, const std::uint64_t read_size) override {
+                if (!fi_) {
+                    return 0;
+                }
                 return fread(buf, 1, read_size, fi_);
             }
 
             void seek(const std::int64_t amount, common::seek_where wh) override {
+                if (!fi_) {
+                    return;
+                }
                 int flags = 0;
                 switch (wh) {
                 case common::seek_where::beg: {
@@ -328,14 +334,23 @@ namespace eka2l1 {
             }
 
             std::uint64_t left() override {
+                if (!fi_) {
+                    return 0;
+                }
                 return size() - tell();
             }
 
             std::uint64_t tell() override {
+                if (!fi_) {
+                    return 0;
+                }
                 return ftell(fi_);
             }
 
             std::uint64_t size() override {
+                if (!fi_) {
+                    return 0;
+                }
                 const std::uint64_t cur_pos = tell();
                 seek(0, common::end);
                 const std::uint64_t s = tell();
@@ -386,11 +401,23 @@ namespace eka2l1 {
                     return;
                 }
 
-                fseek(fo_, static_cast<long>(amount), common::beg ? SEEK_SET : (common::cur ? SEEK_CUR : SEEK_END));
+                int flags = SEEK_SET;
+                switch (wh) {
+                case common::seek_where::beg:
+                    flags = SEEK_SET;
+                    break;
+                case common::seek_where::cur:
+                    flags = SEEK_CUR;
+                    break;
+                default:
+                    flags = SEEK_END;
+                    break;
+                }
+                fseek(fo_, static_cast<long>(amount), flags);
             }
 
             bool valid() override {
-                return fo_;
+                return fo_ != nullptr;
             }
 
             std::uint64_t left() override {

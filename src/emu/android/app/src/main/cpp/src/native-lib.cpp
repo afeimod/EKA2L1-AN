@@ -83,6 +83,34 @@ Java_com_github_eka2l1_emu_Emulator_startNative(
     return emulator_entry(*state);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_github_eka2l1_emu_Emulator_ensureResourcesExtracted(
+    JNIEnv *env,
+    jclass clazz) {
+    // Called from native code when it detects that the bundled 'resources/'
+    // directory is missing on disk. On Android 11+ scoped-storage targets,
+    // this typically means the legacy /sdcard/EKA2L1/ location was chosen
+    // but is read-only, so the assets copy silently failed. We delegate to
+    // Java, which knows the app-private getExternalFilesDir() path that
+    // is always writable.
+    jclass emulator_cls = eka2l1::common::jni::find_class("com/github/eka2l1/emu/Emulator");
+    if (emulator_cls == nullptr) {
+        return JNI_FALSE;
+    }
+    jmethodID mid = env->GetStaticMethodID(emulator_cls, "reExtractBundledResources", "()Z");
+    if (mid == nullptr) {
+        env->ExceptionClear();
+        return JNI_FALSE;
+    }
+    jboolean ok = env->CallStaticBooleanMethod(emulator_cls, mid);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        return JNI_FALSE;
+    }
+    return ok;
+}
+
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java_com_github_eka2l1_emu_Emulator_getApps(
     JNIEnv *env,

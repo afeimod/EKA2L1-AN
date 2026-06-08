@@ -248,16 +248,154 @@ namespace eka2l1::drivers {
     static constexpr const char *pen_v_path = "resources//pen.vert";
     static constexpr const char *pen_f_path = "resources//pen.frag";
 
-    void ogl_graphics_driver::do_init() {
-        auto sprite_norm_vertex_module = std::make_unique<ogl_shader_module>(sprite_norm_v_path, shader_module_type::vertex);        
-        auto brush_vertex_module = std::make_unique<ogl_shader_module>(brush_v_path, shader_module_type::vertex);
-        auto pen_vertex_module = std::make_unique<ogl_shader_module>(pen_v_path, shader_module_type::vertex);
+    // ------------------------------------------------------------------
+    // Inline shader fallbacks. These are compiled into the binary so the
+    // emulator can still render even when the bundled assets/shaders
+    // directory couldn't be extracted (e.g. on Android 11+ when the
+    // external storage location is read-only or the assets copy was
+    // interrupted). Keep these in lock-step with the upstream *.vert /
+    // *.frag files — they should be functionally equivalent.
+    // ------------------------------------------------------------------
+    static constexpr const char *FALLBACK_SPRITE_V =
+        "#version 100\n"
+        "attribute vec2 in_position;\n"
+        "attribute vec2 in_texcoord;\n"
+        "varying vec2 v_texcoord;\n"
+        "uniform mat4 u_proj;\n"
+        "uniform mat4 u_model;\n"
+        "void main() {\n"
+        "    v_texcoord = in_texcoord;\n"
+        "    gl_Position = u_proj * u_model * vec4(in_position, 0.0, 1.0);\n"
+        "}\n";
 
-        auto sprite_norm_fragment_module = std::make_unique<ogl_shader_module>(sprite_norm_f_path, shader_module_type::fragment);
-        auto sprite_mask_fragment_module = std::make_unique<ogl_shader_module>(sprite_mask_f_path, shader_module_type::fragment);
-        auto sprite_upscale_fragment_module = std::make_unique<ogl_shader_module>(sprite_upscaled_f_path, shader_module_type::fragment);
-        auto brush_fragment_module = std::make_unique<ogl_shader_module>(brush_f_path, shader_module_type::fragment);
-        auto pen_fragment_module = std::make_unique<ogl_shader_module>(pen_f_path, shader_module_type::fragment);
+    static constexpr const char *FALLBACK_SPRITE_NORM_F =
+        "#version 100\n"
+        "precision mediump float;\n"
+        "varying vec2 v_texcoord;\n"
+        "uniform sampler2D u_tex;\n"
+        "uniform vec4 u_color;\n"
+        "void main() {\n"
+        "    gl_FragColor = texture2D(u_tex, v_texcoord) * u_color;\n"
+        "}\n";
+
+    static constexpr const char *FALLBACK_SPRITE_MASK_F =
+        "#version 100\n"
+        "precision mediump float;\n"
+        "varying vec2 v_texcoord;\n"
+        "uniform sampler2D u_tex;\n"
+        "uniform sampler2D u_mask;\n"
+        "uniform vec4 u_color;\n"
+        "uniform float u_invert;\n"
+        "uniform float u_flat;\n"
+        "void main() {\n"
+        "    vec4 src = texture2D(u_tex, v_texcoord);\n"
+        "    vec4 mask = texture2D(u_mask, v_texcoord);\n"
+        "    float alpha = mix(mask.a, 1.0 - mask.a, u_invert);\n"
+        "    gl_FragColor = vec4(src.rgb * u_color.rgb, src.a * alpha * u_color.a);\n"
+        "}\n";
+
+    static constexpr const char *FALLBACK_SPRITE_UPSCALED_F =
+        "#version 100\n"
+        "precision mediump float;\n"
+        "varying vec2 v_texcoord;\n"
+        "uniform sampler2D u_tex;\n"
+        "uniform vec4 u_color;\n"
+        "void main() {\n"
+        "    gl_FragColor = texture2D(u_tex, v_texcoord) * u_color;\n"
+        "}\n";
+
+    static constexpr const char *FALLBACK_BRUSH_V =
+        "#version 100\n"
+        "attribute vec2 in_position;\n"
+        "uniform mat4 u_proj;\n"
+        "uniform mat4 u_model;\n"
+        "void main() {\n"
+        "    gl_Position = u_proj * u_model * vec4(in_position, 0.0, 1.0);\n"
+        "}\n";
+
+    static constexpr const char *FALLBACK_BRUSH_F =
+        "#version 100\n"
+        "precision mediump float;\n"
+        "uniform vec4 u_color;\n"
+        "void main() {\n"
+        "    gl_FragColor = u_color;\n"
+        "}\n";
+
+    static constexpr const char *FALLBACK_PEN_V =
+        "#version 100\n"
+        "attribute vec2 in_position;\n"
+        "uniform mat4 u_proj;\n"
+        "uniform mat4 u_model;\n"
+        "uniform float u_pointSize;\n"
+        "void main() {\n"
+        "    gl_Position = u_proj * u_model * vec4(in_position, 0.0, 1.0);\n"
+        "    gl_PointSize = u_pointSize;\n"
+        "}\n";
+
+    static constexpr const char *FALLBACK_PEN_F =
+        "#version 100\n"
+        "precision mediump float;\n"
+        "uniform vec4 u_color;\n"
+        "uniform sampler2D u_pattern;\n"
+        "void main() {\n"
+        "    gl_FragColor = u_color;\n"
+        "}\n";
+
+    // Helper: construct a shader module from inline GLSL source if the
+    // disk path was unavailable. Returns nullptr when the source compiles
+    // successfully (so caller can keep it), otherwise an invalid module
+    // (which program->create already handles gracefully).
+    static std::unique_ptr<ogl_shader_module> make_fallback(const char *src, const shader_module_type type) {
+        auto mod = std::make_unique<ogl_shader_module>(src,
+            static_cast<std::size_t>(std::char_traits<char>::length(src)), type);
+        return mod;
+    }
+
+    void ogl_graphics_driver::do_init() {
+        // Try to load shader sources from disk first; on Android 11+ scoped-storage
+        // environments where the bundled 'resources' directory cannot be extracted
+        // (read-only legacy location, interrupted copy, etc.), fall back to inline
+        // GLSL sources compiled into the binary so we still get something on screen
+        // instead of an immediate SIGABRT.
+        auto sprite_norm_vertex_module_disk = std::make_unique<ogl_shader_module>(sprite_norm_v_path, shader_module_type::vertex);
+        std::unique_ptr<ogl_shader_module> sprite_norm_vertex_module = sprite_norm_vertex_module_disk->is_valid()
+            ? std::move(sprite_norm_vertex_module_disk)
+            : make_fallback(FALLBACK_SPRITE_V, shader_module_type::vertex);
+
+        auto brush_vertex_module_disk = std::make_unique<ogl_shader_module>(brush_v_path, shader_module_type::vertex);
+        std::unique_ptr<ogl_shader_module> brush_vertex_module = brush_vertex_module_disk->is_valid()
+            ? std::move(brush_vertex_module_disk)
+            : make_fallback(FALLBACK_BRUSH_V, shader_module_type::vertex);
+
+        auto pen_vertex_module_disk = std::make_unique<ogl_shader_module>(pen_v_path, shader_module_type::vertex);
+        std::unique_ptr<ogl_shader_module> pen_vertex_module = pen_vertex_module_disk->is_valid()
+            ? std::move(pen_vertex_module_disk)
+            : make_fallback(FALLBACK_PEN_V, shader_module_type::vertex);
+
+        auto sprite_norm_fragment_module_disk = std::make_unique<ogl_shader_module>(sprite_norm_f_path, shader_module_type::fragment);
+        std::unique_ptr<ogl_shader_module> sprite_norm_fragment_module = sprite_norm_fragment_module_disk->is_valid()
+            ? std::move(sprite_norm_fragment_module_disk)
+            : make_fallback(FALLBACK_SPRITE_NORM_F, shader_module_type::fragment);
+
+        auto sprite_mask_fragment_module_disk = std::make_unique<ogl_shader_module>(sprite_mask_f_path, shader_module_type::fragment);
+        std::unique_ptr<ogl_shader_module> sprite_mask_fragment_module = sprite_mask_fragment_module_disk->is_valid()
+            ? std::move(sprite_mask_fragment_module_disk)
+            : make_fallback(FALLBACK_SPRITE_MASK_F, shader_module_type::fragment);
+
+        auto sprite_upscale_fragment_module_disk = std::make_unique<ogl_shader_module>(sprite_upscaled_f_path, shader_module_type::fragment);
+        std::unique_ptr<ogl_shader_module> sprite_upscale_fragment_module = sprite_upscale_fragment_module_disk->is_valid()
+            ? std::move(sprite_upscale_fragment_module_disk)
+            : make_fallback(FALLBACK_SPRITE_UPSCALED_F, shader_module_type::fragment);
+
+        auto brush_fragment_module_disk = std::make_unique<ogl_shader_module>(brush_f_path, shader_module_type::fragment);
+        std::unique_ptr<ogl_shader_module> brush_fragment_module = brush_fragment_module_disk->is_valid()
+            ? std::move(brush_fragment_module_disk)
+            : make_fallback(FALLBACK_BRUSH_F, shader_module_type::fragment);
+
+        auto pen_fragment_module_disk = std::make_unique<ogl_shader_module>(pen_f_path, shader_module_type::fragment);
+        std::unique_ptr<ogl_shader_module> pen_fragment_module = pen_fragment_module_disk->is_valid()
+            ? std::move(pen_fragment_module_disk)
+            : make_fallback(FALLBACK_PEN_F, shader_module_type::fragment);
 
         sprite_program = std::make_unique<ogl_shader_program>();
         mask_program = std::make_unique<ogl_shader_program>();

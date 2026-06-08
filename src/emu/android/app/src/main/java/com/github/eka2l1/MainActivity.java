@@ -30,7 +30,14 @@ import android.content.pm.ConfigurationInfo;
 import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.widget.Toast;
+
+import java.io.File;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -98,6 +105,45 @@ public class MainActivity extends BaseActivity {
         FragmentManager fragmentManager = getSupportFragmentManager();
         fragmentManager.beginTransaction()
                 .replace(R.id.container, appsListFragment).commitNowAllowingStateLoss();
+        ensureBundledAssetsPresent();
+    }
+
+    /**
+     * On Android 11+ (scoped storage) the user-selected external storage
+     * location can be read-only after the initial copy. If the bundled
+     * 'resources' directory is missing key files (the bundled shaders are
+     * the canary), kick off a background re-extraction to the
+     * always-writable app-private directory. This avoids the historical
+     * SIGABRT in ogl_shader_module when ftello() is called with a null
+     * FILE* because the shader file could not be opened.
+     */
+    private void ensureBundledAssetsPresent() {
+        final File resourcesDir = new File(Emulator.getEmulatorDir(), "resources");
+        final File spriteVert = new File(resourcesDir, "sprite_norm.vert");
+
+        if (resourcesDir.exists() && spriteVert.exists()) {
+            return;
+        }
+
+        Log.w("EKA2L1", "Bundled resources missing or incomplete; scheduling re-extract");
+        ExecutorService exec = Executors.newSingleThreadExecutor();
+        try {
+            exec.execute(() -> {
+                try {
+                    boolean ok = Emulator.reExtractBundledResources();
+                    Log.i("EKA2L1", "Background re-extract of bundled resources " +
+                            (ok ? "succeeded" : "failed"));
+                    if (!ok) {
+                        new Handler(Looper.getMainLooper()).post(() ->
+                                Toast.makeText(this, R.string.error, Toast.LENGTH_LONG).show());
+                    }
+                } catch (Throwable t) {
+                    Log.e("EKA2L1", "Background re-extract threw", t);
+                }
+            });
+        } finally {
+            exec.shutdown();
+        }
     }
 
     private void showOpenGLDialog() {

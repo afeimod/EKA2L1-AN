@@ -180,16 +180,37 @@ namespace eka2l1::drivers {
         : shader(0) {
         common::ro_std_file_stream stream(path, std::ios_base::binary);
         if (!stream.valid()) {
-            LOG_ERROR(DRIVER_GRAPHICS, "Shader file stream with path {} is invalid!", path);
+            LOG_ERROR(DRIVER_GRAPHICS, "Shader file stream with path {} is invalid! This shader module will be a no-op (Android 11+ scoped storage or asset extraction failure?).", path);
+            // Do not touch stream.size()/read() with a null FILE* — that path leads to
+            // FORTIFY abort on bionic (ftello(NULL)). Just leave shader == 0 so the
+            // owning code can fall back to a default program.
+            return;
         }
-        
-        std::string whole_code;
-        whole_code.resize(stream.size());
 
-        stream.read(whole_code.data(), whole_code.size());
+        const std::uint64_t sz = stream.size();
+        if (sz == 0) {
+            LOG_ERROR(DRIVER_GRAPHICS, "Shader file at path {} has zero size; aborting module construction.", path);
+            return;
+        }
+
+        std::string whole_code;
+        whole_code.resize(static_cast<std::size_t>(sz));
+
+        const std::uint64_t actually_read = stream.read(whole_code.data(), sz);
+        if (actually_read != sz) {
+            LOG_ERROR(DRIVER_GRAPHICS, "Shader file at path {} short read ({} / {}); module will be empty.", path, actually_read, sz);
+            whole_code.resize(static_cast<std::size_t>(actually_read));
+        }
+
+        if (whole_code.empty()) {
+            return;
+        }
+
         whole_code.insert(whole_code.begin(), extra_header.begin(), extra_header.end());
 
-        create(nullptr, whole_code.data(), whole_code.size(), type);
+        if (!create(nullptr, whole_code.data(), whole_code.size(), type)) {
+            LOG_ERROR(DRIVER_GRAPHICS, "Shader at path {} failed to compile; module left unused.", path);
+        }
     }
 
     ogl_shader_module::ogl_shader_module(const char *data, const std::size_t size, const shader_module_type type)
@@ -261,6 +282,15 @@ namespace eka2l1::drivers {
         ogl_shader_module *ogl_fragment_module = reinterpret_cast<ogl_shader_module*>(fragment_module);
 
         if (!ogl_vertex_module || !ogl_fragment_module) {
+            return false;
+        }
+
+        // Modules may have failed to load on Android 11+ scoped-storage environments
+        // where the bundled shader assets could not be extracted. Treat them as
+        // invalid rather than feeding glAttachShader a 0 handle, which is undefined
+        // behaviour and historically the second crash in this driver.
+        if (!ogl_vertex_module->is_valid() || !ogl_fragment_module->is_valid()) {
+            LOG_ERROR(DRIVER_GRAPHICS, "Refusing to link shader program: one or both shader modules failed to build (likely asset extraction failure).");
             return false;
         }
 
