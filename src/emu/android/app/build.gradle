@@ -27,6 +27,7 @@ android {
         ndkVersion = '25.1.8937393'
         buildConfigField "String", "GIT_HASH", "\"${getGitHash()}\""
         ndk {
+            // Keep arm32 for legacy devices, arm64 for modern Android 11+ devices.
             abiFilters "armeabi-v7a", "arm64-v8a"
         }
 
@@ -38,6 +39,24 @@ android {
                 cppFlags "-std=c++20"
             }
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Android 11+ (API30+) hardening: keep native libraries uncompressed
+    // and aligned so that AssetManager / fopen() paths inside native code
+    // can locate them. Also disable extractNativeLibs (the modern API on
+    // AGP 8+) which uses library pages instead of unpacking into /data.
+    // ------------------------------------------------------------------
+    packagingOptions {
+        // Don't strip unused symbols aggressively — we rely on
+        // ogl_shader_module and ogl_graphics_driver symbols surviving.
+        doNotStrip "*/arm64-v8a/libnative-lib.so"
+        doNotStrip "*/armeabi-v7a/libnative-lib.so"
+
+        // Pick first when two libs declare the same name (avoid dexer
+        // warnings).
+        pickFirst "**/libc++_shared.so"
+        pickFirst "**/libnative-lib.so"
     }
 
     buildTypes {

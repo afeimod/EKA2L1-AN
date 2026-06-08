@@ -114,6 +114,43 @@ public class EmulatorActivity extends AppCompatActivity {
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
+    // Single-thread executor for native bridge calls. Anything that talks
+    // to the emulator core (launch_app, install, getApps) goes through here
+    // so the Android UI thread never blocks on a long native operation,
+    // which used to trigger ANR ('Input dispatching timed out').
+    private final java.util.concurrent.ExecutorService nativeCallExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "EKA2L1-NativeBridge");
+                t.setPriority(Thread.NORM_PRIORITY + 1);
+                return t;
+            });
+
+    /**
+     * Run a native bridge call on a background executor. Use this for
+     * any {@code Emulator.*} call that may take more than a few hundred
+     * milliseconds (launch_app, installApp, mountSdCard, getApps, etc).
+     */
+    public void runNativeCall(Runnable r) {
+        nativeCallExecutor.execute(() -> {
+            try {
+                r.run();
+            } catch (Throwable t) {
+                android.util.Log.e("EKA2L1", "Native bridge call failed", t);
+            }
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        try {
+            nativeCallExecutor.shutdown();
+        } catch (Throwable ignore) {
+        }
+        super.onDestroy();
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         Intent intent = getIntent();
         boolean externalIntent = intent.getBooleanExtra(KEY_APP_IS_SHORTCUT, false) || ACTION_LAUNCH_GAME.equals(intent.getAction())
@@ -553,9 +590,12 @@ public class EmulatorActivity extends AppCompatActivity {
             updateScreenSize();
 
             Emulator.surfaceChanged(holder.getSurface(), width, height);
-            
+
             // Delay game launch to ensure graphics are fully initialized
-            // This prevents black screen issues caused by race conditions
+            // This prevents black screen issues caused by race conditions.
+            // launchApp() is dispatched onto the background native-call
+            // executor so the UI thread is never held up by symsys
+            // initialisation (which used to trigger ANR).
             if (!launched) {
                 view.post(() -> {
                     if (!launched) {
@@ -569,7 +609,7 @@ public class EmulatorActivity extends AppCompatActivity {
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                         }
-                        Emulator.launchApp((int) uid);
+                        runNativeCall(() -> Emulator.launchApp((int) uid));
                         launched = true;
                     }
                 });

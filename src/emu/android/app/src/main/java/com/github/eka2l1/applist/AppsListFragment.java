@@ -347,54 +347,83 @@ public class AppsListFragment extends Fragment {
             return;
         }
 
-        String folderName = FileUtils.getFilenameFromPath(getContext(), path);
+        final String folderName = FileUtils.getFilenameFromPath(getContext(), path);
 
-        Pattern cidPattern = Pattern.compile("[0-9a-fA-F]+-[0-9a-fA-F]+-[0-9a-fA-F]+-[0-9a-fA-F]+");
-        Matcher matcher = cidPattern.matcher(folderName);
+        final Pattern cidPattern = Pattern.compile("[0-9a-fA-F]+-[0-9a-fA-F]+-[0-9a-fA-F]+-[0-9a-fA-F]+");
+        final Matcher matcher = cidPattern.matcher(folderName);
 
-        boolean mmcIdFoundInFolderName = matcher.find();
+        final boolean mmcIdFoundInFolderName = matcher.find();
 
-        Emulator.mountSdCard(path);
-
-        if (mmcIdFoundInFolderName) {
-            Emulator.setCurrentMMCID(matcher.group());
-            Toast.makeText(getContext(), R.string.mounted_mmc_ok_and_use_id_in_folder_name, Toast.LENGTH_LONG).show();
-        } else {
-            Toast.makeText(getContext(), R.string.completed, Toast.LENGTH_SHORT).show();
-        }
+        // Mounting an SD card is heavy I/O — push to a background thread
+        // so the UI thread never blocks on it (this used to ANR).
+        final java.util.concurrent.ExecutorService ex =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+        ex.execute(() -> {
+            Emulator.mountSdCard(path);
+            if (mmcIdFoundInFolderName) {
+                Emulator.setCurrentMMCID(matcher.group());
+            }
+            if (getActivity() == null) {
+                ex.shutdown();
+                return;
+            }
+            getActivity().runOnUiThread(() -> {
+                if (mmcIdFoundInFolderName) {
+                    Toast.makeText(getContext(), R.string.mounted_mmc_ok_and_use_id_in_folder_name, Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(getContext(), R.string.completed, Toast.LENGTH_SHORT).show();
+                }
+                ex.shutdown();
+            });
+        });
+    }
 
         prepareApps();
     }
 
     private void installNGageGame(String path) {
-        int result = Emulator.installNGageGame(path);
-        if (result == 0) {
-            Toast.makeText(getContext(), R.string.completed, Toast.LENGTH_SHORT).show();
-            restart();
-        } else {
-            int errorResId = R.string.error;
-            switch (result) {
-                case Emulator.INSTALL_NG_GAME_ERROR_NO_GAME_DATA_FOLDER:
-                    errorResId = R.string.install_ng_game_cant_find_data_folder;
-                    break;
-
-                case Emulator.INSTALL_NG_GAME_ERROR_MORE_THAN_ONE_DATA_FOLDER:
-                    errorResId = R.string.install_ng_game_more_than_one_game;
-                    break;
-
-                case Emulator.INSTALL_NG_GAME_ERROR_NO_GAME_REGISTERATION_INFO:
-                    errorResId = R.string.install_ng_game_no_game_info_file;
-                    break;
-
-                case Emulator.INSTALL_NG_GAME_ERROR_REGISTERATION_CORRUPTED:
-                    errorResId = R.string.install_ng_game_corrupted_game_info;
-                    break;
-
-                default:
-                    break;
+        // Run the native install call on a background thread; the result
+        // dispatch is back on the UI thread. Otherwise the JNI call can
+        // block the UI long enough to trip an ANR.
+        final java.util.concurrent.ExecutorService ex =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+        ex.execute(() -> {
+            final int result = Emulator.installNGageGame(path);
+            if (getActivity() == null) {
+                ex.shutdown();
+                return;
             }
-            Toast.makeText(getContext(), errorResId, Toast.LENGTH_SHORT).show();
-        }
+            getActivity().runOnUiThread(() -> {
+                if (result == 0) {
+                    Toast.makeText(getContext(), R.string.completed, Toast.LENGTH_SHORT).show();
+                    restart();
+                } else {
+                    int errorResId = R.string.error;
+                    switch (result) {
+                        case Emulator.INSTALL_NG_GAME_ERROR_NO_GAME_DATA_FOLDER:
+                            errorResId = R.string.install_ng_game_cant_find_data_folder;
+                            break;
+
+                        case Emulator.INSTALL_NG_GAME_ERROR_MORE_THAN_ONE_DATA_FOLDER:
+                            errorResId = R.string.install_ng_game_more_than_one_game;
+                            break;
+
+                        case Emulator.INSTALL_NG_GAME_ERROR_NO_GAME_REGISTERATION_INFO:
+                            errorResId = R.string.install_ng_game_no_game_info_file;
+                            break;
+
+                        case Emulator.INSTALL_NG_GAME_ERROR_REGISTERATION_CORRUPTED:
+                            errorResId = R.string.install_ng_game_corrupted_game_info;
+                            break;
+
+                        default:
+                            break;
+                    }
+                    Toast.makeText(getContext(), errorResId, Toast.LENGTH_SHORT).show();
+                }
+                ex.shutdown();
+            });
+        });
     }
 
     private void setToggleGridIconStatus(MenuItem item, boolean isGrid) {

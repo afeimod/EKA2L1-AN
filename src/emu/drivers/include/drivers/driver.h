@@ -21,6 +21,7 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 
@@ -110,13 +111,23 @@ namespace eka2l1::drivers {
         }
 
         virtual void wait_for(int *status) {
+            // Bound the wait so a stuck graphics driver can't take down the
+            // Android UI thread (this method is invoked from the JNI bridge
+            // on the main thread, e.g. by surfaceRedrawNeeded). Cap at 1s;
+            // if the driver hasn't produced a frame by then we drop the wait
+            // and let the next present hook catch up.
             std::unique_lock<std::mutex> ulock(mut_);
+
+            if (status == nullptr) {
+                return;
+            }
 
             if (*status == 0) {
                 return;
             }
 
-            cond_.wait(ulock, [&]() { return (*status != -100) || aborted(); });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+            cond_.wait_until(ulock, deadline, [&]() { return (*status != -100) || aborted(); });
         }
 
         void finish(int *status, const int code) {

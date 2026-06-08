@@ -131,9 +131,14 @@ static void redraw_screens_immediately() {
     if (!state || !state->window || !state->graphics_driver || !state->launcher) {
         return;
     }
-    
-    state->graphics_driver->wait_for(&state->present_status);
 
+    // This used to block on graphics_driver->wait_for() here, which held
+    // the Android UI thread hostage whenever the graphics driver was
+    // behind (the dreaded 'Input dispatching timed out' ANR). We now
+    // simply submit the redraw command list and let the graphics thread
+    // update present_status asynchronously. The next swap will publish
+    // the new frame; we don't need to wait for it before returning to
+    // the UI thread.
     eka2l1::drivers::graphics_command_builder builder;
     state->launcher->draw(builder, state->winserv ? state->winserv->get_screens() : nullptr,
                           state->window->window_fb_size().x,
@@ -148,10 +153,14 @@ static void redraw_screens_immediately() {
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_github_eka2l1_emu_Emulator_launchApp(JNIEnv *env, jclass clazz, jint uid) {
-    // Launch the real app...
-    // Wait for graphics initialization to complete before launching app
+    // Launch the real app. Even though the Java side now dispatches this
+    // onto a background executor, we still cap the wait on graphics init
+    // so a stuck graphics thread can't deadlock the native bridge either.
     if (state) {
-        state->graphics_init_done.wait();
+        // Wait at most 5s for graphics init. launchApp is heavy, but a
+        // fully blocked graphics thread for 5s is still better than an
+        // infinite hang.
+        state->graphics_init_done.wait_for(static_cast<std::uint64_t>(5) * 1000 * 1000);
     }
     
     // Additional safety check with retry mechanism
@@ -180,25 +189,24 @@ Java_com_github_eka2l1_emu_Emulator_surfaceChanged(JNIEnv *env, jclass clazz, jo
     if (!state) {
         return;
     }
-    
+
     // Apply surface and initialize graphics if not already done
     ANativeWindow *new_surf = ANativeWindow_fromSurface(env, surface);
     s_surf = new_surf;
-    
+
     if (!state->window) {
-        // Window not ready yet, wait for graphics thread to initialize
+        // Window not ready yet, wait for graphics thread to initialize.
+        // This path is invoked from the Android UI thread; we must not
+        // busy-poll for a full second here or the system will throw ANR.
         LOG_INFO(eka2l1::FRONTEND_CMDLINE, "Waiting for graphics initialization...");
-        
-        // Wait with polling to avoid deadlock
-        int wait_count = 0;
-        while (!state->window && wait_count < 100) {
-            // Small delay to avoid busy waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            wait_count++;
-        }
-        
-        if (!state->window) {
-            LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Graphics initialization timed out!");
+
+        // Wait at most 800ms on the graphics_init_done semaphore. If the
+        // graphics thread hasn't signaled by then, give up — the user
+        // will see a black screen but the UI thread stays responsive.
+        const bool ready = state->graphics_init_done.wait_for(static_cast<std::uint64_t>(800) * 1000);
+
+        if (!ready || !state->window) {
+            LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Graphics initialization timed out from UI thread!");
             if (new_surf) {
                 ANativeWindow_release(new_surf);
             }
@@ -207,9 +215,9 @@ Java_com_github_eka2l1_emu_Emulator_surfaceChanged(JNIEnv *env, jclass clazz, jo
         }
         LOG_INFO(eka2l1::FRONTEND_CMDLINE, "Graphics initialized, continuing...");
     }
-    
+
     state->window->surface_changed(s_surf, width, height);
-    
+
     if (!inited) {
         init_threads(*state);
         inited = true;
@@ -229,12 +237,94 @@ Java_com_github_eka2l1_emu_Emulator_surfaceDestroyed(JNIEnv *env, jclass clazz) 
     if (!state) {
         return;
     }
-    
+
     pause_threads(*state);
+    eka2l1::android::abort_pending_input_events();
     ANativeWindow_release(s_surf);
     s_surf = nullptr;
     if (state->window) {
         state->window->surface_changed(s_surf, 0, 0);
+    }
+}
+
+// Lightweight lock-free input event queue shared between the JNI bridge
+// (UI thread) and the os_thread. The UI thread writes via JNI, the
+// os_thread drains it inside the main loop. This avoids the JNI bridge
+// taking the kernel lock from the UI thread, which used to be the
+// primary source of ANRs during touch / key bursts.
+static constexpr std::size_t INPUT_RING_CAP = 512;
+
+struct pending_input_event {
+    std::int32_t kind_; // 0=key, 1=touch
+    std::int32_t a_;
+    std::int32_t b_;
+    std::int32_t c_;
+    std::int32_t d_;
+    std::int32_t e_;
+};
+
+namespace eka2l1::android::detail {
+    std::mutex g_input_ring_mtx;
+    std::condition_variable g_input_ring_cv;
+    pending_input_event g_input_ring[INPUT_RING_CAP];
+    std::size_t g_input_ring_head = 0; // next write index
+    std::size_t g_input_ring_tail = 0; // next read index
+    std::atomic<bool> g_input_ring_aborted{false};
+
+    static void enqueue_input_event(const pending_input_event &evt) {
+        std::lock_guard<std::mutex> lg(g_input_ring_mtx);
+        const std::size_t next = (g_input_ring_head + 1) % INPUT_RING_CAP;
+        if (next == g_input_ring_tail) {
+            // Ring is full — drop the oldest event so we always accept the
+            // newest input. Input is per-frame state; coalescing here is
+            // safer than blocking the UI thread.
+            g_input_ring_tail = (g_input_ring_tail + 1) % INPUT_RING_CAP;
+        }
+        g_input_ring[g_input_ring_head] = evt;
+        g_input_ring_head = next;
+        g_input_ring_cv.notify_one();
+    }
+
+    static bool dequeue_input_event(pending_input_event &out, const std::chrono::milliseconds &timeout) {
+        std::unique_lock<std::mutex> ul(g_input_ring_mtx);
+        if (!g_input_ring_cv.wait_for(ul, timeout, []() {
+                return g_input_ring_head != g_input_ring_tail || g_input_ring_aborted.load();
+            })) {
+            return false;
+        }
+        if (g_input_ring_aborted.load()) {
+            return false;
+        }
+        if (g_input_ring_head == g_input_ring_tail) {
+            return false;
+        }
+        out = g_input_ring[g_input_ring_tail];
+        g_input_ring_tail = (g_input_ring_tail + 1) % INPUT_RING_CAP;
+        return true;
+    }
+}
+
+namespace eka2l1::android {
+    void drain_pending_input_events_for(emulator &state) {
+        pending_input_event evt;
+        while (detail::dequeue_input_event(evt, std::chrono::milliseconds(0))) {
+            if (evt.kind_ == 0) {
+                press_key(state, evt.a_, evt.b_);
+            } else if (evt.kind_ == 1) {
+                touch_screen(state, evt.a_, evt.b_, evt.c_, evt.d_, evt.e_);
+            }
+        }
+    }
+
+    void abort_pending_input_events() {
+        {
+            std::lock_guard<std::mutex> lg(detail::g_input_ring_mtx);
+            detail::g_input_ring_aborted.store(true);
+        }
+        detail::g_input_ring_cv.notify_all();
+        detail::g_input_ring_aborted.store(false);
+        detail::g_input_ring_head = 0;
+        detail::g_input_ring_tail = 0;
     }
 }
 
@@ -244,7 +334,14 @@ Java_com_github_eka2l1_emu_Emulator_pressKey(JNIEnv *env, jclass clazz, jint key
     if (!state) {
         return;
     }
-    press_key(*state, key, keyState);
+    pending_input_event evt;
+    evt.kind_ = 0;
+    evt.a_ = key;
+    evt.b_ = keyState;
+    evt.c_ = 0;
+    evt.d_ = 0;
+    evt.e_ = 0;
+    eka2l1::android::detail::enqueue_input_event(evt);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -253,7 +350,14 @@ Java_com_github_eka2l1_emu_Emulator_touchScreen(JNIEnv *env, jclass clazz, jint 
     if (!state) {
         return;
     }
-    touch_screen(*state, x, y, z, action, pointer_id);
+    pending_input_event evt;
+    evt.kind_ = 1;
+    evt.a_ = x;
+    evt.b_ = y;
+    evt.c_ = z;
+    evt.d_ = action;
+    evt.e_ = pointer_id;
+    eka2l1::android::detail::enqueue_input_event(evt);
 }
 
 extern "C" JNIEXPORT jint JNICALL

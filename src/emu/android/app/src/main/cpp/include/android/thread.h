@@ -41,4 +41,11 @@ namespace eka2l1::android {
     void press_key(emulator &state, int key, int key_state);
 
     void touch_screen(emulator &state, int x, int y, int z, int action, int pointer_id);
+
+    // Drains any pending input events that the JNI bridge enqueued from
+    // the Android UI thread. Safe to call from the Symbian OS thread.
+    void drain_pending_input_events_for(emulator &state);
+
+    // Drops any queued input events. Called on Activity destroy.
+    void abort_pending_input_events();
 }

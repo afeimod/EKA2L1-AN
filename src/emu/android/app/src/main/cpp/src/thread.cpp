@@ -110,7 +110,11 @@ namespace eka2l1::android {
         eka2l1::common::set_thread_name(os_thread_name);
         eka2l1::common::set_thread_priority(eka2l1::common::thread_priority_high);
 
+        // Drain input events at the top of every loop iteration. The UI
+        // thread enqueues them through the JNI bridge without taking the
+        // kernel lock; we replay them here where it's safe.
         while (!state.should_emu_quit) {
+            drain_pending_input_events_for(state);
 #if !defined(NDEBUG)
             try {
 #endif
