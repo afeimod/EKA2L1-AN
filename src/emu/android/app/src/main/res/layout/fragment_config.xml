@@ -476,7 +476,7 @@
                 android:layout_marginTop="6dp"
                 android:background="?bg_config_card"
                 android:visibility="gone"
-                app:constraint_referenced_ids="spVKType,cbVKFeedback,etVKBack,etVKSelFore,textView7,cmdVKSelFore,cmdVKFore,etVKOutline,cmdVKBack,sbVKAlpha,sbVKForeAlpha,sbVKBackAlpha,sbVKSelForeAlpha,sbVKSelBackAlpha,sbVKOutlineAlpha,tvVKAlphaDefaultValue,tvVKForeAlphaValue,tvVKBackAlphaValue,tvVKSelForeAlphaValue,tvVKSelBackAlphaValue,tvVKOutlineAlphaValue,cmdVKSelBack,etVKHideDelay,textView13,spButtonsShape,tvOpacity,cmdVKOutline,textView12,etVKFore,etVKSelBack"
+                app:constraint_referenced_ids="spVKType,cbVKFeedback,etVKBack,etVKSelFore,textView7,cmdVKSelFore,cmdVKFore,etVKOutline,cmdVKBack,sbVKAlpha,sbVKForeAlpha,sbVKBackAlpha,sbVKSelForeAlpha,sbVKSelBackAlpha,sbVKOutlineAlpha,cmdVKSelBack,etVKHideDelay,textView13,spButtonsShape,tvOpacity,cmdVKOutline,textView12,etVKFore,etVKSelBack"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
@@ -930,7 +930,7 @@
                 android:layout_width="10dp"
                 android:layout_height="match_parent"
                 app:barrierDirection="end"
-                app:constraint_referenced_ids=",tvOpacity,textView7,textView12,cmdVKFore,cmdVKBack,cmdVKSelFore,cmdVKOutline,tvVKAlphaDefaultValue" />
+                app:constraint_referenced_ids=",tvOpacity,textView7,textView12,cmdVKFore,cmdVKBack,cmdVKSelFore,cmdVKOutline" />
 
             <!-- Key colors -->
             <!-- Keyboard settings -->
