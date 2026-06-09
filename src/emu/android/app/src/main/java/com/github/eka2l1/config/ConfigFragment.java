@@ -38,13 +38,13 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
@@ -55,7 +55,6 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.ActionBar;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.content.FileProvider;
@@ -71,6 +70,7 @@ import com.github.eka2l1.util.FileUtils;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -850,25 +850,32 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
     /**
      * Adds a 0..100 percent alpha slider just below the preview strip of the
      * given AmbilWarnaDialog. The slider drives the dialog's internal alpha
-     * channel via {@link AmbilWarnaDialog#setAlpha(int)} so the alpha overlay
-     * swatch and the cursor stay in sync with what the user is picking.
+     * channel via reflection (AmbilWarnaDialog.setAlpha is private in
+     * 2.0.1) so the alpha overlay swatch and the cursor stay in sync with
+     * what the user is picking.
      */
     private void injectAlphaSeekBar(AmbilWarnaDialog dialog, SeekBar sourceAlphaBar) {
-        AlertDialog alertDialog = dialog.getDialog();
+        // AmbilWarnaDialog.getDialog() returns android.app.AlertDialog, not
+        // the androidx flavor, so use the framework type here.
+        android.app.AlertDialog alertDialog = dialog.getDialog();
         if (alertDialog == null) return;
 
-        // The preview strip lives in ambilwarna_state inside the library's
-        // RelativeLayout view container. Add a SeekBar as a sibling below it.
-        ViewGroup stateView = alertDialog.findViewById(R.id.ambilwarna_state);
-        if (!(stateView.getParent() instanceof ViewGroup)) return;
+        // The library's id is private to its own R, and AGP 8.x's default
+        // nonTransitiveR keeps it out of the app R. Resolve it by name on
+        // the merged Resources instead.
+        int stateId = resolveAmbilWarnaId("ambilwarna_state");
+        if (stateId == 0) return;
+
+        View stateView = alertDialog.findViewById(stateId);
+        if (!(stateView instanceof ViewGroup)) return;
         ViewGroup viewContainer = (ViewGroup) stateView.getParent();
 
         SeekBar seek = new SeekBar(getContext());
         seek.setMax(100);
         seek.setProgress(sourceAlphaBar.getProgress());
 
-        // Wrap the slider in a vertical LinearLayout together with a tiny
-        // percent label so the user can read the current value live.
+        // Wrap the slider in a horizontal LinearLayout together with a
+        // label and a live percent readout.
         LinearLayout wrapper = new LinearLayout(getContext());
         wrapper.setOrientation(LinearLayout.HORIZONTAL);
         wrapper.setGravity(android.view.Gravity.CENTER_VERTICAL);
@@ -877,12 +884,12 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
 
         TextView label = new TextView(getContext());
         label.setText(getString(R.string.pref_vk_alpha));
-        label.setTextColor(android.graphics.Color.parseColor("#FFB2B2B2"));
+        label.setTextColor(0xFFB2B2B2);
         label.setTextSize(14f);
 
         TextView value = new TextView(getContext());
         value.setText(getString(R.string.pref_opacity_percent, sourceAlphaBar.getProgress()));
-        value.setTextColor(android.graphics.Color.parseColor("#FFB2B2B2"));
+        value.setTextColor(0xFFB2B2B2);
         value.setTextSize(14f);
         value.setMinWidth((int) (48 * getResources().getDisplayMetrics().density));
         value.setGravity(android.view.Gravity.END);
@@ -901,19 +908,32 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         RelativeLayout.LayoutParams lp = new RelativeLayout.LayoutParams(
                 RelativeLayout.LayoutParams.MATCH_PARENT,
                 RelativeLayout.LayoutParams.WRAP_CONTENT);
-        lp.addRule(RelativeLayout.BELOW, R.id.ambilwarna_state);
+        // Below the state view; using the runtime id keeps us independent of
+        // the library R class.
+        lp.addRule(RelativeLayout.BELOW, stateView.getId());
         lp.addRule(RelativeLayout.CENTER_HORIZONTAL);
 
         viewContainer.addView(wrapper, lp);
+
+        // Cache the reflective setter so we don't pay the lookup cost on
+        // every progress change.
+        final Method setAlphaMethod = findAmbilWarnaMethod("setAlpha", int.class);
 
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
                 value.setText(getString(R.string.pref_opacity_percent, progress));
-                if (fromUser) {
+                if (fromUser && setAlphaMethod != null) {
                     // Push the new alpha into the AmbilWarnaDialog so its
-                    // overlay swatch and cursor stay in sync.
-                    dialog.setAlpha(percentToAlpha(progress));
+                    // overlay swatch and cursor stay in sync. setAlpha(int)
+                    // is package-private in 2.0.1, hence the reflection.
+                    try {
+                        setAlphaMethod.invoke(dialog, percentToAlpha(progress));
+                    } catch (ReflectiveOperationException ignored) {
+                        // If reflection ever fails (e.g. library update) the
+                        // worst case is the overlay doesn't preview alpha
+                        // live; the saved value is still correct on OK.
+                    }
                 }
             }
 
@@ -923,6 +943,32 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
             @Override
             public void onStopTrackingTouch(SeekBar sb) {}
         });
+    }
+
+    /**
+     * Look up an id from the AmbilWarna library by name. The library ships
+     * its own R; AGP 8.x's default nonTransitiveR means those ids are not
+     * surfaced on the app's R class, so we resolve them by name instead.
+     * Returns 0 when the id cannot be found.
+     */
+    private int resolveAmbilWarnaId(String name) {
+        return getResources().getIdentifier(name, "id", "yuku.ambilwarna");
+    }
+
+    /**
+     * Reflectively find a method on AmbilWarnaDialog. Needed because the
+     * 2.0.1 jar declares several useful accessors ({@code setAlpha(int)},
+     * {@code getColor()}) as private, while the public API only exposes
+     * {@code getDialog()} and the OnAmbilWarnaListener callback.
+     */
+    private static Method findAmbilWarnaMethod(String name, Class<?>... paramTypes) {
+        try {
+            Method m = AmbilWarnaDialog.class.getDeclaredMethod(name, paramTypes);
+            m.setAccessible(true);
+            return m;
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
     }
 
     private static class ColorTextWatcher implements TextWatcher {
