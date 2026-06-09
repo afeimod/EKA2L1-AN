@@ -38,6 +38,8 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.LinearLayout;
+import android.widget.RelativeLayout;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -795,20 +797,36 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
     }
 
     private void showColorPicker(EditText et, SeekBar alphaBar, TextView alphaLabel) {
+        // Build the AmbilWarnaDialog with supportsAlpha=true so the library
+        // exposes its internal HSV alpha controls and returns ARGB from
+        // getColor(). Initial color is (currentAlpha << 24) | currentRGB so
+        // re-opening the dialog preserves the user's last alpha choice.
+        int currentRgb;
+        try {
+            currentRgb = parseInt(et.getText().toString().trim(), 16) & 0xFFFFFF;
+        } catch (NumberFormatException ignored) {
+            currentRgb = 0;
+        }
+        int initialAlpha = alphaBar != null ? percentToAlpha(alphaBar.getProgress()) : 0xFF;
+        int initialColor = (initialAlpha << 24) | currentRgb;
+
         AmbilWarnaDialog.OnAmbilWarnaListener colorListener = new AmbilWarnaDialog.OnAmbilWarnaListener() {
             @Override
             public void onOk(AmbilWarnaDialog dialog, int color) {
-                // AmbilWarnaDialog always returns fully opaque ARGB (alpha forced
-                // to 0xFF upstream), so the picked color only carries RGB. We
-                // store it in the EditText and then immediately let the user
-                // fine-tune the matching alpha slider so the saved value is
-                // (rgb, alpha) for this color.
                 int rgb = color & 0xFFFFFF;
+                int alpha = (color >>> 24) & 0xFF;
                 et.setText(String.format("%06X", rgb));
                 ColorDrawable drawable = (ColorDrawable) et.getCompoundDrawablesRelative()[2];
                 drawable.setColor(color);
                 if (alphaBar != null) {
-                    showAlphaPicker(et, alphaBar, alphaLabel);
+                    int percent = alphaToPercent(alpha);
+                    alphaBar.setProgress(percent);
+                    // alphaLabel is refreshed by the listener registered in
+                    // onViewCreated, but SeekBar.setProgress doesn't fire
+                    // listeners, so mirror the new value explicitly.
+                    if (alphaLabel != null) {
+                        alphaLabel.setText(getString(R.string.pref_opacity_percent, percent));
+                    }
                 }
             }
 
@@ -816,47 +834,95 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
             public void onCancel(AmbilWarnaDialog dialog) {
             }
         };
-        int color = parseInt(et.getText().toString().trim(), 16);
-        new AmbilWarnaDialog(getContext(), color | 0xFF000000, colorListener).show();
+
+        AmbilWarnaDialog dialog = new AmbilWarnaDialog(getContext(), initialColor, true, colorListener);
+
+        // Reach into the AlertDialog the library built and graft our alpha
+        // SeekBar under the (left arrow right) preview strip. This way the
+        // user gets RGB picking + alpha adjustment inside a single dialog,
+        // matching the layout they were used to before.
+        if (alphaBar != null) {
+            injectAlphaSeekBar(dialog, alphaBar);
+        }
+        dialog.show();
     }
 
     /**
-     * Companion alpha picker for the just-picked RGB color. Pre-fills the
-     * slider with the existing alpha (so re-opening the dialog preserves the
-     * value) and updates the slider's label and the EditText's color preview
-     * swatch live as the user drags.
+     * Adds a 0..100 percent alpha slider just below the preview strip of the
+     * given AmbilWarnaDialog. The slider drives the dialog's internal alpha
+     * channel via {@link AmbilWarnaDialog#setAlpha(int)} so the alpha overlay
+     * swatch and the cursor stay in sync with what the user is picking.
      */
-    private void showAlphaPicker(EditText et, SeekBar alphaBar, TextView alphaLabel) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
-        builder.setTitle(R.string.pref_vk_alpha_title);
-        View view = LayoutInflater.from(getContext()).inflate(R.layout.dialog_alpha_picker, null, false);
-        SeekBar seek = view.findViewById(R.id.sbAlphaPicker);
-        TextView value = view.findViewById(R.id.tvAlphaPickerValue);
-        View preview = view.findViewById(R.id.vAlphaPickerPreview);
+    private void injectAlphaSeekBar(AmbilWarnaDialog dialog, SeekBar sourceAlphaBar) {
+        AlertDialog alertDialog = dialog.getDialog();
+        if (alertDialog == null) return;
 
-        // Sync preview color from the current EditText content so the swatch
-        // reflects the RGB that was just chosen.
-        try {
-            int rgb = Integer.parseInt(et.getText().toString(), 16);
-            preview.setBackgroundColor(0xFF000000 | rgb);
-        } catch (NumberFormatException ignored) {
-            preview.setBackgroundColor(Color.GRAY);
-        }
+        // The preview strip lives in ambilwarna_state inside the library's
+        // RelativeLayout view container. Add a SeekBar as a sibling below it.
+        ViewGroup stateView = alertDialog.findViewById(R.id.ambilwarna_state);
+        if (!(stateView.getParent() instanceof ViewGroup)) return;
+        ViewGroup viewContainer = (ViewGroup) stateView.getParent();
 
-        seek.setMax(alphaBar.getMax());
-        seek.setProgress(alphaBar.getProgress());
-        value.setText(getString(R.string.pref_opacity_percent, alphaToPercent(alphaBar.getProgress())));
-        seek.setOnSeekBarChangeListener(getAlphaLabelSeekBarChangeListener(value));
+        SeekBar seek = new SeekBar(getContext());
+        seek.setMax(100);
+        seek.setProgress(sourceAlphaBar.getProgress());
 
-        builder.setView(view);
-        builder.setPositiveButton(android.R.string.ok, (d, w) -> {
-            alphaBar.setProgress(seek.getProgress());
-            // alphaLabel will refresh from the listener we registered on
-            // alphaBar in onViewCreated, so we don't need to push the value
-            // here ourselves.
+        // Wrap the slider in a vertical LinearLayout together with a tiny
+        // percent label so the user can read the current value live.
+        LinearLayout wrapper = new LinearLayout(getContext());
+        wrapper.setOrientation(LinearLayout.HORIZONTAL);
+        wrapper.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        int pad = (int) (8 * getResources().getDisplayMetrics().density);
+        wrapper.setPadding(pad, pad, pad, 0);
+
+        TextView label = new TextView(getContext());
+        label.setText(getString(R.string.pref_vk_alpha));
+        label.setTextColor(android.graphics.Color.parseColor("#FFB2B2B2"));
+        label.setTextSize(14f);
+
+        TextView value = new TextView(getContext());
+        value.setText(getString(R.string.pref_opacity_percent, sourceAlphaBar.getProgress()));
+        value.setTextColor(android.graphics.Color.parseColor("#FFB2B2B2"));
+        value.setTextSize(14f);
+        value.setMinWidth((int) (48 * getResources().getDisplayMetrics().density));
+        value.setGravity(android.view.Gravity.END);
+
+        LinearLayout.LayoutParams labelLp =
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        LinearLayout.LayoutParams seekLp =
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 3f);
+        LinearLayout.LayoutParams valueLp =
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+
+        wrapper.addView(label, labelLp);
+        wrapper.addView(seek, seekLp);
+        wrapper.addView(value, valueLp);
+
+        RelativeLayout.LayoutParams lp = new RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.MATCH_PARENT,
+                RelativeLayout.LayoutParams.WRAP_CONTENT);
+        lp.addRule(RelativeLayout.BELOW, R.id.ambilwarna_state);
+        lp.addRule(RelativeLayout.CENTER_HORIZONTAL);
+
+        viewContainer.addView(wrapper, lp);
+
+        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
+                value.setText(getString(R.string.pref_opacity_percent, progress));
+                if (fromUser) {
+                    // Push the new alpha into the AmbilWarnaDialog so its
+                    // overlay swatch and cursor stay in sync.
+                    dialog.setAlpha(percentToAlpha(progress));
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar sb) {}
+
+            @Override
+            public void onStopTrackingTouch(SeekBar sb) {}
         });
-        builder.setNegativeButton(android.R.string.cancel, null);
-        builder.show();
     }
 
     private static class ColorTextWatcher implements TextWatcher {

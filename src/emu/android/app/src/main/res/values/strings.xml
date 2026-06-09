@@ -148,7 +148,6 @@
     <string name="pref_vk_outline">Outline</string>
     <string name="pref_color_hint" translatable="false">RGB</string>
     <string name="pref_vk_alpha">Opacity: </string>
-    <string name="pref_vk_alpha_title">Color opacity</string>
     <string name="pref_vk_alpha_default">Default opacity (legacy): </string>
     <string name="pref_vk_alpha_fore">Labels opacity:</string>
     <string name="pref_vk_alpha_back">Buttons opacity:</string>
