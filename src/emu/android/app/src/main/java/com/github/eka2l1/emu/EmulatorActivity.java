@@ -665,12 +665,14 @@ public class EmulatorActivity extends AppCompatActivity {
             }
         }
 
-        int vkAlpha = params.vkAlpha << 24;
-        keyboard.setColor(VirtualKeyboard.BACKGROUND, vkAlpha | params.vkBgColor);
-        keyboard.setColor(VirtualKeyboard.FOREGROUND, vkAlpha | params.vkFgColor);
-        keyboard.setColor(VirtualKeyboard.BACKGROUND_SELECTED, vkAlpha | params.vkBgColorSelected);
-        keyboard.setColor(VirtualKeyboard.FOREGROUND_SELECTED, vkAlpha | params.vkFgColorSelected);
-        keyboard.setColor(VirtualKeyboard.OUTLINE, vkAlpha | params.vkOutlineColor);
+        // Per-color alpha: each VK color gets its own alpha byte now. The legacy
+        // params.vkAlpha is preserved for backwards compatibility but only
+        // acts as a fallback when a color's per-color alpha wasn't set.
+        keyboard.setColor(VirtualKeyboard.BACKGROUND, params.getEffectiveBgAlpha() << 24 | params.vkBgColor);
+        keyboard.setColor(VirtualKeyboard.FOREGROUND, params.getEffectiveFgAlpha() << 24 | params.vkFgColor);
+        keyboard.setColor(VirtualKeyboard.BACKGROUND_SELECTED, params.getEffectiveBgAlphaSelected() << 24 | params.vkBgColorSelected);
+        keyboard.setColor(VirtualKeyboard.FOREGROUND_SELECTED, params.getEffectiveFgAlphaSelected() << 24 | params.vkFgColorSelected);
+        keyboard.setColor(VirtualKeyboard.OUTLINE, params.getEffectiveOutlineAlpha() << 24 | params.vkOutlineColor);
         overlayView.setOverlay(keyboard);
         keyboard.setView(overlayView);
 

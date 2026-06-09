@@ -148,6 +148,14 @@
     <string name="pref_vk_outline">Outline</string>
     <string name="pref_color_hint" translatable="false">RGB</string>
     <string name="pref_vk_alpha">Opacity: </string>
+    <string name="pref_vk_alpha_title">Color opacity</string>
+    <string name="pref_vk_alpha_default">Default opacity (legacy): </string>
+    <string name="pref_vk_alpha_fore">Labels opacity:</string>
+    <string name="pref_vk_alpha_back">Buttons opacity:</string>
+    <string name="pref_vk_alpha_sel_fore">Labels (P) opacity:</string>
+    <string name="pref_vk_alpha_sel_back">Buttons (P) opacity:</string>
+    <string name="pref_vk_alpha_outline">Outline opacity:</string>
+    <string name="pref_opacity_percent">%d%%</string>
     <string name="pref_vk_hide_delay">Hide delay: </string>
     <string name="pref_unit_ms">ms</string>
     <string name="pref_vk_sel_fore">Labels (P)</string>

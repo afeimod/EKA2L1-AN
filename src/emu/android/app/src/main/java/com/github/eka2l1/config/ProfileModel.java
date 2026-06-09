@@ -129,6 +129,26 @@ public class ProfileModel {
     @SerializedName("VirtualKeyboardColorOutline")
     public int vkOutlineColor;
 
+    /**
+     * Per-color alpha for {@link #vkBgColor} (0..255). The legacy
+     * {@link #vkAlpha} acts as a fallback default for new profiles; once a
+     * profile sets these individually, the per-color values win.
+     */
+    @SerializedName("VirtualKeyboardAlphaBackground")
+    public int vkBgAlpha;
+
+    @SerializedName("VirtualKeyboardAlphaBackgroundSelected")
+    public int vkBgAlphaSelected;
+
+    @SerializedName("VirtualKeyboardAlphaForeground")
+    public int vkFgAlpha;
+
+    @SerializedName("VirtualKeyboardAlphaForegroundSelected")
+    public int vkFgAlphaSelected;
+
+    @SerializedName("VirtualKeyboardAlphaOutline")
+    public int vkOutlineAlpha;
+
     @JsonAdapter(SparseIntArrayAdapter.class)
     @SerializedName("KeyMappings")
     public SparseIntArray keyMappings;
@@ -166,5 +186,39 @@ public class ProfileModel {
         vkBgColorSelected = 0x000080;
         vkFgColorSelected = 0xFFFFFF;
         vkOutlineColor = 0xFFFFFF;
+
+        // New profiles default every per-color alpha to the legacy global
+        // opacity value, so existing behavior is preserved until the user
+        // tweaks an individual slider.
+        vkBgAlpha = vkAlpha;
+        vkFgAlpha = vkAlpha;
+        vkBgAlphaSelected = vkAlpha;
+        vkFgAlphaSelected = vkAlpha;
+        vkOutlineAlpha = vkAlpha;
+    }
+
+    /**
+     * Effective alpha for {@link #vkBgColor} (0..255). Falls back to the
+     * legacy {@link #vkAlpha} if a profile predates per-color alpha and
+     * serialized 0 for the new fields.
+     */
+    public int getEffectiveBgAlpha() {
+        return vkBgAlpha > 0 ? vkBgAlpha : vkAlpha;
+    }
+
+    public int getEffectiveFgAlpha() {
+        return vkFgAlpha > 0 ? vkFgAlpha : vkAlpha;
+    }
+
+    public int getEffectiveBgAlphaSelected() {
+        return vkBgAlphaSelected > 0 ? vkBgAlphaSelected : vkAlpha;
+    }
+
+    public int getEffectiveFgAlphaSelected() {
+        return vkFgAlphaSelected > 0 ? vkFgAlphaSelected : vkAlpha;
+    }
+
+    public int getEffectiveOutlineAlpha() {
+        return vkOutlineAlpha > 0 ? vkOutlineAlpha : vkAlpha;
     }
 }

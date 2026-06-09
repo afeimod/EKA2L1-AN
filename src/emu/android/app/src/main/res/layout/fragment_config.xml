@@ -476,7 +476,7 @@
                 android:layout_marginTop="6dp"
                 android:background="?bg_config_card"
                 android:visibility="gone"
-                app:constraint_referenced_ids="spVKType,cbVKFeedback,etVKBack,etVKSelFore,textView7,cmdVKSelFore,cmdVKFore,etVKOutline,cmdVKBack,sbVKAlpha,cmdVKSelBack,etVKHideDelay,textView13,spButtonsShape,tvOpacity,cmdVKOutline,textView12,etVKFore,etVKSelBack"
+                app:constraint_referenced_ids="spVKType,cbVKFeedback,etVKBack,etVKSelFore,textView7,cmdVKSelFore,cmdVKFore,etVKOutline,cmdVKBack,sbVKAlpha,sbVKForeAlpha,sbVKBackAlpha,sbVKSelForeAlpha,sbVKSelBackAlpha,sbVKOutlineAlpha,tvVKAlphaDefaultValue,tvVKForeAlphaValue,tvVKBackAlphaValue,tvVKSelForeAlphaValue,tvVKSelBackAlphaValue,tvVKOutlineAlphaValue,cmdVKSelBack,etVKHideDelay,textView13,spButtonsShape,tvOpacity,cmdVKOutline,textView12,etVKFore,etVKSelBack"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
@@ -577,7 +577,7 @@
                 android:layout_height="@dimen/height_config_row"
                 android:layout_marginStart="5dp"
                 android:gravity="center_vertical"
-                android:text="@string/pref_vk_alpha"
+                android:text="@string/pref_vk_alpha_default"
                 android:textColor="?attr/textColorSecondary"
                 android:textSize="15sp"
                 app:layout_constrainedWidth="true"
@@ -586,14 +586,27 @@
                 app:layout_constraintTop_toBottomOf="@+id/cbVKFeedback"
                 app:layout_constraintWidth_min="wrap" />
 
+            <TextView
+                android:id="@+id/tvVKAlphaDefaultValue"
+                android:layout_width="wrap_content"
+                android:layout_height="@dimen/height_config_row"
+                android:layout_marginEnd="5dp"
+                android:gravity="center_vertical"
+                android:minWidth="42dp"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="13sp"
+                app:layout_constraintBottom_toBottomOf="@id/tvOpacity"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/cbVKFeedback" />
+
             <SeekBar
                 android:id="@+id/sbVKAlpha"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="5dp"
-                android:max="255"
+                android:max="100"
                 app:layout_constraintBottom_toBottomOf="@id/tvOpacity"
-                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/tvVKAlphaDefaultValue"
                 app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
                 app:layout_constraintTop_toBottomOf="@+id/cbVKFeedback" />
             <!-- End keys opacity -->
@@ -674,6 +687,29 @@
                 app:layout_constraintTop_toBottomOf="@+id/textView12"
                 tools:ignore="UnusedAttribute" />
 
+            <SeekBar
+                android:id="@+id/sbVKForeAlpha"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:max="100"
+                app:layout_constraintEnd_toStartOf="@+id/tvVKForeAlphaValue"
+                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
+                app:layout_constraintTop_toBottomOf="@+id/etVKFore" />
+
+            <TextView
+                android:id="@+id/tvVKForeAlphaValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:gravity="center_vertical"
+                android:minWidth="42dp"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="12sp"
+                app:layout_constraintBottom_toBottomOf="@+id/sbVKForeAlpha"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="@+id/sbVKForeAlpha" />
+
             <Button
                 android:id="@+id/cmdVKBack"
                 android:layout_width="0dp"
@@ -704,6 +740,29 @@
                 app:layout_constraintTop_toBottomOf="@+id/etVKFore"
                 tools:ignore="UnusedAttribute" />
 
+            <SeekBar
+                android:id="@+id/sbVKBackAlpha"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:max="100"
+                app:layout_constraintEnd_toStartOf="@+id/tvVKBackAlphaValue"
+                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
+                app:layout_constraintTop_toBottomOf="@+id/etVKBack" />
+
+            <TextView
+                android:id="@+id/tvVKBackAlphaValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:gravity="center_vertical"
+                android:minWidth="42dp"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="12sp"
+                app:layout_constraintBottom_toBottomOf="@+id/sbVKBackAlpha"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="@+id/sbVKBackAlpha" />
+
             <Button
                 android:id="@+id/cmdVKSelFore"
                 android:layout_width="0dp"
@@ -715,7 +774,7 @@
                 app:layout_constraintBottom_toTopOf="@+id/etVKSelBack"
                 app:layout_constraintEnd_toStartOf="@+id/barrierInputConfig"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/etVKBack"
+                app:layout_constraintTop_toBottomOf="@+id/sbVKBackAlpha"
                 app:layout_constraintWidth_min="wrap" />
 
             <EditText
@@ -731,8 +790,31 @@
                 android:textDirection="ltr"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/etVKBack"
+                app:layout_constraintTop_toBottomOf="@+id/sbVKBackAlpha"
                 tools:ignore="UnusedAttribute" />
+
+            <SeekBar
+                android:id="@+id/sbVKSelForeAlpha"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:max="100"
+                app:layout_constraintEnd_toStartOf="@+id/tvVKSelForeAlphaValue"
+                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
+                app:layout_constraintTop_toBottomOf="@+id/etVKSelFore" />
+
+            <TextView
+                android:id="@+id/tvVKSelForeAlphaValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:gravity="center_vertical"
+                android:minWidth="42dp"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="12sp"
+                app:layout_constraintBottom_toBottomOf="@+id/sbVKSelForeAlpha"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="@+id/sbVKSelForeAlpha" />
 
 
             <Button
@@ -763,8 +845,31 @@
                 android:textDirection="ltr"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/etVKSelFore"
+                app:layout_constraintTop_toBottomOf="@+id/sbVKSelForeAlpha"
                 tools:ignore="UnusedAttribute" />
+
+            <SeekBar
+                android:id="@+id/sbVKSelBackAlpha"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:max="100"
+                app:layout_constraintEnd_toStartOf="@+id/tvVKSelBackAlphaValue"
+                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
+                app:layout_constraintTop_toBottomOf="@+id/etVKSelBack" />
+
+            <TextView
+                android:id="@+id/tvVKSelBackAlphaValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:gravity="center_vertical"
+                android:minWidth="42dp"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="12sp"
+                app:layout_constraintBottom_toBottomOf="@+id/sbVKSelBackAlpha"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="@+id/sbVKSelBackAlpha" />
 
 
             <Button
@@ -794,15 +899,38 @@
                 android:textDirection="ltr"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/etVKSelBack"
+                app:layout_constraintTop_toBottomOf="@+id/sbVKSelBackAlpha"
                 tools:ignore="UnusedAttribute" />
+
+            <SeekBar
+                android:id="@+id/sbVKOutlineAlpha"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:max="100"
+                app:layout_constraintEnd_toStartOf="@+id/tvVKOutlineAlphaValue"
+                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
+                app:layout_constraintTop_toBottomOf="@+id/etVKOutline" />
+
+            <TextView
+                android:id="@+id/tvVKOutlineAlphaValue"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
+                android:gravity="center_vertical"
+                android:minWidth="42dp"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="12sp"
+                app:layout_constraintBottom_toBottomOf="@+id/sbVKOutlineAlpha"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="@+id/sbVKOutlineAlpha" />
 
             <androidx.constraintlayout.widget.Barrier
                 android:id="@+id/barrierInputConfig"
                 android:layout_width="10dp"
                 android:layout_height="match_parent"
                 app:barrierDirection="end"
-                app:constraint_referenced_ids=",tvOpacity,textView7,textView12,cmdVKFore,cmdVKBack,cmdVKSelFore,cmdVKOutline" />
+                app:constraint_referenced_ids=",tvOpacity,textView7,textView12,cmdVKFore,cmdVKBack,cmdVKSelFore,cmdVKOutline,tvVKAlphaDefaultValue" />
 
             <!-- Key colors -->
             <!-- Keyboard settings -->
