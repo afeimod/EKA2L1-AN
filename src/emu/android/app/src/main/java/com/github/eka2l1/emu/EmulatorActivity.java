@@ -110,6 +110,13 @@ public class EmulatorActivity extends AppCompatActivity {
     private VirtualKeyboard keyboard;
 
     /**
+     * Active profile directory. Held in a field because some post-create
+     * flows (e.g. the in-game screen position editor) need access to it
+     * long after {@link #onCreate} returns.
+     */
+    private File configDir;
+
+    /**
      * Container of the surface view. Used as the parent for the
      * in-game {@link ScreenPositionEditor} overlay.
      */
@@ -210,6 +217,7 @@ public class EmulatorActivity extends AppCompatActivity {
 
         String uidStr = Long.toHexString(uid).toUpperCase();
         File configDir = new File(Emulator.getConfigsDir(), uidStr);
+        this.configDir = configDir;
         String defProfile = dataStore.getString(PREF_DEFAULT_PROFILE, null);
 
         if (externalIntent && (params = ProfilesManager.loadConfig(configDir)) == null) {
@@ -574,7 +582,7 @@ public class EmulatorActivity extends AppCompatActivity {
      * by the in-game editor on every drag move.
      */
     private void pushScreenRectToNative(float x1, float y1, float x2, float y2) {
-        if (params == null) return;
+        if (params == null || configDir == null) return;
         final boolean hasBackground = ProfilesManager.getBackgroundFile(configDir).exists();
         Emulator.setScreenParamsEx(
                 params.screenBackgroundColor,
