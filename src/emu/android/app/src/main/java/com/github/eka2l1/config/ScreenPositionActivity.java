@@ -108,6 +108,48 @@ public class ScreenPositionActivity extends Activity {
         Button done = findViewById(R.id.spDone);
         Button reset = findViewById(R.id.spReset);
 
+        // The drawing view must be created here, not as a field
+        // initialiser, because the activity has no Context until
+        // super.onCreate(...) has finished. Field initialisation runs
+        // before that, so `new View(this)` would NPE.
+        final Paint rectPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        rectPaint.setColor(Color.parseColor("#88E91E63"));
+        rectPaint.setStyle(Paint.Style.FILL);
+
+        final Paint handlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        handlePaint.setColor(Color.parseColor("#E91E63"));
+        handlePaint.setStyle(Paint.Style.FILL);
+
+        final Paint handleStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+        handleStroke.setColor(Color.WHITE);
+        handleStroke.setStyle(Paint.Style.STROKE);
+        handleStroke.setStrokeWidth(4f);
+
+        editor = new View(this) {
+            @Override
+            protected void onDraw(Canvas c) {
+                super.onDraw(c);
+                int w = getWidth();
+                int h = getHeight();
+                float l = x1 * w;
+                float t = y1 * h;
+                float r = x2 * w;
+                float b = y2 * h;
+
+                c.drawRect(new RectF(l, t, r, b), rectPaint);
+
+                float rPx = HANDLE_RADIUS_PX;
+                c.drawCircle(l, t, rPx, handlePaint);
+                c.drawCircle(r, t, rPx, handlePaint);
+                c.drawCircle(l, b, rPx, handlePaint);
+                c.drawCircle(r, b, rPx, handlePaint);
+                c.drawCircle(l, t, rPx, handleStroke);
+                c.drawCircle(r, t, rPx, handleStroke);
+                c.drawCircle(l, b, rPx, handleStroke);
+                c.drawCircle(r, b, rPx, handleStroke);
+            }
+        };
+
         done.setOnClickListener(v -> {
             params.screenCustomLayout = true;
             params.screenCustomX1 = x1;
@@ -160,48 +202,13 @@ public class ScreenPositionActivity extends Activity {
         });
     }
 
-    /** The custom view that actually draws the rect + handles. */
-    private final View editor = new View(this) {
-        private final Paint rectPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint handlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint handleStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-        {
-            rectPaint.setColor(Color.parseColor("#88E91E63"));
-            rectPaint.setStyle(Paint.Style.FILL);
-
-            handlePaint.setColor(Color.parseColor("#E91E63"));
-            handlePaint.setStyle(Paint.Style.FILL);
-
-            handleStroke.setColor(Color.WHITE);
-            handleStroke.setStyle(Paint.Style.STROKE);
-            handleStroke.setStrokeWidth(4f);
-        }
-
-        @Override
-        protected void onDraw(Canvas c) {
-            super.onDraw(c);
-            int w = getWidth();
-            int h = getHeight();
-            float l = x1 * w;
-            float t = y1 * h;
-            float r = x2 * w;
-            float b = y2 * h;
-
-            c.drawRect(new RectF(l, t, r, b), rectPaint);
-
-            float rPx = HANDLE_RADIUS_PX;
-            // Four corner handles
-            c.drawCircle(l, t, rPx, handlePaint);
-            c.drawCircle(r, t, rPx, handlePaint);
-            c.drawCircle(l, b, rPx, handlePaint);
-            c.drawCircle(r, b, rPx, handlePaint);
-            c.drawCircle(l, t, rPx, handleStroke);
-            c.drawCircle(r, t, rPx, handleStroke);
-            c.drawCircle(l, b, rPx, handleStroke);
-            c.drawCircle(r, b, rPx, handleStroke);
-        }
-    };
+    /**
+     * The custom view that actually draws the rect + handles.
+     * <p>Initialised lazily inside {@link #onCreate}; a field
+     * initialiser would NPE because the activity has no Context yet
+     * until {@code super.onCreate} runs.</p>
+     */
+    private View editor;
 
     @Override
     protected void onResume() {
