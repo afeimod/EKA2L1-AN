@@ -46,6 +46,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.Button;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -62,6 +63,7 @@ import com.github.eka2l1.applist.AppLaunchInfo;
 import com.github.eka2l1.config.ConfigActivity;
 import com.github.eka2l1.config.ProfileModel;
 import com.github.eka2l1.config.ProfilesManager;
+import com.github.eka2l1.config.ScreenPositionEditor;
 import com.github.eka2l1.emu.overlay.FixedKeyboard;
 import com.github.eka2l1.emu.overlay.OverlayView;
 import com.github.eka2l1.emu.overlay.VirtualKeyboard;
@@ -106,6 +108,19 @@ public class EmulatorActivity extends AppCompatActivity {
     private boolean statusBarEnabled;
     private boolean actionBarEnabled;
     private VirtualKeyboard keyboard;
+
+    /**
+     * Container of the surface view. Used as the parent for the
+     * in-game {@link ScreenPositionEditor} overlay.
+     */
+    private FrameLayout emulatorContainer;
+
+    /**
+     * The in-game screen position editor (when active). Null when the
+     * user is not editing the screen rectangle.
+     */
+    private ScreenPositionEditor inGameEditor;
+    private Button inGameEditorDone;
     private float displayWidth;
     private float displayHeight;
     private SparseIntArray androidToSymbian;
@@ -219,6 +234,7 @@ public class EmulatorActivity extends AppCompatActivity {
         }
 
         SurfaceView surfaceView = findViewById(R.id.surface_view);
+        emulatorContainer = findViewById(R.id.emulator_container);
         ViewCallbacks callbacks = new ViewCallbacks(surfaceView);
         surfaceView.setFocusableInTouchMode(true);
         surfaceView.setWillNotDraw(true);
@@ -448,7 +464,134 @@ public class EmulatorActivity extends AppCompatActivity {
             showSetLayoutDialog();
         } else if (id == R.id.action_hide_buttons) {
             showHideButtonDialog();
+        } else if (id == R.id.action_edit_screen_position) {
+            toggleInGameScreenPositionEditor();
         }
+    }
+
+    /**
+     * Show (or remove) the in-game free-form screen position editor.
+     * <p>The editor is a transparent overlay placed on top of the
+     * SurfaceView. As the user drags the four corners or the screen
+     * body, a live callback pushes the new rectangle to
+     * {@link Emulator#setScreenParamsEx} so the running game is
+     * redrawn with the new size/position immediately — no need to
+     * restart the app to see the result.</p>
+     */
+    private void toggleInGameScreenPositionEditor() {
+        if (inGameEditor != null) {
+            finishInGameScreenPositionEditor();
+            return;
+        }
+        if (emulatorContainer == null || params == null) {
+            return;
+        }
+
+        // Switch on the free-form layout. Even before the user touches
+        // anything, the live callback below will keep the native side
+        // in sync with the editor's current rectangle.
+        params.screenCustomLayout = true;
+
+        ScreenPositionEditor editor = new ScreenPositionEditor(this);
+        // Seed from current profile, with a small inset on first use
+        // so all four handles are reachable on screen.
+        float x1 = params.screenCustomX1;
+        float y1 = params.screenCustomY1;
+        float x2 = params.screenCustomX2;
+        float y2 = params.screenCustomY2;
+        if (x1 == 0f && y1 == 0f && x2 == 1f && y2 == 1f) {
+            x1 = 0.15f; y1 = 0.15f; x2 = 0.85f; y2 = 0.85f;
+        }
+        editor.setRect(x1, y1, x2, y2);
+
+        // Make sure the editor is on top of the SurfaceView but
+        // doesn't intercept events outside its rectangle — the editor
+        // itself returns false from onTouch when the user doesn't
+        // touch a handle / the body, so the SurfaceView underneath
+        // can still receive touches outside the rect.
+        FrameLayout.LayoutParams editorLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT);
+        emulatorContainer.addView(editor, emulatorContainer.getChildCount(), editorLp);
+
+        // Floating "Done" button so the user can leave edit mode.
+        Button done = new Button(this);
+        done.setText(R.string.pref_edit_screen_position_finish);
+        done.setAllCaps(false);
+        FrameLayout.LayoutParams doneLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT);
+        doneLp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
+        doneLp.bottomMargin = dp(48);
+        emulatorContainer.addView(done, emulatorContainer.getChildCount(), doneLp);
+
+        done.setOnClickListener(v -> finishInGameScreenPositionEditor());
+
+        editor.setListener((nx1, ny1, nx2, ny2, confirm) -> pushScreenRectToNative(nx1, ny1, nx2, ny2));
+
+        inGameEditor = editor;
+        inGameEditorDone = done;
+        Toast.makeText(this, R.string.pref_edit_screen_position_started, Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Tear down the in-game editor overlay, persist the new rectangle
+     * to the profile, and apply it natively.
+     */
+    private void finishInGameScreenPositionEditor() {
+        if (inGameEditor == null) {
+            return;
+        }
+        float x1 = inGameEditor.getX1();
+        float y1 = inGameEditor.getY1();
+        float x2 = inGameEditor.getX2();
+        float y2 = inGameEditor.getY2();
+
+        if (params != null) {
+            params.screenCustomLayout = true;
+            params.screenCustomX1 = x1;
+            params.screenCustomY1 = y1;
+            params.screenCustomX2 = x2;
+            params.screenCustomY2 = y2;
+            ProfilesManager.saveConfig(params);
+        }
+
+        pushScreenRectToNative(x1, y1, x2, y2);
+
+        if (emulatorContainer != null) {
+            emulatorContainer.removeView(inGameEditor);
+            if (inGameEditorDone != null) {
+                emulatorContainer.removeView(inGameEditorDone);
+            }
+        }
+        inGameEditor = null;
+        inGameEditorDone = null;
+        Toast.makeText(this, R.string.pref_screen_position_saved, Toast.LENGTH_SHORT).show();
+    }
+
+    /**
+     * Forward the four normalized corners to the native renderer. Used
+     * by the in-game editor on every drag move.
+     */
+    private void pushScreenRectToNative(float x1, float y1, float x2, float y2) {
+        if (params == null) return;
+        final boolean hasBackground = ProfilesManager.getBackgroundFile(configDir).exists();
+        Emulator.setScreenParamsEx(
+                params.screenBackgroundColor,
+                params.screenScaleRatio,
+                params.screenScaleType,
+                params.screenGravity,
+                true,
+                x1, y1, x2, y2,
+                params.screenScaleRatio,
+                hasBackground ? ProfilesManager.getBackgroundPath(configDir.getAbsolutePath()) : "",
+                Math.max(0.0f, Math.min(params.screenBackgroundImageOpacity / 100.0f, 1.0f)),
+                hasBackground && params.screenBackgroundImageKeepAspectRatio);
+    }
+
+    private int dp(int v) {
+        float density = getResources().getDisplayMetrics().density;
+        return Math.round(v * density);
     }
 
     private void showSetLayoutDialog() {

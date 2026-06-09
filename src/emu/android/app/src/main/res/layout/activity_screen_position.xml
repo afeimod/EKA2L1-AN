@@ -5,8 +5,8 @@
     android:background="#202020"
     android:keepScreenOn="true">
 
-    <FrameLayout
-        android:id="@+id/spCanvas"
+    <com.github.eka2l1.config.ScreenPositionEditor
+        android:id="@+id/spEditor"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 

@@ -14,4 +14,7 @@
     <item
         android:id="@+id/action_hide_buttons"
         android:title="@string/hide_buttons" />
+    <item
+        android:id="@+id/action_edit_screen_position"
+        android:title="@string/pref_edit_screen_position" />
 </menu>
