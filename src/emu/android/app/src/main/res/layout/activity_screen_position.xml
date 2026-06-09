@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#202020"
+    android:keepScreenOn="true">
+
+    <FrameLayout
+        android:id="@+id/spCanvas"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/spHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="32dp"
+        android:background="#88000000"
+        android:padding="12dp"
+        android:text="@string/pref_screen_position_hint"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="48dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/spDone"
+            style="@style/ConfigActionButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="16dp"
+            android:text="@string/pref_done"
+            android:textAllCaps="false" />
+
+        <Button
+            android:id="@+id/spReset"
+            style="@style/ConfigActionButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/pref_reset"
+            android:textAllCaps="false" />
+    </LinearLayout>
+</FrameLayout>

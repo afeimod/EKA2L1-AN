@@ -160,6 +160,12 @@
     <string name="pref_screen_gravity_left">左</string>
     <string name="pref_screen_gravity_right">右</string>
     <string name="pref_screen_gravity_top">上方</string>
+    <string name="pref_screen_custom_layout">自由布局</string>
+    <string name="pref_edit_screen_position">编辑屏幕位置</string>
+    <string name="pref_screen_position_hint">拖动四角或屏幕整体调整位置</string>
+    <string name="pref_screen_position_saved">屏幕位置已保存</string>
+    <string name="pref_done">完成</string>
+    <string name="pref_reset">重置</string>
     <string name="pref_screen_scale_type">缩放类型</string>
     <string name="pref_screen_scale_type_fill">填充 (忽略宽高比)</string>
     <string name="pref_screen_scale_type_fit">适应</string>

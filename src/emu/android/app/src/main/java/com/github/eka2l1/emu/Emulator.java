@@ -807,6 +807,20 @@ public class Emulator {
 
     public static native void setScreenParams(int backgroundColor, int scaleRatio, int scaleType, int gravity, String bgImgPath, float bgImgOpacity, boolean bgImgKeepAspect);
 
+    /**
+     * Extended screen-parameter setter that also accepts the free-form
+     * layout rectangle (four normalized corners) and its own scale ratio.
+     * When {@code customLayout} is true the native side ignores
+     * {@code gravity} and uses the four floats to position the screen
+     * anywhere inside the window. Otherwise it behaves like
+     * {@link #setScreenParams}.
+     */
+    public static native void setScreenParamsEx(int backgroundColor, int scaleRatio, int scaleType, int gravity,
+                                                boolean customLayout,
+                                                float cx1, float cy1, float cx2, float cy2,
+                                                float customScaleRatio,
+                                                String bgImgPath, float bgImgOpacity, boolean bgImgKeepAspect);
+
     public static native boolean runTest(String testName);
 
     public static native void submitInput(String text);

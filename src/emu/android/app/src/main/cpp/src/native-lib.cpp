@@ -578,6 +578,25 @@ Java_com_github_eka2l1_emu_Emulator_setScreenParams(JNIEnv *env, jclass clazz,
                                                     jint scale_type, jint gravity,
                                                     jstring bg_img_path, jfloat bg_img_opacity,
                                                     jboolean bg_img_keep_aspect) {
+    // Backwards-compatible wrapper: the new free-form layout path forwards
+    // its own arguments via setScreenParamsEx, so this entry point just
+    // disables the custom layout.
+    Java_com_github_eka2l1_emu_Emulator_setScreenParamsEx(env, clazz, background_color,
+        scale_ratio, scale_type, gravity, 0,
+        0.0f, 0.0f, 1.0f, 1.0f, 100.0f,
+        bg_img_path, bg_img_opacity, bg_img_keep_aspect);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_github_eka2l1_emu_Emulator_setScreenParamsEx(JNIEnv *env, jclass clazz,
+                                                      jint background_color, jint scale_ratio,
+                                                      jint scale_type, jint gravity,
+                                                      jboolean custom_layout,
+                                                      jfloat cx1, jfloat cy1, jfloat cx2, jfloat cy2,
+                                                      jfloat custom_scale_ratio,
+                                                      jstring bg_img_path, jfloat bg_img_opacity,
+                                                      jboolean bg_img_keep_aspect) {
     if (!state || !state->launcher) {
         return;
     }
@@ -585,7 +604,9 @@ Java_com_github_eka2l1_emu_Emulator_setScreenParams(JNIEnv *env, jclass clazz,
     std::string cpath = std::string(cstr);
     env->ReleaseStringUTFChars(bg_img_path, cstr);
 
-    state->launcher->set_screen_params(background_color, scale_ratio, scale_type, gravity, cpath, bg_img_opacity, bg_img_keep_aspect);
+    state->launcher->set_screen_params_ex(background_color, scale_ratio, scale_type, gravity,
+        custom_layout != 0, cx1, cy1, cx2, cy2, custom_scale_ratio,
+        cpath, bg_img_opacity, bg_img_keep_aspect != 0);
 }
 
 extern "C"

@@ -62,6 +62,34 @@ public class ProfileModel {
     @SerializedName("ScreenGravity")
     public int screenGravity;
 
+    /**
+     * Use free-form screen layout. When true, the four corner offsets below
+     * (screenCustomX1/Y1/X2/Y2, normalized 0..1) describe the screen rect
+     * instead of {@link #screenGravity}. The native side will draw the
+     * screen at that exact rectangle.
+     */
+    @SerializedName("ScreenCustomLayout")
+    public boolean screenCustomLayout;
+
+    /**
+     * Normalized top-left corner of the screen rect (0..1 of window size).
+     * Only used when {@link #screenCustomLayout} is true.
+     */
+    @SerializedName("ScreenCustomX1")
+    public float screenCustomX1;
+
+    /** Normalized top-left corner Y. */
+    @SerializedName("ScreenCustomY1")
+    public float screenCustomY1;
+
+    /** Normalized bottom-right corner X. */
+    @SerializedName("ScreenCustomX2")
+    public float screenCustomX2;
+
+    /** Normalized bottom-right corner Y. */
+    @SerializedName("ScreenCustomY2")
+    public float screenCustomY2;
+
     @SerializedName("ScreenShowNotch")
     public boolean screenShowNotch;
 
@@ -119,6 +147,11 @@ public class ProfileModel {
         screenBackgroundImageKeepAspectRatio = true;
         screenScaleType = 1;
         screenGravity = 1;
+        screenCustomLayout = false;
+        screenCustomX1 = 0.0f;
+        screenCustomY1 = 0.0f;
+        screenCustomX2 = 1.0f;
+        screenCustomY2 = 1.0f;
         screenScaleRatio = 100;
         screenShowNotch = false;
 

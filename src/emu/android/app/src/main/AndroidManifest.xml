@@ -70,6 +70,11 @@
  android:name=".config.ConfigActivity"
  android:noHistory="true" />
  <activity
+ android:name=".config.ScreenPositionActivity"
+ android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
+ android:label="@string/pref_edit_screen_position"
+ android:theme="@style/AppTheme.NoActionBar" />
+ <activity
  android:name=".filepicker.FilteredFilePickerActivity"
  android:theme="@style/FilePickerTheme" />
  <activity

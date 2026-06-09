@@ -280,11 +280,23 @@ public class EmulatorActivity extends AppCompatActivity {
 
         final boolean hasBackground = params != null && ProfilesManager.getBackgroundFile(configDir).exists();
 
-        Emulator.setScreenParams(
+        // Always go through the extended setter so that switching the
+        // free-form layout on/off doesn't require a separate code path.
+        final boolean customLayout = params != null && params.screenCustomLayout;
+        final float cx1 = params != null ? params.screenCustomX1 : 0.0f;
+        final float cy1 = params != null ? params.screenCustomY1 : 0.0f;
+        final float cx2 = params != null ? params.screenCustomX2 : 1.0f;
+        final float cy2 = params != null ? params.screenCustomY2 : 1.0f;
+        final float customScale = params != null ? params.screenScaleRatio : 100.0f;
+
+        Emulator.setScreenParamsEx(
                 params != null ? params.screenBackgroundColor : 0,
                 params != null ? params.screenScaleRatio : 100,
                 params != null ? params.screenScaleType : 0,
                 params != null ? params.screenGravity : 2,
+                customLayout,
+                cx1, cy1, cx2, cy2,
+                customScale,
                 hasBackground ? ProfilesManager.getBackgroundPath(configDir.getAbsolutePath()) : "",
                 params != null ? Math.max(0.0f, Math.min(params.screenBackgroundImageOpacity / 100.0f, 1.0f)) : 1.0f,
                 params != null && hasBackground ? params.screenBackgroundImageKeepAspectRatio : false);

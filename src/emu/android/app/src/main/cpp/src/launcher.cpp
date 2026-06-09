@@ -21,6 +21,8 @@
 #include <android/launcher.h>
 #include <android/state.h>
 
+#include <algorithm>
+
 #include <package/manager.h>
 #include <system/devices.h>
 
@@ -641,27 +643,70 @@ namespace eka2l1::android {
             width = width * scale_ratio_ / 100;
             height = height * scale_ratio_ / 100;
 
-            switch (gravity_) {
-                case 0: // left
-                    x = 0;
-                    y = (swapchain_size.y - height) / 2;
-                    break;
-                case 1: // top
+            if (custom_layout_) {
+                // Free-form layout: corners and scale override both gravity
+                // and the global scale ratio. Coordinates are 0..1 in window
+                // space. If the user collapsed the rect, fall back to the
+                // gravity-based placement rather than drawing a zero-size
+                // texture.
+                const float win_w = static_cast<float>(swapchain_size.x);
+                const float win_h = static_cast<float>(swapchain_size.y);
+                float lx1 = custom_x1_;
+                float ly1 = custom_y1_;
+                float lx2 = custom_x2_;
+                float ly2 = custom_y2_;
+
+                // Keep coordinates ordered and inside the window.
+                if (lx2 < lx1) std::swap(lx1, lx2);
+                if (ly2 < ly1) std::swap(ly1, ly2);
+                lx1 = std::max(0.0f, std::min(1.0f, lx1));
+                ly1 = std::max(0.0f, std::min(1.0f, ly1));
+                lx2 = std::max(0.0f, std::min(1.0f, lx2));
+                ly2 = std::max(0.0f, std::min(1.0f, ly2));
+
+                const float rect_w = lx2 - lx1;
+                const float rect_h = ly2 - ly1;
+                if (rect_w > 0.01f && rect_h > 0.01f) {
+                    const float ratio = std::max(0.0f, custom_scale_ratio_) / 100.0f;
+                    x = static_cast<std::uint32_t>(lx1 * win_w);
+                    y = static_cast<std::uint32_t>(ly1 * win_h);
+                    width = rect_w * win_w * ratio;
+                    height = rect_h * win_h * ratio;
+                    // Centre the scaled rect inside the chosen window rect.
+                    if (width < rect_w * win_w) {
+                        x += static_cast<std::uint32_t>((rect_w * win_w - width) / 2.0f);
+                    }
+                    if (height < rect_h * win_h) {
+                        y += static_cast<std::uint32_t>((rect_h * win_h - height) / 2.0f);
+                    }
+                } else {
+                    // Degenerate rect: behave as if the user had picked center.
                     x = (swapchain_size.x - width) / 2;
-                    y = 0;
-                    break;
-                case 2: // center
-                    x = (swapchain_size.x - width) / 2;
                     y = (swapchain_size.y - height) / 2;
-                    break;
-                case 3: // right
-                    x = swapchain_size.x - width;
-                    y = (swapchain_size.y - height) / 2;
-                    break;
-                case 4: // bottom
-                    x = (swapchain_size.x - width) / 2;
-                    y = swapchain_size.y - height;
-                    break;
+                }
+            } else {
+                switch (gravity_) {
+                    case 0: // left
+                        x = 0;
+                        y = (swapchain_size.y - height) / 2;
+                        break;
+                    case 1: // top
+                        x = (swapchain_size.x - width) / 2;
+                        y = 0;
+                        break;
+                    case 2: // center
+                        x = (swapchain_size.x - width) / 2;
+                        y = (swapchain_size.y - height) / 2;
+                        break;
+                    case 3: // right
+                        x = swapchain_size.x - width;
+                        y = (swapchain_size.y - height) / 2;
+                        break;
+                    case 4: // bottom
+                        x = (swapchain_size.x - width) / 2;
+                        y = swapchain_size.y - height;
+                        break;
+                }
             }
 
             const float scale_x = width / static_cast<float>(size.x);
@@ -737,6 +782,30 @@ namespace eka2l1::android {
         scale_ratio_ = scale_ratio;
         scale_type_ = scale_type;
         gravity_ = gravity;
+        custom_layout_ = false;
+        background_img_path_ = bg_img_path;
+        background_img_opacity_ = bg_img_opacity;
+        keep_bg_aspect_ = bg_keep_aspect_ratio;
+    }
+
+    void launcher::set_screen_params_ex(std::uint32_t background_color, std::uint32_t scale_ratio,
+                                        std::uint32_t scale_type, std::uint32_t gravity,
+                                        bool custom_layout, float cx1, float cy1, float cx2, float cy2,
+                                        float custom_scale_ratio,
+                                        const std::string &bg_img_path,
+                                        float bg_img_opacity, bool bg_keep_aspect_ratio) {
+        background_color_[0] = (background_color >> 16) & 0xFF;
+        background_color_[1] = (background_color >> 8) & 0xFF;
+        background_color_[2] = background_color & 0xFF;
+        scale_ratio_ = scale_ratio;
+        scale_type_ = scale_type;
+        gravity_ = gravity;
+        custom_layout_ = custom_layout;
+        custom_x1_ = cx1;
+        custom_y1_ = cy1;
+        custom_x2_ = cx2;
+        custom_y2_ = cy2;
+        custom_scale_ratio_ = custom_scale_ratio;
         background_img_path_ = bg_img_path;
         background_img_opacity_ = bg_img_opacity;
         keep_bg_aspect_ = bg_keep_aspect_ratio;

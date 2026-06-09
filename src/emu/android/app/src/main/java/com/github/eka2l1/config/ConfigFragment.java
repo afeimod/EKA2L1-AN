@@ -92,8 +92,9 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
     protected SeekBar sbScaleRatio;
     protected EditText etScaleRatioValue;
     protected Spinner spOrientation;
-    protected Spinner spScreenGravity;
     protected Spinner spScaleType;
+    protected CompoundButton cbScreenCustomLayout;
+    protected Button cmdEditScreenPosition;
     protected TextView tvUpscaleShader;
     protected Spinner spUpscaleShader;
 
@@ -239,8 +240,9 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
 
         etScreenBack = view.findViewById(R.id.etScreenBack);
         cmdViewScreenBgImg = view.findViewById(R.id.cmdScreenViewBgImg);
-        spScreenGravity = view.findViewById(R.id.spScreenGravity);
         spScaleType = view.findViewById(R.id.spScaleType);
+        cbScreenCustomLayout = view.findViewById(R.id.cbScreenCustomLayout);
+        cmdEditScreenPosition = view.findViewById(R.id.cmdEditScreenPosition);
         sbBgImgOpacity = view.findViewById(R.id.sbScreenBgImgOpacity);
         etBgImgOpacityValue = view.findViewById(R.id.etScreenBgImgOpacityValue);
         sbScaleRatio = view.findViewById(R.id.sbScaleRatio);
@@ -278,6 +280,7 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         view.findViewById(R.id.cmdVKSelFore).setOnClickListener(this);
         view.findViewById(R.id.cmdVKOutline).setOnClickListener(this);
         cmdViewScreenBgImg.setOnClickListener(this);
+        cmdEditScreenPosition.setOnClickListener(this);
 
         // Load shaders
         File upscaleShaderDir = new File(Emulator.getEmulatorDir() + "resources/upscale");
@@ -474,7 +477,7 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         etScaleRatioValue.setText(Integer.toString(params.screenScaleRatio));
         spOrientation.setSelection(params.orientation);
         spScaleType.setSelection(params.screenScaleType);
-        spScreenGravity.setSelection(params.screenGravity);
+        cbScreenCustomLayout.setChecked(params.screenCustomLayout);
         cbShowNotch.setChecked(params.screenShowNotch);
         cbBgImgKeepAspectRatio.setChecked(params.screenBackgroundImageKeepAspectRatio);
 
@@ -519,7 +522,7 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
             params.screenBackgroundImageOpacity = sbBgImgOpacity.getProgress();
             params.screenScaleRatio = sbScaleRatio.getProgress();
             params.orientation = spOrientation.getSelectedItemPosition();
-            params.screenGravity = spScreenGravity.getSelectedItemPosition();
+            params.screenCustomLayout = cbScreenCustomLayout.isChecked();
             params.screenScaleType = spScaleType.getSelectedItemPosition();
             params.screenShowNotch = cbShowNotch.isChecked();
             params.screenBackgroundImageKeepAspectRatio = cbBgImgKeepAspectRatio.isChecked();
@@ -677,6 +680,15 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
                     .replace(R.id.container, keyMapperFragment)
                     .addToBackStack(null)
                     .commit();
+        } else if (id == R.id.cmdEditScreenPosition) {
+            // First, persist the current selection so the editor sees the
+            // exact same values we'd hand to the emulator. Then launch the
+            // free-form layout editor.
+            saveParams();
+            android.content.Intent intent = new android.content.Intent(getContext(),
+                    com.github.eka2l1.config.ScreenPositionActivity.class);
+            intent.putExtra(ScreenPositionActivity.EXTRA_CONFIG_DIR, configDir.getAbsolutePath());
+            startActivity(intent);
         }
     }
 

@@ -60,6 +60,17 @@ namespace eka2l1::android {
         float scale_ratio_;
         std::uint32_t scale_type_;
         std::uint32_t gravity_;
+
+        // Free-form layout overrides the gravity-based placement. When
+        // custom_layout_ is true the four normalized corners (0..1 of
+        // window) and an additional scale ratio (0..200) decide where
+        // and how big the emulated screen is drawn.
+        bool custom_layout_ = false;
+        float custom_x1_ = 0.0f;
+        float custom_y1_ = 0.0f;
+        float custom_x2_ = 1.0f;
+        float custom_y2_ = 1.0f;
+        float custom_scale_ratio_ = 100.0f;
         eka2l1::drivers::ui::input_dialog_complete_callback input_complete_callback_;
         eka2l1::drivers::ui::yes_no_dialog_complete_callback yes_no_complete_callback_;
 
@@ -104,6 +115,13 @@ namespace eka2l1::android {
         void set_screen_params(std::uint32_t background_color, std::uint32_t scale_ratio,
                                std::uint32_t scale_type, std::uint32_t gravity, const std::string &bg_img_path,
                                float bg_img_opacity, bool keep_bg_aspect);
+
+        void set_screen_params_ex(std::uint32_t background_color, std::uint32_t scale_ratio,
+                                  std::uint32_t scale_type, std::uint32_t gravity,
+                                  bool custom_layout, float cx1, float cy1, float cx2, float cy2,
+                                  float custom_scale_ratio,
+                                  const std::string &bg_img_path, float bg_img_opacity,
+                                  bool keep_bg_aspect);
         bool open_input_view(const std::u16string &initial_text,
                              const int max_len,
                              drivers::ui::input_dialog_complete_callback complete_callback);
