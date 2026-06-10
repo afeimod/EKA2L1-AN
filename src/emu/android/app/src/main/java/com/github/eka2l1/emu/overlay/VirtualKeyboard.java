@@ -368,7 +368,11 @@ public class VirtualKeyboard implements Overlay, Runnable {
             float dy = y - cy;
             float dist = (float) Math.hypot(dx, dy);
             float r = Math.min(getRect().width(), getRect().height()) / 2f;
-            float deadZone = r * 0.4f;
+            // Smaller dead-zone so even a small finger press on the
+            // rim registers. The previous 0.4 was far too aggressive:
+            // a fingertip landing on the inner 40% of the stick would
+            // get dead-zoned out and never trigger a direction.
+            float deadZone = r * 0.15f;
             if (dist < deadZone) return -1;
             double deg = Math.toDegrees(Math.atan2(dy, dx));
             if (deg < 0) deg += 360.0;
@@ -402,15 +406,32 @@ public class VirtualKeyboard implements Overlay, Runnable {
             }
         }
 
+        /** Last time a press event was emitted (SystemClock.uptimeMillis).
+         *  Used to auto-repeat the held direction so Symbian games that
+         *  only act on each discrete down/up pair still receive repeated
+         *  key events while the user holds the stick off-centre. */
+        private long lastPressTime = 0L;
+        /** Auto-repeat interval for held direction, in ms. */
+        private static final long REPEAT_INTERVAL_MS = 220L;
+
         /** Called by VirtualKeyboard when the user touches inside this
          *  stick. */
         public void onPointerPressed(float x, float y) {
             int dir = directionFor(x, y);
             updateKnob(x, y);
-            if (dir != activeDirection) {
+            // Always treat a fresh press as a press-then-release pair so
+            // games see a discrete "click" event even if the user keeps
+            // the finger down. Symbian input is event-based, not
+            // state-based, so without the release a one-shot key
+            // press would never trigger a second "step".
+            if (activeDirection >= 0) {
                 releaseActiveDirection();
-                activeDirection = dir;
-                if (dir >= 0) pressDirection(dir);
+            }
+            activeDirection = dir;
+            lastPressTime = android.os.SystemClock.uptimeMillis();
+            if (dir >= 0) {
+                pressDirection(dir);
+                releaseDirection(dir);
             }
         }
 
@@ -419,15 +440,35 @@ public class VirtualKeyboard implements Overlay, Runnable {
             int dir = directionFor(x, y);
             updateKnob(x, y);
             if (dir != activeDirection) {
-                releaseActiveDirection();
+                // The user has moved the stick to a new direction: release
+                // the old one and press the new one immediately.
+                if (activeDirection >= 0) {
+                    releaseActiveDirection();
+                }
                 activeDirection = dir;
-                if (dir >= 0) pressDirection(dir);
+                lastPressTime = android.os.SystemClock.uptimeMillis();
+                if (dir >= 0) {
+                    pressDirection(dir);
+                    releaseDirection(dir);
+                }
+            } else if (dir >= 0) {
+                // Same direction as before: re-emit press/release if the
+                // auto-repeat interval has elapsed. This makes the stick
+                // behave like a real D-pad — holding it keeps the
+                // character walking rather than just one step.
+                long now = android.os.SystemClock.uptimeMillis();
+                if (now - lastPressTime >= REPEAT_INTERVAL_MS) {
+                    lastPressTime = now;
+                    pressDirection(dir);
+                    releaseDirection(dir);
+                }
             }
         }
 
         /** Called by VirtualKeyboard when the finger lifts. */
         public void onPointerReleased() {
             releaseActiveDirection();
+            lastPressTime = 0L;
             knobOffsetX = 0;
             knobOffsetY = 0;
         }
@@ -435,6 +476,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
         /** Force-release any held direction. Used when the keyboard hides. */
         public void releaseAll() {
             releaseActiveDirection();
+            lastPressTime = 0L;
             knobOffsetX = 0;
             knobOffsetY = 0;
         }
