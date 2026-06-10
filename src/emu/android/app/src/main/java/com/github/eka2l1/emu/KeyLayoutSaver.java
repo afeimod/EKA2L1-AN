@@ -34,38 +34,33 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Persists the on-screen control layout to one or more files in a
- * debounced, atomic, deduplicated way.
+ * Persists the on-screen control layout to disk in a debounced, atomic,
+ * deduplicated way.
  *
- * <p>The existing code wrote the layout file synchronously on every layout
+ * <p>The legacy code wrote the layout file synchronously on every layout
  * change. Dragging a key fires a {@code layoutChanged} callback for every
  * pixel of motion, so the old code was hammering the disk and could
- * truncate the file mid-write. {@link KeyLayoutSaver} fixes three problems:
+ * truncate the file mid-write. {@link KeyLayoutSaver} fixes three
+ * problems:
  *
  * <ol>
  *     <li><b>Debounce.</b> Repeated requests within {@link #DEBOUNCE_MS}
  *         collapse into a single write.</li>
  *     <li><b>Deduplicate.</b> Each file's serialised bytes are hashed;
  *         writes are skipped if nothing actually changed.</li>
- *     <li><b>Atomic.</b> Writes go through a {@code .tmp} sibling first and
- *         are renamed on success, so a crash mid-write can't corrupt the
- *         existing layout.</li>
+ *     <li><b>Atomic.</b> Writes go through a {@code .tmp} sibling first
+ *         and are renamed on success, so a crash mid-write can't corrupt
+ *         the existing layout.</li>
  * </ol>
  *
- * <p>Callers should:
+ * <p>Usage:
  * <pre>
  *     saver = new KeyLayoutSaver();
- *     saver.addTarget(keyboardLayoutFile, keyboard::writeLayout);
- *     saver.addTarget(joystickLayoutFile, () -&gt; joystick.writeLayout(dos));
- *     // Any time the layout changes:
- *     saver.requestSave();
- *     // On activity stop / destruction:
- *     saver.flushNow();
+ *     saver.addTarget(keyboardLayoutFile, () -&gt; produceKeyboardBytes());
+ *     saver.requestSave();        // call from any listener
+ *     saver.flushNow();           // call from onPause / onStop
+ *     saver.destroy();            // call from onDestroy
  * </pre>
- *
- * <p>One {@link KeyLayoutSaver} instance can drive multiple target files
- * (e.g. the keyboard layout and the joystick layout) so a single
- * {@code layoutChanged} signal persists both at once.
  */
 public class KeyLayoutSaver {
 
@@ -75,15 +70,21 @@ public class KeyLayoutSaver {
     private static final long DEBOUNCE_MS = 400L;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
-
     private final List<Target> targets = new ArrayList<>();
     private boolean destroyed;
 
-    /** Register another file to be persisted when {@link #requestSave()}
-     *  fires. The provider is invoked from the main thread. */
+    /** Register a file to be persisted when {@link #requestSave()} fires.
+     *  The provider is invoked on the main thread when the debounce timer
+     *  expires. */
     public void addTarget(File targetFile, ByteProvider provider) {
         if (targetFile == null || provider == null) return;
         synchronized (targets) {
+            for (Target t : targets) {
+                if (targetFile.equals(t.file)) {
+                    t.provider = provider;
+                    return;
+                }
+            }
             targets.add(new Target(targetFile, provider));
         }
     }
@@ -145,13 +146,11 @@ public class KeyLayoutSaver {
         }
     }
 
-    /** Writes {@code bytes} to {@code target} atomically and with dedup. */
     private static void writeAtomically(File target, byte[] bytes, String[] hashRef) {
         if (bytes == null || bytes.length == 0) return;
 
         String hash = sha1(bytes);
         if (hash.equals(hashRef[0])) {
-            // Nothing actually changed since last successful write.
             return;
         }
 
@@ -202,7 +201,6 @@ public class KeyLayoutSaver {
             }
             return sb.toString();
         } catch (NoSuchAlgorithmException e) {
-            // SHA-1 is mandatory in every JVM — never happens.
             return Integer.toHexString(data.length);
         }
     }
@@ -212,7 +210,7 @@ public class KeyLayoutSaver {
         byte[] produceBytes() throws IOException;
     }
 
-    /** Adapter for callers that want to write directly into a stream. */
+    /** Adapter for callers that prefer writing into a stream. */
     public static ByteProvider fromStream(final StreamWriter writer) {
         return () -> {
             ByteArrayOutputStream baos = new ByteArrayOutputStream(2048);
@@ -223,17 +221,14 @@ public class KeyLayoutSaver {
         };
     }
 
-    /** Stream-style provider for callers that don't want to manage the
-     *  intermediate byte buffer. */
+    /** Stream-style provider. */
     public interface StreamWriter {
         void writeTo(DataOutputStream dos) throws IOException;
     }
 
     private static final class Target {
         final File file;
-        final ByteProvider provider;
-        /** Wrapped in a single-element array so the lambda inside the saver
-         *  can mutate it without making it a field on Target. */
+        ByteProvider provider;
         final String[] lastHashRef = new String[]{null};
 
         Target(File file, ByteProvider provider) {

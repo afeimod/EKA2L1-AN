@@ -242,7 +242,11 @@
     <string name="layout_scale_mode">Keylayout resize mode</string>
     <string name="layout_switch">Switch keylayout</string>
     <string name="add_joystick">Add joystick</string>
+    <string name="delete_joystick">Delete joystick</string>
     <string name="joystick_added">Joystick added</string>
+    <string name="joystick_deleted">Joystick removed</string>
+    <string name="joystick_none">No joystick to delete</string>
+    <string name="joystick_n">Joystick %1$d</string>
     <string name="hide_buttons">Hide buttons</string>
     <string name="confirmation_required">Confirmation required</string>
     <string name="force_close_confirmation">Force-closing the application may result in data loss or even break it completely!\nProceed?</string>
