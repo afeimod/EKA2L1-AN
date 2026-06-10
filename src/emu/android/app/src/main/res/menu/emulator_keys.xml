@@ -18,6 +18,12 @@
         android:id="@+id/action_delete_joystick"
         android:title="@string/delete_joystick" />
     <item
+        android:id="@+id/action_joystick_outer_size"
+        android:title="@string/joystick_outer_size" />
+    <item
+        android:id="@+id/action_joystick_inner_size"
+        android:title="@string/joystick_inner_size" />
+    <item
         android:id="@+id/action_hide_buttons"
         android:title="@string/hide_buttons" />
     <item

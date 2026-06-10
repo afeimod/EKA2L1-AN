@@ -501,6 +501,10 @@ public class EmulatorActivity extends AppCompatActivity {
             addJoystick();
         } else if (id == R.id.action_delete_joystick) {
             showDeleteJoystickDialog();
+        } else if (id == R.id.action_joystick_outer_size) {
+            showJoystickOuterSizeDialog();
+        } else if (id == R.id.action_joystick_inner_size) {
+            showJoystickInnerSizeDialog();
         }
     }
 
@@ -692,6 +696,111 @@ public class EmulatorActivity extends AppCompatActivity {
                         (dialogInterface, i, b) -> keyboard.setKeyVisibility(i, b))
                 .setPositiveButton(android.R.string.ok, null);
         builder.show();
+    }
+
+    /**
+     * Show a SeekBar dialog to resize the outer ring of an existing
+     * joystick. The user can pick a diameter between 80dp and the
+     * shorter screen side.
+     */
+    private void showJoystickOuterSizeDialog() {
+        if (keyboard.getJoystickCount() == 0) {
+            Toast.makeText(this, R.string.joystick_none, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] names = new String[keyboard.getJoystickCount()];
+        for (int i = 0; i < keyboard.getJoystickCount(); i++) {
+            names[i] = getString(R.string.joystick_n, i + 1);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.joystick_outer_size)
+                .setItems(names, (dialog, which) ->
+                        showJoystickSizeSeekbar(which, true))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * Show a SeekBar dialog to resize the inner ball of an existing
+     * joystick, as a fraction of the outer ring radius. Range 0.2 — 0.9.
+     */
+    private void showJoystickInnerSizeDialog() {
+        if (keyboard.getJoystickCount() == 0) {
+            Toast.makeText(this, R.string.joystick_none, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] names = new String[keyboard.getJoystickCount()];
+        for (int i = 0; i < keyboard.getJoystickCount(); i++) {
+            names[i] = getString(R.string.joystick_n, i + 1);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.joystick_inner_size)
+                .setItems(names, (dialog, which) ->
+                        showJoystickSizeSeekbar(which, false))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /**
+     * Show a vertical SeekBar that lets the user adjust either the
+     * outer ring diameter (in pixels) or the inner-ball fraction
+     * depending on {@code outer}.
+     */
+    private void showJoystickSizeSeekbar(int index, boolean outer) {
+        android.widget.SeekBar seek = new android.widget.SeekBar(this);
+        seek.setMax(100);
+        float minPx = 80 * getResources().getDisplayMetrics().density; // 80dp
+        float maxPx = Math.min(displayWidth, displayHeight) * 0.8f;
+        // Initial value: map current size to 0..100
+        if (outer) {
+            float current = keyboard.getJoystick(index) != null
+                    ? Math.max(minPx, Math.min(maxPx,
+                            Math.min(keyboard.getJoystick(index).getRect().width(),
+                                    keyboard.getJoystick(index).getRect().height())))
+                    : (minPx + maxPx) / 2f;
+            seek.setProgress((int) ((current - minPx) * 100 / (maxPx - minPx)));
+            seek.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(android.widget.SeekBar sb, int progress, boolean fromUser) {
+                    if (!fromUser) return;
+                    float px = minPx + (maxPx - minPx) * progress / 100f;
+                    keyboard.setJoystickOuterSize(index, px);
+                }
+
+                @Override public void onStartTrackingTouch(android.widget.SeekBar sb) {}
+                @Override public void onStopTrackingTouch(android.widget.SeekBar sb) {}
+            });
+        } else {
+            float current = keyboard.getJoystick(index) != null
+                    ? keyboard.getJoystick(index).getInnerScale() : 0.45f;
+            seek.setProgress((int) ((current - 0.2f) * 100 / 0.7f));
+            seek.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(android.widget.SeekBar sb, int progress, boolean fromUser) {
+                    if (!fromUser) return;
+                    float frac = 0.2f + 0.7f * progress / 100f;
+                    keyboard.setJoystickInnerSize(index, frac);
+                }
+
+                @Override public void onStartTrackingTouch(android.widget.SeekBar sb) {}
+                @Override public void onStopTrackingTouch(android.widget.SeekBar sb) {}
+            });
+        }
+
+        // Wrap the SeekBar in a small padding container so it isn't
+        // flush against the dialog edges.
+        android.widget.FrameLayout wrap = new android.widget.FrameLayout(this);
+        int pad = (int) (24 * getResources().getDisplayMetrics().density);
+        wrap.setPadding(pad, pad, pad, 0);
+        wrap.addView(seek, new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        new AlertDialog.Builder(this)
+                .setTitle(outer ? R.string.joystick_outer_size : R.string.joystick_inner_size)
+                .setView(wrap)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
     }
 
     private void setActionBar(String title) {

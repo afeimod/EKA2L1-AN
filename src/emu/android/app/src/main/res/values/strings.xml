@@ -247,6 +247,8 @@
     <string name="joystick_deleted">Joystick removed</string>
     <string name="joystick_none">No joystick to delete</string>
     <string name="joystick_n">Joystick %1$d</string>
+    <string name="joystick_outer_size">Joystick outer size</string>
+    <string name="joystick_inner_size">Joystick inner size</string>
     <string name="hide_buttons">Hide buttons</string>
     <string name="confirmation_required">Confirmation required</string>
     <string name="force_close_confirmation">Force-closing the application may result in data loss or even break it completely!\nProceed?</string>

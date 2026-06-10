@@ -66,6 +66,18 @@ public class VirtualKeyboard implements Overlay, Runnable {
         boolean opaque = true;
         private int corners = 0;
 
+        /** Last time a key-down was emitted. Used to auto-repeat the
+         *  key so the game keeps receiving "click" events while the
+         *  user holds the key. Symbian input is event-based — a key
+         *  press without the matching release is interpreted by the
+         *  OS as the user switching to menu-navigation mode rather
+         *  than "walk" mode. */
+        private long lastPressTime = 0L;
+        /** Auto-repeat interval in ms. Short enough that a held
+         *  direction keeps the character moving at a comfortable
+         *  pace; long enough that the input thread isn't overwhelmed. */
+        private static final long REPEAT_INTERVAL_MS = 100L;
+
         /** Back-reference to the enclosing keyboard. Static nested
          *  classes don't have an implicit reference to the outer
          *  instance, so the owner is set explicitly when the key is
@@ -121,6 +133,52 @@ public class VirtualKeyboard implements Overlay, Runnable {
 
         public boolean contains(float x, float y) {
             return visible && rect.contains(x, y);
+        }
+
+        /** Send a down event for this key. */
+        public void press() {
+            Emulator.pressKey(keyCode, 0);
+            if (secondKeyCode != 0) {
+                Emulator.pressKey(secondKeyCode, 0);
+            }
+        }
+
+        /** Send an up event for this key. */
+        public void release() {
+            Emulator.pressKey(keyCode, 1);
+            if (secondKeyCode != 0) {
+                Emulator.pressKey(secondKeyCode, 1);
+            }
+        }
+
+        /** Fire a single press/release cycle and update the
+         *  last-emit timestamp so {@link #tickRepeat()} can be used
+         *  to keep the key ticking at a steady cadence while the
+         *  user holds the touch down. */
+        public void emitClick() {
+            press();
+            release();
+            lastPressTime = android.os.SystemClock.uptimeMillis();
+        }
+
+        /** If the auto-repeat interval has elapsed, re-emit a
+         *  press/release pair. Returns true if anything was emitted
+         *  so callers can skip extra work. */
+        public boolean tickRepeat() {
+            long now = android.os.SystemClock.uptimeMillis();
+            if (now - lastPressTime >= REPEAT_INTERVAL_MS) {
+                lastPressTime = now;
+                press();
+                release();
+                return true;
+            }
+            return false;
+        }
+
+        /** Reset the auto-repeat timer (call when the user lifts
+         *  their finger). */
+        public void resetRepeat() {
+            lastPressTime = 0L;
         }
 
         public void paint(Canvas g) {
@@ -420,9 +478,10 @@ public class VirtualKeyboard implements Overlay, Runnable {
             float dy = knobOffsetY;
             float dist = (float) Math.hypot(dx, dy);
             float r = Math.min(getRect().width(), getRect().height()) / 2f;
-            // Small dead-zone so a gentle touch still resolves to a
-            // direction but a perfectly centred knob doesn't fire one.
-            float deadZone = r * 0.15f;
+            // Very small dead-zone so even a near-centre touch still
+            // resolves to a direction. Some N-Gage games refuse to
+            // accept a key press unless it's clearly off-axis.
+            float deadZone = r * 0.08f;
             if (dist < deadZone) return -1;
             double deg = Math.toDegrees(Math.atan2(dy, dx));
             if (deg < 0) deg += 360.0;
@@ -1522,10 +1581,12 @@ public class VirtualKeyboard implements Overlay, Runnable {
                         vibrate();
                         associatedKeys[pointer] = aKeypad;
                         aKeypad.setSelected(true);
-                        Emulator.pressKey(associatedKeys[pointer].getKeyCode(), 0);
-                        if (associatedKeys[pointer].getSecondKeyCode() != 0) {
-                            Emulator.pressKey(associatedKeys[pointer].getSecondKeyCode(), 0);
-                        }
+                        // Fire a full down/up pair so the game registers
+                        // a discrete "click". Symbian treats one down
+                        // with no matching up as "key held" which puts
+                        // the OS into menu-navigation mode instead of
+                        // game-walk mode, so we always pair them up.
+                        aKeypad.emitClick();
                         repaint();
                         return true;
                     }
@@ -1625,6 +1686,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 if (associatedKeys[pointer] == null) {
                     return pointerPressed(pointer, x, y);
                 } else if (!associatedKeys[pointer].contains(x, y)) {
+                    // User dragged off the key — release it.
                     Emulator.pressKey(associatedKeys[pointer].getKeyCode(), 1);
                     if (associatedKeys[pointer].getSecondKeyCode() != 0) {
                         Emulator.pressKey(associatedKeys[pointer].getSecondKeyCode(), 1);
@@ -1635,6 +1697,14 @@ public class VirtualKeyboard implements Overlay, Runnable {
                     pointerPressed(pointer, x, y);
 
                     return true;
+                } else {
+                    // Still on the same key: keep auto-repeating so the
+                    // character continues to move while the user holds
+                    // the key down. Symbian OS treats repeated down/up
+                    // pairs as "walk" steps — without the repeats the
+                    // game would only ever see the very first event
+                    // and the character wouldn't actually move.
+                    associatedKeys[pointer].tickRepeat();
                 }
                 break;
             case LAYOUT_KEYS:
@@ -1730,11 +1800,18 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 return true;
             }
             if (associatedKeys[pointer] != null) {
+                // The key already received a full down/up cycle when it
+                // was first pressed, so by release time we only need
+                // to forget the association and clear selection. We
+                // still send a final release for safety: if the
+                // auto-repeat loop was running, we want to guarantee
+                // the key ends in an "up" state.
                 Emulator.pressKey(associatedKeys[pointer].getKeyCode(), 1);
                 if (associatedKeys[pointer].getSecondKeyCode() != 0) {
                     Emulator.pressKey(associatedKeys[pointer].getSecondKeyCode(), 1);
                 }
                 associatedKeys[pointer].setSelected(false);
+                associatedKeys[pointer].resetRepeat();
                 associatedKeys[pointer] = null;
                 repaint();
 
