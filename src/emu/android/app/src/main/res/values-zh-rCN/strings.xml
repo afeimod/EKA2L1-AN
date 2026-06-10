@@ -211,13 +211,6 @@
     <string name="install_ng_game_no_game_info_file">The game information file does not exist in the card game folder!</string>
     <string name="install_ng_game_corrupted_game_info">游戏信息文件已损坏。请检查您的数据是否有效！</string>
 
-    <string name="reset_layout">重置键位</string>
-    <string name="pref_screen_custom_layout">自由布局</string>
-    <string name="layout_edit_finished">已退出编辑模式</string>
-    <string name="layout_edit_finish">完成编辑模式</string>
-    <string name="layout_edit_mode">键位编辑模式</string>
-    <string name="layout_scale_mode">键位缩放模式</string>
-    <string name="layout_switch">切换键位</string>
     <string name="add_joystick">添加摇杆</string>
     <string name="delete_joystick">删除摇杆</string>
     <string name="joystick_added">已添加摇杆</string>
@@ -226,6 +219,4 @@
     <string name="joystick_n">摇杆 %1$d</string>
     <string name="joystick_outer_size">摇杆外圈大小</string>
     <string name="joystick_inner_size">摇杆内圈大小</string>
-    <string name="hide_buttons">隐藏按钮</string>
-    <string name="pref_edit_screen_position">编辑屏幕位置</string>
 </resources>
