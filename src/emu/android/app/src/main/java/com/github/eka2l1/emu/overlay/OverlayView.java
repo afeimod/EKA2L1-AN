@@ -23,11 +23,16 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.View;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 public class OverlayView extends View {
     private final Rect surfaceRect = new Rect();
-    private Overlay overlay;
+    private final List<Overlay> overlays = new ArrayList<>();
 
     public OverlayView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -35,10 +40,11 @@ public class OverlayView extends View {
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (overlay == null) return;
         int save = canvas.save();
         canvas.translate(surfaceRect.left, surfaceRect.top);
-        overlay.paint(canvas);
+        for (Overlay o : overlays) {
+            if (o != null) o.paint(canvas);
+        }
         canvas.restoreToCount(save);
     }
 
@@ -46,7 +52,117 @@ public class OverlayView extends View {
         surfaceRect.set(bounds);
     }
 
+    /**
+     * Replace the list of overlays. The keyboard should always be the first
+     * element so it gets first crack at every touch (it has more keys than
+     * any other overlay and the user expects the keyboard hit-test to win
+     * when both shapes overlap).
+     */
+    public void setOverlays(List<Overlay> list) {
+        overlays.clear();
+        if (list != null) overlays.addAll(list);
+        invalidate();
+    }
+
+    /** Add an overlay to the end of the dispatch order. */
+    public void addOverlay(Overlay overlay) {
+        if (overlay == null) return;
+        overlays.add(overlay);
+        invalidate();
+    }
+
+    /** Remove a previously added overlay. */
+    public void removeOverlay(Overlay overlay) {
+        if (overlay == null) return;
+        for (Iterator<Overlay> it = overlays.iterator(); it.hasNext(); ) {
+            if (it.next() == overlay) {
+                it.remove();
+                invalidate();
+                return;
+            }
+        }
+    }
+
+    /**
+     * Dispatch a pointer event to every overlay in order. As soon as one
+     * overlay returns {@code true} the event is considered handled and we
+     * stop walking the list — this matches the existing semantics where
+     * the keyboard gets to swallow touches before they reach the emulator
+     * touch screen.
+     *
+     * <p>Always returns {@code true} so the SurfaceView's OnTouchListener
+     * keeps the gesture (Android would otherwise steal subsequent MOVE
+     * events).</p>
+     */
+    public boolean dispatchPointerEvent(int action, int pointerId, float x, float y) {
+        // Translate to overlay-local coordinates.
+        float lx = x - surfaceRect.left;
+        float ly = y - surfaceRect.top;
+        boolean handled = false;
+        for (Overlay o : overlays) {
+            if (o == null) continue;
+            switch (action) {
+                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_POINTER_DOWN:
+                    handled = o.pointerPressed(pointerId, lx, ly);
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    handled = o.pointerDragged(pointerId, lx, ly);
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_POINTER_UP:
+                    handled = o.pointerReleased(pointerId, lx, ly);
+                    break;
+                default:
+                    continue;
+            }
+            if (handled) break;
+        }
+        return true;
+    }
+
+    /**
+     * Dispatch a pointer event and return whether any overlay consumed it.
+     * Unlike {@link #dispatchPointerEvent(int, int, float, float)} this
+     * surfaces the handled flag so callers (e.g. the emulator activity)
+     * can decide whether to forward the touch to the Symbian touch screen.
+     */
+    public boolean dispatchPointerEventHandled(int action, int pointerId, float x, float y) {
+        float lx = x - surfaceRect.left;
+        float ly = y - surfaceRect.top;
+        for (Overlay o : overlays) {
+            if (o == null) continue;
+            boolean handled = false;
+            switch (action) {
+                case MotionEvent.ACTION_DOWN:
+                case MotionEvent.ACTION_POINTER_DOWN:
+                    handled = o.pointerPressed(pointerId, lx, ly);
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    handled = o.pointerDragged(pointerId, lx, ly);
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_POINTER_UP:
+                    handled = o.pointerReleased(pointerId, lx, ly);
+                    break;
+                default:
+                    continue;
+            }
+            if (handled) return true;
+        }
+        return false;
+    }
+
+    /** Convenience getter for back-compat with code that previously held a
+     *  single overlay reference. Returns the first overlay in the list. */
+    public Overlay getFirstOverlay() {
+        return overlays.isEmpty() ? null : overlays.get(0);
+    }
+
+    /** Back-compat setter: replaces the list with a single overlay. */
     public void setOverlay(Overlay overlay) {
-        this.overlay = overlay;
+        overlays.clear();
+        if (overlay != null) overlays.add(overlay);
+        invalidate();
     }
 }

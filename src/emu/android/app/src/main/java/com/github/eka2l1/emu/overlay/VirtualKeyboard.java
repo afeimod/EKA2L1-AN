@@ -548,6 +548,20 @@ public class VirtualKeyboard implements Overlay, Runnable {
     public void writeLayout(DataOutputStream dos) throws IOException {
         dos.writeInt(LAYOUT_SIGNATURE);
         dos.writeInt(LAYOUT_VERSION);
+        writeKeysBlock(dos);
+        writeScalesBlock(dos);
+        writeColorsBlock(dos);
+        dos.writeInt(LAYOUT_EOF);
+        dos.writeInt(0);
+    }
+
+    /**
+     * Write only the {@link #LAYOUT_KEYS} block. Callers that compose the
+     * layout file themselves (e.g. {@link com.github.eka2l1.emu.KeyLayoutSaver})
+     * can use this to keep their block ordering flexible while staying
+     * forward-compatible with the legacy all-in-one writer above.
+     */
+    public void writeKeysBlock(DataOutputStream dos) throws IOException {
         dos.writeInt(LAYOUT_KEYS);
         dos.writeInt(keypad.length * 20 + 4);
         dos.writeInt(keypad.length);
@@ -559,20 +573,34 @@ public class VirtualKeyboard implements Overlay, Runnable {
             dos.writeFloat(snapOffsets[i].x);
             dos.writeFloat(snapOffsets[i].y);
         }
+    }
+
+    /**
+     * Write only the {@link #LAYOUT_SCALES} block.
+     *
+     * @see #writeKeysBlock(DataOutputStream)
+     */
+    public void writeScalesBlock(DataOutputStream dos) throws IOException {
         dos.writeInt(LAYOUT_SCALES);
         dos.writeInt(keyScales.length * 4 + 4);
         dos.writeInt(keyScales.length);
         for (float keyScale : keyScales) {
             dos.writeFloat(keyScale);
         }
+    }
+
+    /**
+     * Write only the {@link #LAYOUT_COLORS} block.
+     *
+     * @see #writeKeysBlock(DataOutputStream)
+     */
+    public void writeColorsBlock(DataOutputStream dos) throws IOException {
         dos.writeInt(LAYOUT_COLORS);
         dos.writeInt(colors.length * 4 + 4);
         dos.writeInt(colors.length);
         for (int color : colors) {
             dos.writeInt(color);
         }
-        dos.writeInt(LAYOUT_EOF);
-        dos.writeInt(0);
     }
 
     public void readLayout(DataInputStream dis) throws IOException {
@@ -731,6 +759,49 @@ public class VirtualKeyboard implements Overlay, Runnable {
         for (VirtualKey key : keypad) {
             key.opaque &= !obscuresVirtualScreen || forceOpacity;
         }
+    }
+
+    /**
+     * Clamp the rect to the visible screen bounds so the key never escapes
+     * the surface while the user is dragging it.
+     */
+    private void clampToScreen(RectF rect) {
+        if (screen == null) return;
+        if (rect.left < screen.left) {
+            rect.offset(screen.left - rect.left, 0);
+        }
+        if (rect.top < screen.top) {
+            rect.offset(0, screen.top - rect.top);
+        }
+        if (rect.right > screen.right) {
+            rect.offset(screen.right - rect.right, 0);
+        }
+        if (rect.bottom > screen.bottom) {
+            rect.offset(0, screen.bottom - rect.bottom);
+        }
+    }
+
+    /**
+     * Mark every key that depends on {@code anchor} (directly or transitively)
+     * as needing re-resolution. Used after a manual drag so the snap chain
+     * picks up the new position on the next {@link #snapKeys()}.
+     */
+    private void invalidateSnapDependents(int anchor) {
+        for (int i = 0; i < snapOrigins.length; i++) {
+            if (i == anchor) continue;
+            int origin = snapOrigins[i];
+            int safety = snapOrigins.length;
+            while (origin != SCREEN && origin != anchor && safety-- > 0) {
+                // walk up one step
+                int next = snapOrigins[origin];
+                if (next == origin) break;
+                origin = next;
+            }
+            if (origin == anchor) {
+                snapValid[i] = false;
+            }
+        }
+        snapValid[anchor] = false;
     }
 
     private void highlightGroup(int group) {
@@ -920,24 +991,20 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 if (editedIndex >= 0) {
                     RectF rect = keypad[editedIndex].getRect();
                     rect.offsetTo(x - offsetX, y - offsetY);
+                    // Magnetic snapping to neighbouring keys has been
+                    // intentionally disabled — the user is in full control
+                    // of where each key sits. We still clamp to the screen
+                    // and reset the snap metadata so the next layout
+                    // re-evaluation doesn't pull the key back to a sibling.
                     snapModes[editedIndex] = RectSnap.NO_SNAP;
-                    for (int i = 0; i < keypad.length; i++) {
-                        if (i != editedIndex && findSnap(editedIndex, i)) {
-                            break;
-                        }
-                    }
-                    if (snapModes[editedIndex] == RectSnap.NO_SNAP) {
-                        snapModes[editedIndex] = RectSnap.getSnap(rect, screen, snapOffsets[editedIndex]);
-                        snapOrigins[editedIndex] = SCREEN;
-                        if (Math.abs(snapOffsets[editedIndex].x) <= snapRadius) {
-                            snapOffsets[editedIndex].x = 0;
-                        }
-                        if (Math.abs(snapOffsets[editedIndex].y) <= snapRadius) {
-                            snapOffsets[editedIndex].y = 0;
-                        }
-                    }
-                    snapKey(editedIndex, 0);
-                    snapKeys();
+                    snapOrigins[editedIndex] = SCREEN;
+                    snapOffsets[editedIndex].set(0, 0);
+                    snapValid[editedIndex] = false;
+                    clampToScreen(rect);
+                    // Keep the snap graph consistent: every key that was
+                    // chained off this one needs its cached position
+                    // invalidated so the next paint re-resolves it.
+                    invalidateSnapDependents(editedIndex);
                     repaint();
                 }
                 break;

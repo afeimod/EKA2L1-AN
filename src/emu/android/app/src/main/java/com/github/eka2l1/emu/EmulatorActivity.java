@@ -65,6 +65,7 @@ import com.github.eka2l1.config.ProfileModel;
 import com.github.eka2l1.config.ProfilesManager;
 import com.github.eka2l1.config.ScreenPositionEditor;
 import com.github.eka2l1.emu.overlay.FixedKeyboard;
+import com.github.eka2l1.emu.overlay.Joystick;
 import com.github.eka2l1.emu.overlay.OverlayView;
 import com.github.eka2l1.emu.overlay.VirtualKeyboard;
 import com.github.eka2l1.settings.AppDataStore;
@@ -84,6 +85,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Semaphore;
@@ -108,6 +111,8 @@ public class EmulatorActivity extends AppCompatActivity {
     private boolean statusBarEnabled;
     private boolean actionBarEnabled;
     private VirtualKeyboard keyboard;
+    private final List<Joystick> joysticks = new ArrayList<>();
+    private KeyLayoutSaver layoutSaver;
 
     /**
      * Active profile directory. Held in a field because some post-create
@@ -163,10 +168,27 @@ public class EmulatorActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         try {
+            if (layoutSaver != null) {
+                layoutSaver.flushNow();
+                layoutSaver.destroy();
+            }
+        } catch (Throwable ignore) {
+        }
+        try {
             nativeCallExecutor.shutdown();
         } catch (Throwable ignore) {
         }
         super.onDestroy();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // Persist any pending layout edit before the activity is hidden, so
+        // a low-memory kill never loses user changes.
+        if (layoutSaver != null) {
+            layoutSaver.flushNow();
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -474,6 +496,8 @@ public class EmulatorActivity extends AppCompatActivity {
             showHideButtonDialog();
         } else if (id == R.id.action_edit_screen_position) {
             toggleInGameScreenPositionEditor();
+        } else if (id == R.id.action_add_joystick) {
+            addJoystick();
         }
     }
 
@@ -676,20 +700,103 @@ public class EmulatorActivity extends AppCompatActivity {
         overlayView.setOverlay(keyboard);
         keyboard.setView(overlayView);
 
-        keyboard.setLayoutListener(vk -> {
-            try {
-                File parentFile = new File(Emulator.getConfigsDir(), appDirName);
-                if (!parentFile.exists()) {
-                    parentFile.mkdirs();
+        // ---- Joystick persistence setup ----
+        // The keyboard and every joystick share one debounced/atomic saver
+        // so a single layoutChanged signal persists everything at once.
+        File configRoot = new File(Emulator.getConfigsDir(), appDirName);
+        if (!configRoot.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            configRoot.mkdirs();
+        }
+        File joystickLayoutFile = new File(configRoot,
+                Emulator.APP_KEY_LAYOUT_FILE + ".joysticks");
+
+        layoutSaver = new KeyLayoutSaver();
+        // Composed keyboard layout: signature + version header, then the
+        // three existing blocks (keys/scales/colors) followed by the legacy
+        // EOF terminator. Using the byte-stream provider lets the saver
+        // dedupe by hash and write atomically (no torn-file risk).
+        layoutSaver.addTarget(keyLayoutFile, KeyLayoutSaver.fromStream(dos -> {
+            dos.writeInt(0x564B4C00); // LAYOUT_SIGNATURE
+            dos.writeInt(2);          // LAYOUT_VERSION
+            keyboard.writeKeysBlock(dos);
+            keyboard.writeScalesBlock(dos);
+            keyboard.writeColorsBlock(dos);
+            dos.writeInt(VirtualKeyboard.LAYOUT_EOF);
+            dos.writeInt(0);
+        }));
+
+        // Joystick layout is a sibling file: a sequence of
+        // {@link Joystick#LAYOUT_JOYSTICK} blocks terminated by LAYOUT_EOF.
+        layoutSaver.addTarget(joystickLayoutFile, () -> {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream(512);
+            try (java.io.DataOutputStream dos = new java.io.DataOutputStream(baos)) {
+                for (Joystick j : joysticks) {
+                    j.writeJoystickBlock(dos);
                 }
-                FileOutputStream fos = new FileOutputStream(keyLayoutFile);
-                DataOutputStream dos = new DataOutputStream(fos);
-                vk.writeLayout(dos);
-                fos.close();
-            } catch (IOException ioe) {
-                ioe.printStackTrace();
+                dos.writeInt(VirtualKeyboard.LAYOUT_EOF);
+                dos.writeInt(0);
             }
+            return baos.toByteArray();
         });
+
+        keyboard.setLayoutListener(vk -> layoutSaver.requestSave());
+
+        // Load any previously saved joysticks.
+        loadJoysticks(joystickLayoutFile);
+    }
+
+    /**
+     * Read the saved joystick layout file and recreate each joystick. The
+     * file format is a sequence of {@link Joystick#writeJoystickBlock} blocks
+     * terminated by {@code LAYOUT_END}.
+     */
+    private void loadJoysticks(File layoutFile) {
+        joysticks.clear();
+        if (!layoutFile.exists()) return;
+        try (DataInputStream dis = new DataInputStream(
+                new java.io.FileInputStream(layoutFile))) {
+            while (true) {
+                int block = dis.readInt();
+                int length = dis.readInt();
+                if (block == VirtualKeyboard.LAYOUT_EOF) {
+                    break;
+                }
+                if (block == Joystick.LAYOUT_JOYSTICK) {
+                    Joystick j = new Joystick(this);
+                    j.setView(overlayView);
+                    j.readLayout(dis);
+                    j.setLayoutListener(js -> layoutSaver.requestSave());
+                    joysticks.add(j);
+                    if (overlayView != null) {
+                        overlayView.addOverlay(j);
+                    }
+                } else {
+                    dis.skipBytes(length);
+                }
+            }
+        } catch (IOException ioe) {
+            ioe.printStackTrace();
+        }
+    }
+
+    /**
+     * Add a fresh joystick at the default bottom-left position. Called
+     * from the emulator menu.
+     */
+    private void addJoystick() {
+        if (layoutSaver == null) return;
+        Joystick j = new Joystick(this);
+        j.setView(overlayView);
+        RectF screen = new RectF(0, 0, displayWidth, displayHeight);
+        j.resize(screen, screen);
+        j.setLayoutListener(js -> layoutSaver.requestSave());
+        joysticks.add(j);
+        if (overlayView != null) {
+            overlayView.addOverlay(j);
+        }
+        layoutSaver.requestSave();
+        Toast.makeText(this, R.string.joystick_added, Toast.LENGTH_SHORT).show();
     }
 
     private void hideSystemUI() {
@@ -709,6 +816,9 @@ public class EmulatorActivity extends AppCompatActivity {
         RectF screen = new RectF(0, 0, displayWidth, displayHeight);
         if (keyboard != null) {
             keyboard.resize(screen, screen);
+        }
+        for (Joystick j : joysticks) {
+            j.resize(screen, screen);
         }
     }
 
@@ -824,8 +934,9 @@ public class EmulatorActivity extends AppCompatActivity {
         public boolean onTouch(View v, MotionEvent event) {
             // Check if params is null or touch input is disabled
             boolean touchEnabled = (params != null) && params.touchInput;
-            
-            switch (event.getActionMasked()) {
+
+            int action = event.getActionMasked();
+            switch (action) {
                 case MotionEvent.ACTION_DOWN:
                     // Only show keyboard if it's not already visible and game is launched
                     if (keyboard != null && launched) {
@@ -837,8 +948,11 @@ public class EmulatorActivity extends AppCompatActivity {
                     float x = event.getX(index);
                     float y = event.getY(index);
                     float z = event.getPressure(index) * 0x7FFFFFFF;    // Max pressure
-                    if ((keyboard == null || !keyboard.pointerPressed(id, x, y)) && touchEnabled) {
-                        Emulator.touchScreen((int) x, (int) y, (int)z, 0, id);
+                    if (overlayView == null
+                            || !overlayView.dispatchPointerEventHandled(action, id, x, y)) {
+                        if (touchEnabled) {
+                            Emulator.touchScreen((int) x, (int) y, (int) z, 0, id);
+                        }
                     }
                     break;
                 case MotionEvent.ACTION_MOVE:
@@ -850,8 +964,11 @@ public class EmulatorActivity extends AppCompatActivity {
                             x = event.getHistoricalX(p, h);
                             y = event.getHistoricalY(p, h);
                             z = event.getHistoricalPressure(p, h) * 0x7FFFFFFF;    // Max pressure
-                            if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && touchEnabled) {
-                                Emulator.touchScreen((int) x, (int) y, (int)z, 1, id);
+                            if (overlayView == null
+                                    || !overlayView.dispatchPointerEventHandled(action, id, x, y)) {
+                                if (touchEnabled) {
+                                    Emulator.touchScreen((int) x, (int) y, (int) z, 1, id);
+                                }
                             }
                         }
                     }
@@ -860,8 +977,11 @@ public class EmulatorActivity extends AppCompatActivity {
                         x = event.getX(p);
                         y = event.getY(p);
                         z = event.getPressure(p) * 0x7FFFFFFF;    // Max pressure
-                        if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && touchEnabled) {
-                            Emulator.touchScreen((int) x, (int) y, (int)z, 1, id);
+                        if (overlayView == null
+                                || !overlayView.dispatchPointerEventHandled(action, id, x, y)) {
+                            if (touchEnabled) {
+                                Emulator.touchScreen((int) x, (int) y, (int) z, 1, id);
+                            }
                         }
                     }
                     break;
@@ -874,8 +994,11 @@ public class EmulatorActivity extends AppCompatActivity {
                     id = event.getPointerId(index);
                     x = event.getX(index);
                     y = event.getY(index);
-                    if ((keyboard == null || !keyboard.pointerReleased(id, x, y)) && touchEnabled) {
-                        Emulator.touchScreen((int) x, (int) y, (int)0, 2, id);
+                    if (overlayView == null
+                            || !overlayView.dispatchPointerEventHandled(action, id, x, y)) {
+                        if (touchEnabled) {
+                            Emulator.touchScreen((int) x, (int) y, 0, 2, id);
+                        }
                     }
                     break;
                 default:
