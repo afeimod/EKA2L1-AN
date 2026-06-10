@@ -301,10 +301,48 @@ public class VirtualKeyboard implements Overlay, Runnable {
             return directionMap;
         }
 
+        /**
+         * Knob radius as a fraction of the outer ring radius. Scaled by
+         * {@link #innerScale} so the user can resize the inner ball
+         * independently from the outer ring.
+         */
+        private float innerScale = 0.45f;
+
+        /**
+         * Outer-ring scale factor. Stored on the joystick itself (not on
+         * the keyboard) so each stick can be sized independently and the
+         * setting persists in the layout file.
+         */
+        private float outerScale = 1.0f;
+
+        public float getInnerScale() {
+            return innerScale;
+        }
+
+        public void setInnerScale(float s) {
+            innerScale = Math.max(0.2f, Math.min(0.9f, s));
+        }
+
+        public float getOuterScale() {
+            return outerScale;
+        }
+
+        public void setOuterScale(float s) {
+            outerScale = Math.max(0.5f, Math.min(2.5f, s));
+        }
+
+        /** Set the outer-ring diameter in pixels. Keeps the centre. */
+        public void setOuterDiameter(float diameter) {
+            float cx = getRect().centerX();
+            float cy = getRect().centerY();
+            getRect().set(cx - diameter / 2f, cy - diameter / 2f,
+                    cx + diameter / 2f, cy + diameter / 2f);
+        }
+
         @Override
         public boolean contains(float x, float y) {
             if (!isVisible()) return false;
-            // Circular hit-test matching the visual ring.
+            // Hit-test the outer ring (the whole stick is one big circle).
             float cx = getRect().centerX();
             float cy = getRect().centerY();
             float r = Math.min(getRect().width(), getRect().height()) / 2f;
@@ -318,12 +356,19 @@ public class VirtualKeyboard implements Overlay, Runnable {
             if (!isVisible()) return;
             ensurePaints();
 
-            float cx = getRect().centerX() + knobOffsetX;
-            float cy = getRect().centerY() + knobOffsetY;
-            float r = Math.min(getRect().width(), getRect().height()) / 2f;
+            // Outer ring centre and outer radius (driven by outerScale).
+            float cx = getRect().centerX();
+            float cy = getRect().centerY();
+            float rOuter = Math.min(getRect().width(), getRect().height()) / 2f;
 
-            // Pick colours from the shared palette (filled alpha = 0x40 so
-            // the underlying midlet is visible through the ring).
+            // Inner ball centre is offset by the knob position; the ball
+            // radius is a fraction of the outer radius, scaled by
+            // innerScale. The two scales are independent so the user can
+            // resize the ring and the ball independently.
+            float knobCx = cx + knobOffsetX;
+            float knobCy = cy + knobOffsetY;
+            float rKnob = rOuter * innerScale;
+
             int bg = owner.colors[BACKGROUND];
             int ring = owner.colors[OUTLINE];
             int knob = owner.colors[isSelected() ? BACKGROUND_SELECTED : BACKGROUND];
@@ -334,14 +379,17 @@ public class VirtualKeyboard implements Overlay, Runnable {
             stickKnobPaint.setColor(knob | 0xFF000000);
             stickLabelPaint.setColor(fg | 0xFF000000);
 
-            g.drawCircle(cx, cy, r, stickFillPaint);
+            // Outer ring (fixed) — the hit area the user touches.
+            g.drawCircle(cx, cy, rOuter, stickFillPaint);
             stickRingPaint.setStrokeWidth(3f);
-            g.drawCircle(cx, cy, r, stickRingPaint);
-            g.drawCircle(cx + knobOffsetX, cy + knobOffsetY, r * 0.35f, stickKnobPaint);
+            g.drawCircle(cx, cy, rOuter, stickRingPaint);
+
+            // Inner ball (movable) — the visual indicator of direction.
+            g.drawCircle(knobCx, knobCy, rKnob, stickKnobPaint);
 
             stickLabelPaint.setTextAlign(Paint.Align.CENTER);
-            stickLabelPaint.setTextSize(r * 0.35f);
-            g.drawText("JOY", cx, cy + r * 0.12f, stickLabelPaint);
+            stickLabelPaint.setTextSize(rKnob * 0.55f);
+            g.drawText("JOY", knobCx, knobCy + rKnob * 0.18f, stickLabelPaint);
         }
 
         private void ensurePaints() {
@@ -359,19 +407,21 @@ public class VirtualKeyboard implements Overlay, Runnable {
             stickLabelPaint.setStyle(Paint.Style.FILL);
         }
 
-        /** Compute the direction index for a touch point, or -1 in the
-         *  dead-zone. */
-        private int directionFor(float x, float y) {
-            float cx = getRect().centerX() + knobOffsetX;
-            float cy = getRect().centerY() + knobOffsetY;
-            float dx = x - cx;
-            float dy = y - cy;
+        /**
+         * Compute the direction index from the knob's current position
+         * (relative to the outer-ring centre), or -1 inside the dead
+         * zone. The knob offset itself is what tells us which direction
+         * the user is pointing at, not the latest touch position.
+         */
+        private int directionForKnob() {
+            float cx = getRect().centerX();
+            float cy = getRect().centerY();
+            float dx = knobOffsetX;
+            float dy = knobOffsetY;
             float dist = (float) Math.hypot(dx, dy);
             float r = Math.min(getRect().width(), getRect().height()) / 2f;
-            // Smaller dead-zone so even a small finger press on the
-            // rim registers. The previous 0.4 was far too aggressive:
-            // a fingertip landing on the inner 40% of the stick would
-            // get dead-zoned out and never trigger a direction.
+            // Small dead-zone so a gentle touch still resolves to a
+            // direction but a perfectly centred knob doesn't fire one.
             float deadZone = r * 0.15f;
             if (dist < deadZone) return -1;
             double deg = Math.toDegrees(Math.atan2(dy, dx));
@@ -391,19 +441,29 @@ public class VirtualKeyboard implements Overlay, Runnable {
             }
         }
 
-        /** Update knob position while clamping inside the ring. */
-        private void updateKnob(float x, float y) {
+        /**
+         * Update knob position based on where the user is currently
+         * touching. The knob offset equals the touch offset relative
+         * to the outer ring centre, but the knob stays visually
+         * "anchored" to the touch: if the user drags past the rim,
+         * the knob is clamped to a point inside the ring along the
+         * same direction, never jumps to the rim centre.
+         */
+        private void updateKnob(float touchX, float touchY) {
             float cx = getRect().centerX();
             float cy = getRect().centerY();
             float r = Math.min(getRect().width(), getRect().height()) / 2f;
-            knobOffsetX = x - cx;
-            knobOffsetY = y - cy;
-            float dist = (float) Math.hypot(knobOffsetX, knobOffsetY);
-            if (dist > r * 0.65f) {
-                float k = (r * 0.65f) / dist;
-                knobOffsetX *= k;
-                knobOffsetY *= k;
+            float ox = touchX - cx;
+            float oy = touchY - cy;
+            float dist = (float) Math.hypot(ox, oy);
+            // Clamp the knob so it never escapes the outer ring.
+            if (dist > r) {
+                float k = r / dist;
+                ox *= k;
+                oy *= k;
             }
+            knobOffsetX = ox;
+            knobOffsetY = oy;
         }
 
         /** Last time a press event was emitted (SystemClock.uptimeMillis).
@@ -415,21 +475,24 @@ public class VirtualKeyboard implements Overlay, Runnable {
         private static final long REPEAT_INTERVAL_MS = 220L;
 
         /** Called by VirtualKeyboard when the user touches inside this
-         *  stick. */
+         *  stick. The first touch point becomes the new knob position;
+         *  the direction is then derived from the knob offset. */
         public void onPointerPressed(float x, float y) {
-            int dir = directionFor(x, y);
+            // First contact: place the knob at the touch point. The user
+            // is directly grabbing the ball on a real joystick, so the
+            // ball should follow the finger from the very first frame.
             updateKnob(x, y);
-            // Always treat a fresh press as a press-then-release pair so
-            // games see a discrete "click" event even if the user keeps
-            // the finger down. Symbian input is event-based, not
-            // state-based, so without the release a one-shot key
-            // press would never trigger a second "step".
-            if (activeDirection >= 0) {
+            int dir = directionForKnob();
+            if (activeDirection >= 0 && activeDirection != dir) {
                 releaseActiveDirection();
             }
             activeDirection = dir;
             lastPressTime = android.os.SystemClock.uptimeMillis();
             if (dir >= 0) {
+                // Symbian input is event-based (down/up pair per
+                // "click"); fire a full down+up immediately so the game
+                // sees the action right away even if the user keeps the
+                // finger planted.
                 pressDirection(dir);
                 releaseDirection(dir);
             }
@@ -437,11 +500,11 @@ public class VirtualKeyboard implements Overlay, Runnable {
 
         /** Called by VirtualKeyboard while the finger drags. */
         public void onPointerDragged(float x, float y) {
-            int dir = directionFor(x, y);
             updateKnob(x, y);
+            int dir = directionForKnob();
             if (dir != activeDirection) {
-                // The user has moved the stick to a new direction: release
-                // the old one and press the new one immediately.
+                // Moved to a new direction: emit a fresh down+up pair so
+                // the new direction registers as its own click event.
                 if (activeDirection >= 0) {
                     releaseActiveDirection();
                 }
@@ -452,10 +515,9 @@ public class VirtualKeyboard implements Overlay, Runnable {
                     releaseDirection(dir);
                 }
             } else if (dir >= 0) {
-                // Same direction as before: re-emit press/release if the
-                // auto-repeat interval has elapsed. This makes the stick
-                // behave like a real D-pad — holding it keeps the
-                // character walking rather than just one step.
+                // Same direction: re-emit at a fixed rate so the game
+                // keeps receiving "click" events while the user holds
+                // the stick off-centre.
                 long now = android.os.SystemClock.uptimeMillis();
                 if (now - lastPressTime >= REPEAT_INTERVAL_MS) {
                     lastPressTime = now;
@@ -1161,6 +1223,25 @@ public class VirtualKeyboard implements Overlay, Runnable {
     public JoystickKey getJoystick(int index) {
         if (index < 0 || index >= joystickKeys.size()) return null;
         return joystickKeys.get(index);
+    }
+
+    /** Resize the outer ring of an existing joystick. */
+    public void setJoystickOuterSize(int index, float diameter) {
+        JoystickKey j = getJoystick(index);
+        if (j == null) return;
+        j.setOuterDiameter(diameter);
+        snapKeys();
+        repaint();
+        if (listener != null) listener.layoutChanged(this);
+    }
+
+    /** Resize the inner ball of an existing joystick. */
+    public void setJoystickInnerSize(int index, float fraction) {
+        JoystickKey j = getJoystick(index);
+        if (j == null) return;
+        j.setInnerScale(fraction);
+        repaint();
+        if (listener != null) listener.layoutChanged(this);
     }
 
     /**
