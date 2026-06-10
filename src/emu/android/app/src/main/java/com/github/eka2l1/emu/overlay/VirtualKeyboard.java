@@ -526,11 +526,12 @@ public class VirtualKeyboard implements Overlay, Runnable {
         }
 
         /** Last time a press event was emitted (SystemClock.uptimeMillis).
-         *  Used to auto-repeat the held direction so Symbian games that
-         *  only act on each discrete down/up pair still receive repeated
-         *  key events while the user holds the stick off-centre. */
+         *  No longer used for auto-repeat, but kept in case future
+         *  games need it. */
         private long lastPressTime = 0L;
-        /** Auto-repeat interval for held direction, in ms. */
+        /** Auto-repeat interval for held direction, in ms. Unused
+         *  for now; the held-direction model keeps the key down
+         *  instead of repeatedly clicking. */
         private static final long REPEAT_INTERVAL_MS = 220L;
 
         /** Called by VirtualKeyboard when the user touches inside this
@@ -542,18 +543,24 @@ public class VirtualKeyboard implements Overlay, Runnable {
             // ball should follow the finger from the very first frame.
             updateKnob(x, y);
             int dir = directionForKnob();
+            // Release any previously held direction before pressing
+            // the new one — this matches how a real hardware stick
+            // behaves (one direction at a time, no "up + down" toggles
+            // on a transition).
             if (activeDirection >= 0 && activeDirection != dir) {
                 releaseActiveDirection();
             }
             activeDirection = dir;
             lastPressTime = android.os.SystemClock.uptimeMillis();
             if (dir >= 0) {
-                // Symbian input is event-based (down/up pair per
-                // "click"); fire a full down+up immediately so the game
-                // sees the action right away even if the user keeps the
-                // finger planted.
+                // Send the down event only. The matching up event is
+                // sent on pointerReleased (or when the direction
+                // changes). This mirrors how the regular VirtualKey
+                // path works: press = down, release = up, hold =
+                // stay-down. That is what the game needs to keep the
+                // character moving while the user holds the stick
+                // off-centre.
                 pressDirection(dir);
-                releaseDirection(dir);
             }
         }
 
@@ -562,8 +569,9 @@ public class VirtualKeyboard implements Overlay, Runnable {
             updateKnob(x, y);
             int dir = directionForKnob();
             if (dir != activeDirection) {
-                // Moved to a new direction: emit a fresh down+up pair so
-                // the new direction registers as its own click event.
+                // Moved to a new direction: release the old down, then
+                // press the new one. The two down events are never
+                // concurrent because the up happens first.
                 if (activeDirection >= 0) {
                     releaseActiveDirection();
                 }
@@ -571,18 +579,12 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 lastPressTime = android.os.SystemClock.uptimeMillis();
                 if (dir >= 0) {
                     pressDirection(dir);
-                    releaseDirection(dir);
                 }
-            } else if (dir >= 0) {
-                // Same direction: re-emit at a fixed rate so the game
-                // keeps receiving "click" events while the user holds
-                // the stick off-centre.
-                long now = android.os.SystemClock.uptimeMillis();
-                if (now - lastPressTime >= REPEAT_INTERVAL_MS) {
-                    lastPressTime = now;
-                    pressDirection(dir);
-                    releaseDirection(dir);
-                }
+            }
+            // If the user dragged back to the dead-zone, release
+            // whatever direction is held.
+            else if (dir < 0 && activeDirection >= 0) {
+                releaseActiveDirection();
             }
         }
 
