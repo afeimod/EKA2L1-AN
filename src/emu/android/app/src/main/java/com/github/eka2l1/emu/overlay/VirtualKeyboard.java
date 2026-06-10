@@ -56,7 +56,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
         void layoutChanged(VirtualKeyboard vk);
     }
 
-    protected class VirtualKey {
+    protected static class VirtualKey {
 
         private RectF rect;
         private int keyCode, secondKeyCode;
@@ -65,6 +65,14 @@ public class VirtualKeyboard implements Overlay, Runnable {
         private boolean visible;
         boolean opaque = true;
         private int corners = 0;
+
+        /** Back-reference to the enclosing keyboard. Static nested
+         *  classes don't have an implicit reference to the outer
+         *  instance, so the owner is set explicitly when the key is
+         *  created. The key needs access to the shared colour table,
+         *  the shape and the paint objects — all of which live on the
+         *  outer instance. */
+        VirtualKeyboard owner;
 
         VirtualKey(int keyCode, String label) {
             this.keyCode = keyCode;
@@ -119,37 +127,37 @@ public class VirtualKeyboard implements Overlay, Runnable {
             int bgColor;
             int fgColor;
             if (selected) {
-                bgColor = colors[BACKGROUND_SELECTED];
-                fgColor = colors[FOREGROUND_SELECTED];
+                bgColor = owner.colors[BACKGROUND_SELECTED];
+                fgColor = owner.colors[FOREGROUND_SELECTED];
             } else {
-                bgColor = colors[BACKGROUND];
-                fgColor = colors[FOREGROUND];
+                bgColor = owner.colors[BACKGROUND];
+                fgColor = owner.colors[FOREGROUND];
             }
-            int olColor = colors[OUTLINE];
+            int olColor = owner.colors[OUTLINE];
             if (opaque) {
                 bgColor |= 0xFF000000;
                 fgColor |= 0xFF000000;
                 olColor |= 0xFF000000;
             }
-            fillPaint.setColor(bgColor);
-            textPaint.setColor(fgColor);
-            drawPaint.setColor(olColor);
+            owner.fillPaint.setColor(bgColor);
+            owner.textPaint.setColor(fgColor);
+            owner.drawPaint.setColor(olColor);
 
-            switch (shape) {
+            switch (owner.shape) {
                 case ROUND_RECT_SHAPE:
-                    g.drawRoundRect(rect, corners, corners, fillPaint);
-                    g.drawRoundRect(rect, corners, corners, drawPaint);
+                    g.drawRoundRect(rect, corners, corners, owner.fillPaint);
+                    g.drawRoundRect(rect, corners, corners, owner.drawPaint);
                     break;
                 case RECT_SHAPE:
-                    g.drawRect(rect, fillPaint);
-                    g.drawRect(rect, drawPaint);
+                    g.drawRect(rect, owner.fillPaint);
+                    g.drawRect(rect, owner.drawPaint);
                     break;
                 case OVAL_SHAPE:
-                    g.drawArc(rect, 0, 360, false, fillPaint);
-                    g.drawArc(rect, 0, 360, false, drawPaint);
+                    g.drawArc(rect, 0, 360, false, owner.fillPaint);
+                    g.drawArc(rect, 0, 360, false, owner.drawPaint);
                     break;
             }
-            g.drawText(label, rect.centerX(), rect.centerY() - textCenterOffset, textPaint);
+            g.drawText(label, rect.centerX(), rect.centerY() - owner.textCenterOffset, owner.textPaint);
         }
 
         public String getLabel() {
@@ -200,7 +208,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
      * — the stick is positioned freely and only clamped to the screen
      * rectangle.</p>
      */
-    protected class JoystickKey extends VirtualKey {
+    protected static class JoystickKey extends VirtualKey {
 
         /** Direction index — used both internally and on disk, so the
          *  order is fixed. */
@@ -256,6 +264,16 @@ public class VirtualKeyboard implements Overlay, Runnable {
 
         private DirectionMap directionMap = new DirectionMap();
 
+        /** Back-reference to the enclosing keyboard. Static nested
+         *  classes don't have an implicit reference to the outer
+         *  instance, so the owner is set explicitly when the joystick
+         *  is created. */
+        private VirtualKeyboard owner;
+
+        public void setOwner(VirtualKeyboard owner) {
+            this.owner = owner;
+        }
+
         /** Direction that is currently held down (-1 = none). */
         private int activeDirection = -1;
 
@@ -306,10 +324,10 @@ public class VirtualKeyboard implements Overlay, Runnable {
 
             // Pick colours from the shared palette (filled alpha = 0x40 so
             // the underlying midlet is visible through the ring).
-            int bg = colors[BACKGROUND];
-            int ring = colors[OUTLINE];
-            int knob = colors[isSelected() ? BACKGROUND_SELECTED : BACKGROUND];
-            int fg = colors[FOREGROUND];
+            int bg = owner.colors[BACKGROUND];
+            int ring = owner.colors[OUTLINE];
+            int knob = owner.colors[isSelected() ? BACKGROUND_SELECTED : BACKGROUND];
+            int fg = owner.colors[FOREGROUND];
 
             stickFillPaint.setColor((bg & 0x00FFFFFF) | 0x40000000);
             stickRingPaint.setColor(ring | 0xFF000000);
@@ -668,31 +686,31 @@ public class VirtualKeyboard implements Overlay, Runnable {
         joystickAssoc = new JoystickKey[10]; // same limit, one stick per finger
 
         for (int i = KEY_NUM1; i < 9; i++) {
-            keypad[i] = new VirtualKey(Keycode.KEY_NUM1 + i, Integer.toString(1 + i));
+            keypad[i] = mkKey(Keycode.KEY_NUM1 + i, Integer.toString(1 + i));
         }
 
-        keypad[KEY_NUM0] = new VirtualKey(Keycode.KEY_NUM0, "0");
-        keypad[KEY_STAR] = new VirtualKey(Keycode.KEY_STAR, "*");
-        keypad[KEY_POUND] = new VirtualKey(Keycode.KEY_POUND, "#");
+        keypad[KEY_NUM0] = mkKey(Keycode.KEY_NUM0, "0");
+        keypad[KEY_STAR] = mkKey(Keycode.KEY_STAR, "*");
+        keypad[KEY_POUND] = mkKey(Keycode.KEY_POUND, "#");
 
-        keypad[KEY_SOFT_LEFT] = new VirtualKey(Keycode.KEY_SOFT_LEFT, "L");
-        keypad[KEY_SOFT_RIGHT] = new VirtualKey(Keycode.KEY_SOFT_RIGHT, "R");
+        keypad[KEY_SOFT_LEFT] = mkKey(Keycode.KEY_SOFT_LEFT, "L");
+        keypad[KEY_SOFT_RIGHT] = mkKey(Keycode.KEY_SOFT_RIGHT, "R");
 
-        keypad[KEY_DIAL] = new VirtualKey(Keycode.KEY_SEND, "D");
-        keypad[KEY_CANCEL] = new VirtualKey(Keycode.KEY_CLEAR, "C");
+        keypad[KEY_DIAL] = mkKey(Keycode.KEY_SEND, "D");
+        keypad[KEY_CANCEL] = mkKey(Keycode.KEY_CLEAR, "C");
 
-        keypad[KEY_UP_LEFT] = new VirtualKey(Keycode.KEY_UP, Keycode.KEY_LEFT, ARROW_UP_LEFT);
-        keypad[KEY_UP] = new VirtualKey(Keycode.KEY_UP, ARROW_UP);
-        keypad[KEY_UP_RIGHT] = new VirtualKey(Keycode.KEY_UP, Keycode.KEY_RIGHT, ARROW_UP_RIGHT);
+        keypad[KEY_UP_LEFT] = mkKey(Keycode.KEY_UP, Keycode.KEY_LEFT, ARROW_UP_LEFT);
+        keypad[KEY_UP] = mkKey(Keycode.KEY_UP, ARROW_UP);
+        keypad[KEY_UP_RIGHT] = mkKey(Keycode.KEY_UP, Keycode.KEY_RIGHT, ARROW_UP_RIGHT);
 
-        keypad[KEY_LEFT] = new VirtualKey(Keycode.KEY_LEFT, ARROW_LEFT);
-        keypad[KEY_RIGHT] = new VirtualKey(Keycode.KEY_RIGHT, ARROW_RIGHT);
+        keypad[KEY_LEFT] = mkKey(Keycode.KEY_LEFT, ARROW_LEFT);
+        keypad[KEY_RIGHT] = mkKey(Keycode.KEY_RIGHT, ARROW_RIGHT);
 
-        keypad[KEY_DOWN_LEFT] = new VirtualKey(Keycode.KEY_DOWN, Keycode.KEY_LEFT, ARROW_DOWN_LEFT);
-        keypad[KEY_DOWN] = new VirtualKey(Keycode.KEY_DOWN, ARROW_DOWN);
-        keypad[KEY_DOWN_RIGHT] = new VirtualKey(Keycode.KEY_DOWN, Keycode.KEY_RIGHT, ARROW_DOWN_RIGHT);
+        keypad[KEY_DOWN_LEFT] = mkKey(Keycode.KEY_DOWN, Keycode.KEY_LEFT, ARROW_DOWN_LEFT);
+        keypad[KEY_DOWN] = mkKey(Keycode.KEY_DOWN, ARROW_DOWN);
+        keypad[KEY_DOWN_RIGHT] = mkKey(Keycode.KEY_DOWN, Keycode.KEY_RIGHT, ARROW_DOWN_RIGHT);
 
-        keypad[KEY_FIRE] = new VirtualKey(Keycode.KEY_FIRE, "F");
+        keypad[KEY_FIRE] = mkKey(Keycode.KEY_FIRE, "F");
 
         snapOrigins = new int[keypad.length];
         snapModes = new int[keypad.length];
@@ -1005,6 +1023,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
                     joystickKeys.clear();
                     for (int i = 0; i < joyCount; i++) {
                         JoystickKey j = new JoystickKey();
+                        j.setOwner(this);
                         try {
                             j.readLayout(dis);
                         } catch (IOException ioe) {
@@ -1072,6 +1091,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
     public int addJoystick(float cx, float cy, float diameter) {
         if (diameter <= 0) return -1;
         JoystickKey j = new JoystickKey();
+        j.setOwner(this);
         j.getRect().set(cx - diameter / 2f, cy - diameter / 2f,
                         cx + diameter / 2f, cy + diameter / 2f);
         j.setVisible(true);
@@ -1121,6 +1141,25 @@ public class VirtualKeyboard implements Overlay, Runnable {
         snapModes[key] = mode;
         snapOffsets[key] = new PointF();
         snapValid[key] = false;
+    }
+
+    /**
+     * Construct a regular key and wire it up to the owning keyboard in
+     * one step. {@link VirtualKey} is a static nested class so it has no
+     * implicit reference to the enclosing {@link VirtualKeyboard}; this
+     * helper injects the owner so paint() can reach the shared colour
+     * table, shape and paint objects.
+     */
+    private VirtualKey mkKey(int keyCode, String label) {
+        VirtualKey k = new VirtualKey(keyCode, label);
+        k.owner = this;
+        return k;
+    }
+
+    private VirtualKey mkKey(int keyCode, int secondKeyCode, String label) {
+        VirtualKey k = new VirtualKey(keyCode, secondKeyCode, label);
+        k.owner = this;
+        return k;
     }
 
     private boolean findSnap(int target, int origin) {
