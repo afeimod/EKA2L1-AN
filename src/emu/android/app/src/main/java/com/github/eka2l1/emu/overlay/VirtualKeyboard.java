@@ -1599,12 +1599,13 @@ public class VirtualKeyboard implements Overlay, Runnable {
                         vibrate();
                         associatedKeys[pointer] = aKeypad;
                         aKeypad.setSelected(true);
-                        // Fire a full down/up pair so the game registers
-                        // a discrete "click". Symbian treats one down
-                        // with no matching up as "key held" which puts
-                        // the OS into menu-navigation mode instead of
-                        // game-walk mode, so we always pair them up.
-                        aKeypad.emitClick();
+                        // Send only the down event on press — the matching
+                        // up event is sent when the finger is released (or
+                        // dragged off the key). Symbian's event-based
+                        // input is fired on the down transition; some
+                        // games also expect a sustained down while the
+                        // user holds the key.
+                        aKeypad.press();
                         repaint();
                         return true;
                     }
@@ -1716,13 +1717,13 @@ public class VirtualKeyboard implements Overlay, Runnable {
 
                     return true;
                 } else {
-                    // Still on the same key: keep auto-repeating so the
-                    // character continues to move while the user holds
-                    // the key down. Symbian OS treats repeated down/up
-                    // pairs as "walk" steps — without the repeats the
-                    // game would only ever see the very first event
-                    // and the character wouldn't actually move.
-                    associatedKeys[pointer].tickRepeat();
+                    // Still on the same key: do nothing. The key has
+                    // already been pressed (down) since pointerPressed
+                    // fired; keeping it down is what tells Symbian
+                    // "the user is holding the key", which is what
+                    // the game needs to keep moving the character.
+                    // Sending repeated down/up pairs here would register
+                    // as a stream of clicks, not as a held key.
                 }
                 break;
             case LAYOUT_KEYS:
@@ -1818,12 +1819,11 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 return true;
             }
             if (associatedKeys[pointer] != null) {
-                // The key already received a full down/up cycle when it
-                // was first pressed, so by release time we only need
-                // to forget the association and clear selection. We
-                // still send a final release for safety: if the
-                // auto-repeat loop was running, we want to guarantee
-                // the key ends in an "up" state.
+                // Send the up event to mirror the down we sent on
+                // pointerPressed. This restores the original
+                // "press=down, release=up, hold=stay-down" behaviour
+                // that directional keys need to keep the character
+                // moving while the user holds the touch.
                 Emulator.pressKey(associatedKeys[pointer].getKeyCode(), 1);
                 if (associatedKeys[pointer].getSecondKeyCode() != 0) {
                     Emulator.pressKey(associatedKeys[pointer].getSecondKeyCode(), 1);
