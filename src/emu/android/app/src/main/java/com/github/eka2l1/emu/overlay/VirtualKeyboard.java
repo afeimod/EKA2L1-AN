@@ -56,7 +56,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
         void layoutChanged(VirtualKeyboard vk);
     }
 
-    protected static class VirtualKey {
+    public static class VirtualKey {
 
         private RectF rect;
         private int keyCode, secondKeyCode;
@@ -266,7 +266,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
      * — the stick is positioned freely and only clamped to the screen
      * rectangle.</p>
      */
-    protected static class JoystickKey extends VirtualKey {
+    public static class JoystickKey extends VirtualKey {
 
         /** Direction index — used both internally and on disk, so the
          *  order is fixed. */
@@ -1282,6 +1282,24 @@ public class VirtualKeyboard implements Overlay, Runnable {
     public JoystickKey getJoystick(int index) {
         if (index < 0 || index >= joystickKeys.size()) return null;
         return joystickKeys.get(index);
+    }
+
+    /** Current outer diameter of the joystick (in pixels), or 0 if
+     *  index out of range. Public helper so external classes (e.g.
+     *  {@code EmulatorActivity}) don't need to reach into the nested
+     *  {@code JoystickKey} class directly. */
+    public float getJoystickOuterSize(int index) {
+        JoystickKey j = getJoystick(index);
+        if (j == null) return 0f;
+        return Math.min(j.getRect().width(), j.getRect().height());
+    }
+
+    /** Current inner-ball fraction of the joystick (0.2 — 0.9), or
+     *  0 if index out of range. */
+    public float getJoystickInnerScale(int index) {
+        JoystickKey j = getJoystick(index);
+        if (j == null) return 0f;
+        return j.getInnerScale();
     }
 
     /** Resize the outer ring of an existing joystick. */

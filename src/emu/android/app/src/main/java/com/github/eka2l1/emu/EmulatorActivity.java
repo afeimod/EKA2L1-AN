@@ -753,11 +753,8 @@ public class EmulatorActivity extends AppCompatActivity {
         float maxPx = Math.min(displayWidth, displayHeight) * 0.8f;
         // Initial value: map current size to 0..100
         if (outer) {
-            float current = keyboard.getJoystick(index) != null
-                    ? Math.max(minPx, Math.min(maxPx,
-                            Math.min(keyboard.getJoystick(index).getRect().width(),
-                                    keyboard.getJoystick(index).getRect().height())))
-                    : (minPx + maxPx) / 2f;
+            float current = Math.max(minPx, Math.min(maxPx,
+                    keyboard.getJoystickOuterSize(index)));
             seek.setProgress((int) ((current - minPx) * 100 / (maxPx - minPx)));
             seek.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
                 @Override
@@ -771,8 +768,7 @@ public class EmulatorActivity extends AppCompatActivity {
                 @Override public void onStopTrackingTouch(android.widget.SeekBar sb) {}
             });
         } else {
-            float current = keyboard.getJoystick(index) != null
-                    ? keyboard.getJoystick(index).getInnerScale() : 0.45f;
+            float current = keyboard.getJoystickInnerScale(index);
             seek.setProgress((int) ((current - 0.2f) * 100 / 0.7f));
             seek.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
                 @Override
