@@ -688,7 +688,30 @@ public class VirtualKeyboard implements Overlay, Runnable {
 
     private static final int LAYOUT_SIGNATURE = 0x564B4C00;
     private static final int LAYOUT_OLD_VERSION = 1;
-    private static final int LAYOUT_VERSION = 2;
+    /**
+     * v2 introduced the per-key visibility flag (writeBoolean between
+     * hashCode and the snap fields).
+     * <p>v3 also persists the absolute rectangle (left/top/right/bottom)
+     * for every key. The snap graph alone can't recover the position of
+     * keys the user dragged in free-form edit mode — those end up with
+     * {@code snapOrigins = SCREEN} and {@code snapModes = NO_SNAP}, so
+     * on the next launch {@code RectSnap.snap} with {@code NO_SNAP}
+     * leaves {@code rect.left/top} at zero and the keys all stack at
+     * the top-left corner. Storing the rect lets the next session
+     * restore exactly where the user left them.</p>
+     */
+    private static final int LAYOUT_VERSION = 3;
+    /** Bytes consumed by the LAYOUT_KEYS record for a single key, in
+     *  the v3 layout (see {@link #LAYOUT_VERSION}). The legacy v2 layout
+     *  is one byte shorter because it omits the boolean visibility flag
+     *  — but v3 always writes the visibility, so v3 uses 21+16=37. */
+    private static final int LAYOUT_KEYS_RECORD_BYTES_V3 = 4 /* hashCode */
+            + 1 /* visible */ + 4 /* snapOrigin */ + 4 /* snapMode */
+            + 4 /* snapOffX */ + 4 /* snapOffY */
+            + 4 /* rectL */ + 4 /* rectT */ + 4 /* rectR */ + 4 /* rectB */;
+    /** Bytes consumed by the LAYOUT_KEYS record for a single key, in
+     *  the v2 layout (hashCode + visible + origin + mode + offX + offY). */
+    private static final int LAYOUT_KEYS_RECORD_BYTES_V2 = 4 + 1 + 4 + 4 + 4 + 4;
 
     private static final int NUM_VARIANTS = 4;
 
@@ -1072,7 +1095,10 @@ public class VirtualKeyboard implements Overlay, Runnable {
         dos.writeInt(LAYOUT_SIGNATURE);
         dos.writeInt(LAYOUT_VERSION);
         dos.writeInt(LAYOUT_KEYS);
-        dos.writeInt(keypad.length * 20 + 4);
+        // The block length encodes the record size so readers can detect
+        // which version wrote the file without checking LAYOUT_VERSION
+        // per record. v3 always carries the 16-byte rectangle.
+        dos.writeInt(keypad.length * LAYOUT_KEYS_RECORD_BYTES_V3 + 4);
         dos.writeInt(keypad.length);
         for (int i = 0; i < keypad.length; i++) {
             dos.writeInt(keypad[i].hashCode());
@@ -1081,6 +1107,19 @@ public class VirtualKeyboard implements Overlay, Runnable {
             dos.writeInt(snapModes[i]);
             dos.writeFloat(snapOffsets[i].x);
             dos.writeFloat(snapOffsets[i].y);
+            // The absolute rectangle. This is the only piece of state
+            // that captures a free-form drag — snapModes for a dragged
+            // key collapses to NO_SNAP and snapOffsets to (0,0), so
+            // without persisting the rect the next session cannot
+            // restore the user's placement. Keys that have never been
+            // dragged still write their current rect, which is harmless
+            // because the snap chain will overwrite it on the next
+            // snapKeys() pass.
+            RectF r = keypad[i].getRect();
+            dos.writeFloat(r.left);
+            dos.writeFloat(r.top);
+            dos.writeFloat(r.right);
+            dos.writeFloat(r.bottom);
         }
         dos.writeInt(LAYOUT_SCALES);
         dos.writeInt(keyScales.length * 4 + 4);
@@ -1134,6 +1173,21 @@ public class VirtualKeyboard implements Overlay, Runnable {
             int count;
             switch (block) {
                 case LAYOUT_KEYS:
+                    // Detect v2 vs v3 by the block length. v3 stores
+                    // 4 extra floats (the rect) per key. A v2 file may
+                    // also have a slightly off length (legacy code
+                    // wrote keypad.length * 20 + 4 even though each
+                    // record actually occupied 21 bytes — that bug is
+                    // fixed in v3).
+                    boolean readRect = false;
+                    int expectedV3 = keypad.length * LAYOUT_KEYS_RECORD_BYTES_V3 + 4;
+                    int expectedV2 = keypad.length * LAYOUT_KEYS_RECORD_BYTES_V2 + 4;
+                    if (length == expectedV3) {
+                        readRect = true;
+                    } else if (length == expectedV2
+                            || length == keypad.length * 20 + 4 /* legacy buggy length */) {
+                        readRect = false;
+                    }
                     count = dis.readInt();
                     int hash;
                     boolean found;
@@ -1142,19 +1196,45 @@ public class VirtualKeyboard implements Overlay, Runnable {
                         found = false;
                         for (int key = 0; key < keypad.length; key++) {
                             if (keypad[key].hashCode() == hash) {
-                                if (version == LAYOUT_VERSION) {
+                                if (version != LAYOUT_OLD_VERSION) {
                                     keypad[key].setVisible(dis.readBoolean());
                                 }
                                 snapOrigins[key] = dis.readInt();
                                 snapModes[key] = dis.readInt();
                                 snapOffsets[key].x = dis.readFloat();
                                 snapOffsets[key].y = dis.readFloat();
+                                if (readRect) {
+                                    // Restore the absolute rect. Without
+                                    // this, keys that were dragged in free
+                                    // form (snapModes == NO_SNAP) have no
+                                    // information left to anchor them —
+                                    // their rect.left/top starts at zero
+                                    // and they all stack at the top-left
+                                    // corner of the screen. For snap-driven
+                                    // keys this is harmless: snapKeys()
+                                    // will overwrite the rect from the
+                                    // snap chain on the next resize.
+                                    float rl = dis.readFloat();
+                                    float rt = dis.readFloat();
+                                    float rr = dis.readFloat();
+                                    float rb = dis.readFloat();
+                                    keypad[key].getRect().set(rl, rt, rr, rb);
+                                }
                                 found = true;
                                 break;
                             }
                         }
                         if (!found) {
-                            dis.skip(16);
+                            // Skip the rest of this record. v2 = 16 bytes
+                            // after hash (visible + origin + mode + offX
+                            // + offY = 1+4+4+4+4=17, but legacy skipped
+                            // 16 because it didn't know about the
+                            // visibility byte either — preserve that
+                            // buggy behaviour so we don't desync on v2
+                            // files where hashes don't match).
+                            int skipBytes = readRect ? LAYOUT_KEYS_RECORD_BYTES_V3
+                                                     : 16;
+                            dis.skip(skipBytes);
                         }
                     }
                     break;
