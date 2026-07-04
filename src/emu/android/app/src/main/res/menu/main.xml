@@ -62,4 +62,19 @@
         </menu>
     </item>
 
+    <item
+        android:id="@+id/action_j2me"
+        android:title="@string/j2me_menu_title">
+        <menu>
+            <item
+                android:id="@+id/action_install_j2me_app"
+                android:title="@string/j2me_install_jar"
+                app:showAsAction="never" />
+            <item
+                android:id="@+id/action_open_j2me_list"
+                android:title="@string/j2me_open_list"
+                app:showAsAction="never" />
+        </menu>
+    </item>
+
 </menu>

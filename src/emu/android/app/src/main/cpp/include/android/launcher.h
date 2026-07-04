@@ -24,6 +24,8 @@
 #include <common/cvt.h>
 #include <common/types.h>
 
+#include <j2me/interface.h>
+
 #include <drivers/ui/input_dialog.h>
 #include <drivers/graphics/common.h>
 #include <services/applist/applist.h>
@@ -133,6 +135,17 @@ namespace eka2l1::android {
         void on_question_dialog_finished(const int result);
         int install_ngage_game(const std::string &path);
         bool install_ng2_game_licenses(const std::string &content);
+
+        // J2ME (Java ME / MIDlet) running on the S60v1 KMID runner. The
+        // native side handles descriptor parsing, JAD generation and
+        // spawning the S60 KMID app via j2me::install / j2me::launch.
+        // These wrappers exist so the Java frontend can install and run
+        // JARs directly without going through the SIS package manager.
+        int install_j2me_app(const std::string &path, std::uint32_t &out_app_id,
+            std::string &out_name, std::string &out_version, std::string &out_author);
+        bool launch_j2me_app(const std::uint32_t app_id);
+        bool uninstall_j2me_app(const std::uint32_t app_id);
+        std::vector<std::string> get_j2me_apps();
         void set_current_mmc_id(const std::string &new_mmc_id);
         bool save_screenshot_to(const std::string &path);
         std::vector<std::string> get_success_installed_license_games();

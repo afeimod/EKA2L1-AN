@@ -90,6 +90,41 @@
  <data android:mimeType="application/json" />
  <data android:pathPattern=".*.json" />
  </intent-filter>
+ <!-- J2ME / MIDlet installer: register .jar / .jad / .kjx so the OS
+ file picker routes a JAR tap directly into our install pipeline. -->
+ <intent-filter>
+ <action android:name="android.intent.action.VIEW" />
+
+ <category android:name="android.intent.category.DEFAULT" />
+ <category android:name="android.intent.category.BROWSABLE" />
+ <data android:mimeType="*/*" />
+ <data android:scheme="file" />
+ <data android:scheme="content" />
+ <data android:pathPattern=".*.jar" />
+ <data android:pathPattern=".*..*.jar" />
+ <data android:pathPattern=".*..*..*.jar" />
+ <data android:pathPattern=".*..*..*..*.jar" />
+ <data android:pathPattern=".*.JAR" />
+ <data android:pathPattern=".*..*.JAR" />
+ <data android:pathPattern=".*..*..*.JAR" />
+ <data android:pathPattern=".*..*..*..*.JAR" />
+ <data android:pathPattern=".*.jad" />
+ <data android:pathPattern=".*..*.jad" />
+ <data android:pathPattern=".*..*..*.jad" />
+ <data android:pathPattern=".*..*..*..*.jad" />
+ <data android:pathPattern=".*.JAD" />
+ <data android:pathPattern=".*..*.JAD" />
+ <data android:pathPattern=".*..*..*.JAD" />
+ <data android:pathPattern=".*..*..*..*.JAD" />
+ <data android:pathPattern=".*.kjx" />
+ <data android:pathPattern=".*..*.kjx" />
+ <data android:pathPattern=".*..*..*.kjx" />
+ <data android:pathPattern=".*..*..*..*.kjx" />
+ <data android:pathPattern=".*.KJX" />
+ <data android:pathPattern=".*..*.KJX" />
+ <data android:pathPattern=".*..*..*.KJX" />
+ <data android:pathPattern=".*..*..*..*.KJX" />
+ </intent-filter>
  </activity>
  <provider
  android:name="androidx.core.content.FileProvider"

@@ -32,6 +32,33 @@
     <string name="mounted_mmc_ok_and_use_id_in_folder_name">Completed! Using MMC ID found in folder name.</string>
     <string name="ng1_menu_title">N-Gage</string>
     <string name="ng2_menu_title">N-Gage 2.0</string>
+
+    <!-- J2ME (Java ME / MIDlet) integration. The native side installs
+         JARs into the S60v1 KMID runner and we surface them through the
+         apps list and a dedicated JAR picker. -->
+    <string name="j2me_menu_title">J2ME (Java ME)</string>
+    <string name="j2me_install_jar">Install JAR/JAD…</string>
+    <string name="j2me_open_list">Installed MIDlets</string>
+    <string name="j2me_installing">Installing %1$s…</string>
+    <string name="j2me_install_done">Installed %1$s (v%2$s, by %3$s)</string>
+    <string name="j2me_install_failed_title">Install failed</string>
+    <string name="j2me_err_not_found">JAR file not found.</string>
+    <string name="j2me_err_invalid">Invalid JAR. Manifest missing or corrupt.</string>
+    <string name="j2me_err_midp2">This JAR requires MIDP 2.0, but the S60v1 runner only supports MIDP 1.0. Pick an older game or install a separate J2ME loader.</string>
+    <string name="j2me_err_db">Couldn\'t write the J2ME apps database. Check storage permissions.</string>
+    <string name="j2me_err_platform">J2ME install isn\'t supported on the current device profile. Switch to an S60v1 (Symbian 6.1) device.</string>
+    <string name="j2me_err_unknown">Install failed (code %1$d).</string>
+    <string name="j2me_no_device_dialog">No compatible S60v1 device is installed.\n\nJ2ME games run via the S60v1 KMID runner. Please install a device with that profile (Nokia 7650/3650/6600 era) first.</string>
+    <string name="j2me_uninstall_title">Uninstall MIDlet</string>
+    <string name="j2me_uninstall_confirm">Remove %1$s from this device? The JAR and its saved data will be deleted.</string>
+    <string name="j2me_uninstall_done">%1$s removed.</string>
+    <string name="j2me_list_empty">No MIDlets installed yet. Use \"Install JAR/JAD…\" to add one.</string>
+    <string name="j2me_dialog_title">J2ME apps</string>
+    <string name="j2me_author">By %1$s</string>
+    <string name="j2me_version">v%1$s</string>
+    <string name="j2me_action_run">Run</string>
+    <string name="j2me_action_uninstall">Uninstall</string>
+    <string name="j2me_copy_failed">Couldn\'t read the source JAR. If you picked it from a cloud provider, try downloading it locally first.</string>
     <string name="install_preconfigured_pack">Install preconfigured pack</string>
     <string name="delete_existing_data_title">Delete existing data</string>
     <string name="delete_existing_data">Do you want to delete existing emulator data (devices, apps, games,...)?</string>

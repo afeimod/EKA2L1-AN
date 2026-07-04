@@ -758,3 +758,68 @@ Java_com_github_eka2l1_emu_Emulator_saveScreenshotTo(JNIEnv *env, jclass clazz, 
 
     return state->launcher->save_screenshot_to(file_path_std);
 }
+
+// =========================================================================
+// J2ME / MIDlet installation & launch (S60v1 KMID runner backend).
+//
+// These bridge calls let the Android UI install arbitrary JAR/JAD files
+// via the native j2me::install/j2me::launch entry points so the user
+// can run Java ME games directly without bundling a SIS package. See
+// j2me/interface.h for the full backend contract.
+// =========================================================================
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_github_eka2l1_emu_Emulator_installJ2meApp(JNIEnv *env, jclass clazz,
+        jstring path, jlongArray out_app_id, jobjectArray out_info) {
+    if (!state || !state->launcher) {
+        return -1;
+    }
+    const char *cstr = env->GetStringUTFChars(path, nullptr);
+    std::string cpath(cstr);
+    env->ReleaseStringUTFChars(path, cstr);
+
+    std::uint32_t app_id = 0;
+    std::string name, version, author;
+    int err = state->launcher->install_j2me_app(cpath, app_id, name, version, author);
+
+    if (err == 0) {
+        jlong id64 = static_cast<jlong>(app_id);
+        env->SetLongArrayRegion(out_app_id, 0, 1, &id64);
+        // out_info is String[3]: {name, version, author}
+        env->SetObjectArrayElement(out_info, 0, env->NewStringUTF(name.c_str()));
+        env->SetObjectArrayElement(out_info, 1, env->NewStringUTF(version.c_str()));
+        env->SetObjectArrayElement(out_info, 2, env->NewStringUTF(author.c_str()));
+    }
+
+    return err;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_github_eka2l1_emu_Emulator_launchJ2meApp(JNIEnv *env, jclass clazz, jlong app_id) {
+    if (!state || !state->launcher) {
+        return false;
+    }
+    return state->launcher->launch_j2me_app(static_cast<std::uint32_t>(app_id));
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_github_eka2l1_emu_Emulator_uninstallJ2meApp(JNIEnv *env, jclass clazz, jlong app_id) {
+    if (!state || !state->launcher) {
+        return false;
+    }
+    return state->launcher->uninstall_j2me_app(static_cast<std::uint32_t>(app_id));
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_com_github_eka2l1_emu_Emulator_getJ2meApps(JNIEnv *env, jclass clazz) {
+    if (!state || !state->launcher) {
+        return env->NewObjectArray(0, env->FindClass("java/lang/String"), nullptr);
+    }
+    std::vector<std::string> apps = state->launcher->get_j2me_apps();
+    jobjectArray jarr = env->NewObjectArray(static_cast<jsize>(apps.size()),
+        env->FindClass("java/lang/String"), nullptr);
+    for (jsize i = 0; i < static_cast<jsize>(apps.size()); ++i) {
+        env->SetObjectArrayElement(jarr, i, env->NewStringUTF(apps[i].c_str()));
+    }
+    return jarr;
+}

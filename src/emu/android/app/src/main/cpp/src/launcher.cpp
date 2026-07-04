@@ -28,6 +28,8 @@
 
 #include <common/fileutils.h>
 #include <common/android/jniutils.h>
+#include <j2me/interface.h>
+#include <j2me/applist.h>
 #include <common/language.h>
 #include <common/path.h>
 #include <common/pystr.h>
@@ -880,6 +882,94 @@ namespace eka2l1::android {
 
     bool launcher::install_ng2_game_licenses(const std::string &content) {
         return rightsserv->import_ng2l(content, success_license_games, failed_license_games);
+    }
+
+    int launcher::install_j2me_app(const std::string &path, std::uint32_t &out_app_id,
+            std::string &out_name, std::string &out_version, std::string &out_author) {
+        out_app_id = 0;
+        if (!sys) {
+            return static_cast<int>(eka2l1::j2me::INSTALL_ERROR_NOT_SUPPORTED_FOR_PLAT);
+        }
+
+        // Make sure the j2me applist has been constructed against the
+        // current config. system_impl lazily creates it during
+        // initialization, but if a caller hits us before that (e.g. via
+        // a VIEW intent fired before the user finishes bootstrap), we
+        // look it up explicitly here.
+        eka2l1::j2me::app_list *applist = sys->get_j2me_applist();
+        if (!applist) {
+            return static_cast<int>(eka2l1::j2me::INSTALL_ERROR_NOT_SUPPORTED_FOR_PLAT);
+        }
+
+        eka2l1::j2me::app_entry entry_info;
+        const eka2l1::j2me::install_error err = eka2l1::j2me::install(sys, path, entry_info);
+
+        if (err == eka2l1::j2me::INSTALL_ERROR_JAR_SUCCESS) {
+            // Persist the new entry so a subsequent get_j2me_apps() sees it.
+            applist->flush();
+            out_app_id = entry_info.id_;
+            out_name = entry_info.original_title_.empty() ? entry_info.title_ : entry_info.original_title_;
+            out_version = entry_info.version_;
+            out_author = entry_info.author_;
+        }
+
+        return static_cast<int>(err);
+    }
+
+    bool launcher::launch_j2me_app(const std::uint32_t app_id) {
+        if (!sys) {
+            return false;
+        }
+
+        return eka2l1::j2me::launch(sys, app_id, [](eka2l1::kernel::process *pr) {
+            // When the KMID-driven process exits, dispatch back to Java
+            // so the UI can tear down the running screen if needed. The
+            // Symbian process exit path mirrors install_ngage_game's
+            // callback hook.
+            JNIEnv *env = eka2l1::common::jni::environment();
+            if (env == nullptr) {
+                return;
+            }
+            jclass clazz = eka2l1::common::jni::find_class("com/github/eka2l1/emu/Emulator");
+            if (clazz == nullptr) {
+                return;
+            }
+            jmethodID exit_method = env->GetStaticMethodID(clazz, "exitInstance", "()V");
+            if (exit_method == nullptr) {
+                env->ExceptionClear();
+                return;
+            }
+            env->CallStaticVoidMethod(clazz, exit_method);
+        });
+    }
+
+    bool launcher::uninstall_j2me_app(const std::uint32_t app_id) {
+        if (!sys) {
+            return false;
+        }
+        return eka2l1::j2me::uninstall(sys, app_id);
+    }
+
+    std::vector<std::string> launcher::get_j2me_apps() {
+        std::vector<std::string> out;
+        if (!sys) {
+            return out;
+        }
+        eka2l1::j2me::app_list *applist = sys->get_j2me_applist();
+        if (!applist) {
+            return out;
+        }
+        const auto entries = applist->get_entries();
+        out.reserve(entries.size());
+        for (const auto &e : entries) {
+            // id|name|author|version|iconPath
+            // '|' is safe because descriptors in J2ME cannot contain it
+            // (the KMID parser would have rejected them anyway).
+            const std::string title_disp = e.original_title_.empty() ? e.title_ : e.original_title_;
+            out.push_back(std::to_string(e.id_) + "|" + title_disp + "|" + e.author_ +
+                "|" + e.version_ + "|" + e.icon_path_);
+        }
+        return out;
     }
 
     std::vector<std::string> launcher::get_success_installed_license_games() {

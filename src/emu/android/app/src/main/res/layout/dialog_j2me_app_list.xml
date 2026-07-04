@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Container for the J2ME / MIDlet list dialog. The list itself fills
+    the parent; the empty-state TextView swaps in via setEmptyView on
+    the host ListView so we don't need a second layout branch.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="320dp">
+
+    <ListView
+        android:id="@+id/lv_j2me_apps"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:divider="?android:attr/listDivider"
+        android:dividerHeight="1dp" />
+
+    <TextView
+        android:id="@+id/tv_j2me_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:padding="24dp"
+        android:text="@string/j2me_list_empty"
+        android:textAppearance="?android:attr/textAppearanceMedium" />
+</FrameLayout>

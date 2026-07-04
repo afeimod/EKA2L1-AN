@@ -99,6 +99,15 @@ public class Emulator {
     public static final int INSTALL_NG_GAME_ERROR_REGISTERATION_CORRUPTED = 4;
     public static final int INSTALL_NG_GAME_ERROR_GENERAL = 5;
 
+    // Mirror of eka2l1::j2me::install_error. The native side returns
+    // these directly so we can render a meaningful message in the UI.
+    public static final int INSTALL_J2ME_SUCCESS = 0;
+    public static final int INSTALL_J2ME_ERROR_NOT_FOUND = 1;
+    public static final int INSTALL_J2ME_ERROR_INVALID = 2;
+    public static final int INSTALL_J2ME_ERROR_MIDP2_UNSUPPORTED = 3;
+    public static final int INSTALL_J2ME_ERROR_DB = 4;
+    public static final int INSTALL_J2ME_ERROR_PLATFORM = 5;
+
 
     private static final String[] columns = new String[] {
         DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -341,6 +350,64 @@ public class Emulator {
                 emitter.onError(new IOException(Integer.toString(installResult)));
             }
         });
+    }
+
+    /**
+     * Install a J2ME JAR/JAD by passing the source URI to the native
+     * side, which parses the descriptor, copies the JAR into the S60
+     * file system and registers it in the j2me applist database.
+     *
+     * @param sourceUri The URI the user picked — either a file:// path or
+     *                  a SAF content:// URI. We never open this stream
+     *                  in Java; the JNI side resolves content URIs via
+     *                  the Android storage helper.
+     * @return A Single that emits a J2meInstallResult on success or an
+     *         IOException carrying the install_error code on failure.
+     */
+    public static Single<J2meInstallResult> subscribeInstallJ2meApp(String sourceUri) {
+        return Single.create(emitter -> {
+            long[] outAppId = new long[1];
+            String[] outInfo = new String[] { "", "", "" };
+            int result = installJ2meApp(sourceUri, outAppId, outInfo);
+            if (result == INSTALL_J2ME_SUCCESS) {
+                emitter.onSuccess(new J2meInstallResult(outAppId[0], outInfo[0], outInfo[1], outInfo[2]));
+            } else {
+                emitter.onError(new J2meInstallException(result));
+            }
+        });
+    }
+
+    /** Plain DTO carrying the four fields the install call returns. */
+    public static class J2meInstallResult {
+        public final long appId;
+        public final String name;
+        public final String version;
+        public final String author;
+
+        public J2meInstallResult(long appId, String name, String version, String author) {
+            this.appId = appId;
+            this.name = name == null ? "" : name;
+            this.version = version == null ? "" : version;
+            this.author = author == null ? "" : author;
+        }
+    }
+
+    /**
+     * Specialised IOException that carries the install_error code. The
+     * UI uses getErrorCode() to render a precise message ("only MIDP-1.0
+     * supported", "no manifest", etc) rather than a generic toast.
+     */
+    public static class J2meInstallException extends IOException {
+        private final int errorCode;
+
+        public J2meInstallException(int errorCode) {
+            super("install_error=" + errorCode);
+            this.errorCode = errorCode;
+        }
+
+        public int getErrorCode() {
+            return errorCode;
+        }
     }
 
     private static void checkInit() {
@@ -833,4 +900,27 @@ public class Emulator {
     public static native boolean installNG2Licenses(String content);
     public static native void setCurrentMMCID(String newMMCID);
     public static native boolean saveScreenshotTo(String filePath);
+
+    // --- J2ME / MIDlet (Java ME) running on the S60v1 KMID runner ------
+    // The native side parses the JAR descriptor, copies the JAR into
+    // C:\system\midp\... and registers it in j2me\applist.db.
+    //
+    // installJ2meApp returns the install_error enum value (0 == OK).
+    // When 0, outAppId is populated with the persistent J2ME app id
+    // assigned by the applist database, and outInfo is filled with
+    // {name, version, author} for the UI to display without a second
+    // roundtrip.
+    public static native int installJ2meApp(String path, long[] outAppId, String[] outInfo);
+
+    // launchJ2meApp spawns the S60 KMID app with the right command line
+    // and hooks the kernel process exit to call exitInstance so the
+    // Java side can tear the running view down cleanly.
+    public static native boolean launchJ2meApp(long appId);
+
+    public static native boolean uninstallJ2meApp(long appId);
+
+    // Returns {id|name|author|version|iconPath} entries for every J2ME
+    // app currently in the database, newest first (the database orders
+    // by id, which is monotonic for new inserts).
+    public static native String[] getJ2meApps();
 }

@@ -32,6 +32,31 @@
     <string name="mounted_mmc_ok_and_use_id_in_folder_name">Completed! Using MMC ID found in folder name.</string>
     <string name="ng1_menu_title">N-Gage</string>
     <string name="ng2_menu_title">N-Gage 2.0</string>
+
+    <!-- J2ME / MIDlet 集成。原生端将 jar 装进 S60v1 KMID 运行器。 -->
+    <string name="j2me_menu_title">J2ME（Java ME）</string>
+    <string name="j2me_install_jar">安装 JAR/JAD…</string>
+    <string name="j2me_open_list">已安装的 MIDlet</string>
+    <string name="j2me_installing">正在安装 %1$s…</string>
+    <string name="j2me_install_done">已安装 %1$s（v%2$s，作者 %3$s）</string>
+    <string name="j2me_install_failed_title">安装失败</string>
+    <string name="j2me_err_not_found">找不到 JAR 文件。</string>
+    <string name="j2me_err_invalid">JAR 文件无效，MANIFEST 缺失或已损坏。</string>
+    <string name="j2me_err_midp2">这个 JAR 需要 MIDP 2.0，但 S60v1 运行器只支持 MIDP 1.0。请选个老一点的 Java 游戏，或者装一个专门的 J2ME 模拟器。</string>
+    <string name="j2me_err_db">写入 J2ME 应用数据库失败，请检查存储权限。</string>
+    <string name="j2me_err_platform">当前设备不支持 J2ME 安装。请切换到 S60v1（Symbian 6.1）设备。</string>
+    <string name="j2me_err_unknown">安装失败（错误码 %1$d）。</string>
+    <string name="j2me_no_device_dialog">当前没有可用的 S60v1 设备。\n\nJ2ME 游戏通过 S60v1 的 KMID 运行器执行。请先安装一台该平台的设备（比如 Nokia 7650/3650/6600 那一代）。</string>
+    <string name="j2me_uninstall_title">卸载 MIDlet</string>
+    <string name="j2me_uninstall_confirm">从本机移除 %1$s 吗？JAR 文件和它的存档数据都会被删除。</string>
+    <string name="j2me_uninstall_done">已移除 %1$s。</string>
+    <string name="j2me_list_empty">还没装 MIDlet。用「安装 JAR/JAD…」添加一个。</string>
+    <string name="j2me_dialog_title">J2ME 应用</string>
+    <string name="j2me_author">作者：%1$s</string>
+    <string name="j2me_version">v%1$s</string>
+    <string name="j2me_action_run">运行</string>
+    <string name="j2me_action_uninstall">卸载</string>
+    <string name="j2me_copy_failed">读取源 JAR 失败。如果是从云盘选的，请先下载到本地。</string>
     <string name="install_preconfigured_pack">Install preconfigured pack</string>
     <string name="delete_existing_data_title">Delete existing data</string>
     <string name="delete_existing_data">Do you want to delete existing emulator data (devices, apps, games,...)?</string>

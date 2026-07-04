@@ -31,6 +31,7 @@ import android.content.res.Configuration;
 import android.content.res.TypedArray;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.SparseIntArray;
@@ -60,6 +61,7 @@ import androidx.appcompat.widget.Toolbar;
 
 import com.github.eka2l1.R;
 import com.github.eka2l1.applist.AppLaunchInfo;
+import com.github.eka2l1.j2me.JarInstaller;
 import com.github.eka2l1.config.ConfigActivity;
 import com.github.eka2l1.config.ProfileModel;
 import com.github.eka2l1.config.ProfilesManager;
@@ -195,7 +197,7 @@ public class EmulatorActivity extends AppCompatActivity {
     @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
-        Intent intent = getIntent();
+        final Intent intent = getIntent();
         boolean externalIntent = intent.getBooleanExtra(KEY_APP_IS_SHORTCUT, false) || ACTION_LAUNCH_GAME.equals(intent.getAction())
                 || intent.getData() != null;
 
@@ -215,10 +217,29 @@ public class EmulatorActivity extends AppCompatActivity {
         String deviceCode;
 
         if (intent.getData() != null) {
+            Uri dataUri = intent.getData();
+
+            // J2ME / MIDlet (jar/jad) install path: stage the URI through
+            // JarInstaller, register it in the applist, then immediately
+            // launch via EmulatorActivity → Emulator.launchJ2meApp.
+            // The original .json launcher path is preserved below.
+            String dataPath = dataUri.getPath();
+            if (dataPath != null) {
+                String lower = dataPath.toLowerCase();
+                if (lower.endsWith(".jar") || lower.endsWith(".jad") || lower.endsWith(".kjx")) {
+                    // Defer the install work until after setContentView so
+                    // the user sees a non-blank window even if the IO
+                    // pipeline stalls for a moment.
+                    final Uri capturedUri = dataUri;
+                    getWindow().getDecorView().post(() -> handleJ2meExternalLaunch(capturedUri, intent));
+                    return;
+                }
+            }
+
             InputStream inputStream = null;
 
             try {
-                inputStream = getContentResolver().openInputStream(intent.getData());
+                inputStream = getContentResolver().openInputStream(dataUri);
             } catch (FileNotFoundException e) {
                 throw new RuntimeException(e);
             }
@@ -966,7 +987,18 @@ public class EmulatorActivity extends AppCompatActivity {
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                         }
-                        runNativeCall(() -> Emulator.launchApp((int) uid));
+                        // J2ME / MIDlet launches bypass the Symbian
+                        // app-registry path and go straight through the
+                        // native j2me::launch helper, which spawns the
+                        // S60v1 KMID process. The UID we pass in the
+                        // Intent is the persistent j2me_applist id, not
+                        // an apa_app_registry uid.
+                        final boolean j2meLaunch = intent.getBooleanExtra("j2meLaunch", false);
+                        if (j2meLaunch) {
+                            runNativeCall(() -> Emulator.launchJ2meApp(uid));
+                        } else {
+                            runNativeCall(() -> Emulator.launchApp((int) uid));
+                        }
                         launched = true;
                     }
                 });
@@ -1082,5 +1114,86 @@ public class EmulatorActivity extends AppCompatActivity {
         public void surfaceRedrawNeeded(SurfaceHolder surfaceHolder) {
             Emulator.surfaceRedrawNeeded();
         }
+    }
+
+    /**
+     * Install + launch a JAR/JAD picked via a system Intent (file
+     * manager, browser, etc). We use the same {@link JarInstaller}
+     * pipeline the menu uses, and on success we re-launch this activity
+     * with a {@code j2meLaunch} intent extra so the existing
+     * surface-ready handler calls {@code Emulator.launchJ2meApp}.
+     *
+     * If the install fails (e.g. MIDP-2.0 only JAR), we surface the
+     * same error code translation as the menu flow, then finish().
+     */
+    private void handleJ2meExternalLaunch(Uri jarUri, Intent original) {
+        final String emulatorDir = Emulator.getEmulatorDir();
+        if (emulatorDir == null) {
+            Toast.makeText(this, R.string.error, Toast.LENGTH_SHORT).show();
+            finish();
+            return;
+        }
+
+        JarInstaller.install(this, emulatorDir, jarUri)
+                .subscribeOn(io.reactivex.schedulers.Schedulers.io())
+                .observeOn(io.reactivex.android.schedulers.AndroidSchedulers.mainThread())
+                .subscribe(new io.reactivex.observers.DisposableSingleObserver<Emulator.J2meInstallResult>() {
+                    @Override
+                    public void onSuccess(Emulator.J2meInstallResult result) {
+                        // Rebroadcast a launch intent so we go through the
+                        // existing surface-ready path with j2meLaunch=true.
+                        Intent launch = new Intent(EmulatorActivity.this, EmulatorActivity.class);
+                        launch.putExtra(KEY_APP_UID, result.appId);
+                        launch.putExtra(KEY_APP_NAME, result.name);
+                        try {
+                            int currentId = Emulator.getCurrentDevice();
+                            String[] codes = Emulator.getDeviceFirmwareCodes();
+                            String deviceCode = (codes != null && currentId >= 0 && currentId < codes.length)
+                                    ? codes[currentId] : "epoc6";
+                            launch.putExtra(KEY_DEVICE_CODE, deviceCode);
+                        } catch (Throwable t) {
+                            launch.putExtra(KEY_DEVICE_CODE, "epoc6");
+                        }
+                        launch.putExtra("j2meLaunch", true);
+                        startActivity(launch);
+                        finish();
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        int msgRes;
+                        if (e instanceof Emulator.J2meInstallException) {
+                            int code = ((Emulator.J2meInstallException) e).getErrorCode();
+                            switch (code) {
+                                case Emulator.INSTALL_J2ME_ERROR_NOT_FOUND:
+                                    msgRes = R.string.j2me_err_not_found;
+                                    break;
+                                case Emulator.INSTALL_J2ME_ERROR_INVALID:
+                                    msgRes = R.string.j2me_err_invalid;
+                                    break;
+                                case Emulator.INSTALL_J2ME_ERROR_MIDP2_UNSUPPORTED:
+                                    msgRes = R.string.j2me_err_midp2;
+                                    break;
+                                case Emulator.INSTALL_J2ME_ERROR_DB:
+                                    msgRes = R.string.j2me_err_db;
+                                    break;
+                                case Emulator.INSTALL_J2ME_ERROR_PLATFORM:
+                                    msgRes = R.string.j2me_err_platform;
+                                    break;
+                                default:
+                                    msgRes = R.string.j2me_err_unknown;
+                                    break;
+                            }
+                        } else {
+                            msgRes = R.string.j2me_copy_failed;
+                        }
+                        new androidx.appcompat.app.AlertDialog.Builder(EmulatorActivity.this)
+                                .setTitle(R.string.j2me_install_failed_title)
+                                .setMessage(msgRes)
+                                .setPositiveButton(android.R.string.ok, (d, w) -> finish())
+                                .setCancelable(false)
+                                .show();
+                    }
+                });
     }
 }

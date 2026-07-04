@@ -67,6 +67,8 @@ import com.github.eka2l1.config.ProfilesFragment;
 import com.github.eka2l1.emu.Emulator;
 import com.github.eka2l1.emu.EmulatorActivity;
 import com.github.eka2l1.info.AboutDialogFragment;
+import com.github.eka2l1.j2me.J2meAppListDialog;
+import com.github.eka2l1.j2me.JarInstaller;
 import com.github.eka2l1.settings.AppDataStore;
 import com.github.eka2l1.settings.SettingsFragment;
 import com.github.eka2l1.util.FileUtils;
@@ -104,7 +106,8 @@ import static com.github.eka2l1.emu.Constants.*;
 
 import org.w3c.dom.Text;
 
-public class AppsListFragment extends Fragment {
+public class AppsListFragment extends Fragment
+        implements com.github.eka2l1.j2me.J2meAppListDialog.Launcher {
     private CompositeDisposable compositeDisposable;
     private AppsListAdapter adapter;
     private RecyclerView rvApplist;
@@ -125,6 +128,9 @@ public class AppsListFragment extends Fragment {
     private final ActivityResultLauncher<String[]> openPreconfiguredPackZIPLauncher = registerForActivityResult(
             FileUtils.getFilePicker(),
             this::onPreconfiguredPackZIPResult);
+    private final ActivityResultLauncher<String[]> openJ2meJarLauncher = registerForActivityResult(
+            FileUtils.getFilePicker(),
+            this::onJ2meJarResult);
     private final ActivityResultLauncher pickLaunchFileDirectory = registerForActivityResult(
             FileUtils.getDirPicker(true),
             this::onLaunchFileDirPickResult);
@@ -320,6 +326,150 @@ public class AppsListFragment extends Fragment {
             return;
         }
         installNGageGame(path);
+    }
+
+    /**
+     * Handle the result of the JAR/JAD file picker.
+     *
+     * The picker returns either a file:// or content:// URI. We pass it
+     * straight to {@link JarInstaller}, which is responsible for staging
+     * the bytes into the emulator data dir (because the JNI install
+     * path expects an fopen()-able file). The Single runs on the IO
+     * scheduler and we observe the result on the main thread.
+     */
+    private void onJ2meJarResult(String path) {
+        if (path == null) {
+            return;
+        }
+        if (!Emulator.isInitialized()) {
+            Toast.makeText(getContext(), R.string.error, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        final Uri uri = Uri.parse(path);
+        final String emulatorDir = Emulator.getEmulatorDir();
+        if (emulatorDir == null) {
+            Toast.makeText(getContext(), R.string.error, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        JarInstaller.install(requireContext(), emulatorDir, uri)
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribeWith(new DisposableSingleObserver<Emulator.J2meInstallResult>() {
+                    @Override
+                    public void onSuccess(Emulator.J2meInstallResult result) {
+                        String msg = getString(R.string.j2me_install_done,
+                                result.name, result.version, result.author);
+                        Toast.makeText(getContext(), msg, Toast.LENGTH_LONG).show();
+                        // Open the J2ME app list straight away so the user
+                        // sees their newly-installed game without hunting
+                        // for it in the menu.
+                        J2meAppListDialog.newInstance()
+                                .show(getParentFragmentManager(), "j2me_app_list");
+                    }
+
+                    @Override
+                    public void onError(@NonNull Throwable e) {
+                        int msgRes;
+                        if (e instanceof Emulator.J2meInstallException) {
+                            int code = ((Emulator.J2meInstallException) e).getErrorCode();
+                            msgRes = mapInstallError(code);
+                        } else {
+                            // IOException raised during the copy stage —
+                            // typically a bad URI permission or a network
+                            // URI we can't resolve.
+                            msgRes = R.string.j2me_copy_failed;
+                        }
+                        new AlertDialog.Builder(getContext())
+                                .setTitle(R.string.j2me_install_failed_title)
+                                .setMessage(msgRes)
+                                .setPositiveButton(android.R.string.ok, null)
+                                .show();
+                    }
+                });
+    }
+
+    /** Translate a native install_error code into a user-facing string. */
+    private int mapInstallError(int code) {
+        switch (code) {
+            case Emulator.INSTALL_J2ME_ERROR_NOT_FOUND:
+                return R.string.j2me_err_not_found;
+            case Emulator.INSTALL_J2ME_ERROR_INVALID:
+                return R.string.j2me_err_invalid;
+            case Emulator.INSTALL_J2ME_ERROR_MIDP2_UNSUPPORTED:
+                return R.string.j2me_err_midp2;
+            case Emulator.INSTALL_J2ME_ERROR_DB:
+                return R.string.j2me_err_db;
+            case Emulator.INSTALL_J2ME_ERROR_PLATFORM:
+                return R.string.j2me_err_platform;
+            default:
+                return R.string.j2me_err_unknown;
+        }
+    }
+
+    /**
+     * The J2ME runner is S60v1-only — the native side rejects any other
+     * epocver with INSTALL_ERROR_NOT_SUPPORTED_FOR_PLAT. We pre-check
+     * by looking at the currently active device's firmware code; S60v1
+     * is "epoc6" in eka2l1's naming. If we can't tell (e.g. the device
+     * list isn't loaded yet) we let the user try and rely on the
+     * precise error message from the install flow.
+     */
+    private boolean isCurrentDeviceJ2meCompatible() {
+        if (!Emulator.isInitialized()) {
+            return true; // let the picker run, native will fail loudly
+        }
+        try {
+            int currentId = Emulator.getCurrentDevice();
+            String[] codes = Emulator.getDeviceFirmwareCodes();
+            if (currentId < 0 || codes == null || currentId >= codes.length) {
+                return true;
+            }
+            String code = codes[currentId];
+            // S60v1 firmware codes are 4 characters ending with a digit
+            // (e.g. "RM-5", "RM-7", "RM-8"). The native bridge is the
+            // authoritative gate, this is purely a heads-up.
+            return code != null && code.toLowerCase().startsWith("rm-");
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    private void showJ2meIncompatibleDialog() {
+        new AlertDialog.Builder(getContext())
+                .setTitle(R.string.j2me_install_failed_title)
+                .setMessage(R.string.j2me_no_device_dialog)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+    }
+
+    @Override
+    public void launch(long appId) {
+        // The MIDlet runner spawns a Symbian KMID process; the running
+        // screen is the same EmulatorActivity used for SIS apps, so we
+        // dispatch through the existing activity launch path. We pass a
+        // sentinel UID + name so the activity knows not to look up an
+        // app registry entry — the JNI bridge will dispatch straight to
+        // eka2l1::j2me::launch via a small helper we add to Emulator.
+        Intent intent = new Intent(getActivity(), EmulatorActivity.class);
+        intent.putExtra(Constants.KEY_APP_UID, appId);
+        intent.putExtra(Constants.KEY_APP_NAME, "MIDlet");
+        // deviceCode is required by EmulatorActivity for some bookkeeping
+        // (config dir resolution). Use the currently active device.
+        try {
+            int currentId = Emulator.getCurrentDevice();
+            String[] codes = Emulator.getDeviceFirmwareCodes();
+            String deviceCode = (codes != null && currentId >= 0 && currentId < codes.length)
+                    ? codes[currentId] : "epoc6";
+            intent.putExtra(Constants.KEY_DEVICE_CODE, deviceCode);
+        } catch (Throwable t) {
+            intent.putExtra(Constants.KEY_DEVICE_CODE, "epoc6");
+        }
+        // Mark this as a J2ME launch so EmulatorActivity can route to
+        // launchJ2meApp instead of the Symbian app-registry path.
+        intent.putExtra("j2meLaunch", true);
+        startActivity(intent);
     }
 
     @SuppressWarnings("ResultOfMethodCallIgnored")
@@ -611,6 +761,17 @@ public class AppsListFragment extends Fragment {
                     .commit();
         } else if (itemId == R.id.action_install_ng_game) {
             openNGageGameLauncher.launch(null);
+        } else if (itemId == R.id.action_install_j2me_app) {
+            // Picker accepts jar/jad/kjx so the user can pre-stage the
+            // JAD alongside the JAR if they have one.
+            if (!isCurrentDeviceJ2meCompatible()) {
+                showJ2meIncompatibleDialog();
+                return true;
+            }
+            openJ2meJarLauncher.launch(new String[]{".jar", ".jad", ".kjx"});
+        } else if (itemId == R.id.action_open_j2me_list) {
+            J2meAppListDialog.newInstance()
+                    .show(getParentFragmentManager(), "j2me_app_list");
         } else if (itemId == R.id.action_install_preconfigured_pack) {
             openPreconfiguredZIPFilePicker();
         } else if (itemId == R.id.action_switch_devices) {
