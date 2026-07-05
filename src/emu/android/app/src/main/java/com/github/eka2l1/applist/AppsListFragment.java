@@ -453,8 +453,8 @@ public class AppsListFragment extends Fragment
         // app registry entry — the JNI bridge will dispatch straight to
         // eka2l1::j2me::launch via a small helper we add to Emulator.
         Intent intent = new Intent(getActivity(), EmulatorActivity.class);
-        intent.putExtra(Constants.KEY_APP_UID, appId);
-        intent.putExtra(Constants.KEY_APP_NAME, "MIDlet");
+        intent.putExtra(KEY_APP_UID, appId);
+        intent.putExtra(KEY_APP_NAME, "MIDlet");
         // deviceCode is required by EmulatorActivity for some bookkeeping
         // (config dir resolution). Use the currently active device.
         try {
@@ -462,9 +462,9 @@ public class AppsListFragment extends Fragment
             String[] codes = Emulator.getDeviceFirmwareCodes();
             String deviceCode = (codes != null && currentId >= 0 && currentId < codes.length)
                     ? codes[currentId] : "epoc6";
-            intent.putExtra(Constants.KEY_DEVICE_CODE, deviceCode);
+            intent.putExtra(KEY_DEVICE_CODE, deviceCode);
         } catch (Throwable t) {
-            intent.putExtra(Constants.KEY_DEVICE_CODE, "epoc6");
+            intent.putExtra(KEY_DEVICE_CODE, "epoc6");
         }
         // Mark this as a J2ME launch so EmulatorActivity can route to
         // launchJ2meApp instead of the Symbian app-registry path.
