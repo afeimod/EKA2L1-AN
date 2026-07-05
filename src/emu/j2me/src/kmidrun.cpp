@@ -134,7 +134,17 @@ namespace eka2l1::j2me {
         // the args off verbatim — the applist server forwards them to
         // the launched process's command-line slot, which is exactly
         // how KMID receives its "7049*uid*title*jar*jad*" payload.
-        if (!alserv->launch_app(u"Z:\\system\\programs\\kmidrun.exe", args, nullptr, nullptr, exit_cb)) {
+        //
+        // The protected overload is:
+        //   bool launch_app(exe, cmd, thread_id, requester,
+        //                   known_uid = 0, exit_cb = nullptr);
+        // so we must pass all six positional arguments, with a 0
+        // sentinel for known_uid. Dropping it (the previous build
+        // failed with "no known conversion from std::function to
+        // const epoc::uid for 5th argument") made clang try to bind
+        // exit_cb into the known_uid slot.
+        if (!alserv->launch_app(u"Z:\\system\\programs\\kmidrun.exe", args,
+                nullptr, nullptr, 0, exit_cb)) {
             LOG_ERROR(J2ME, "applist_server::launch_app returned false for KMidRun");
         }
     }
