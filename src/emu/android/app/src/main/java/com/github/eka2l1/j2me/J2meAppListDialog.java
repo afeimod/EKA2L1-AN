@@ -176,21 +176,23 @@ public class J2meAppListDialog extends DialogFragment {
     private void doUninstall(J2meAppItem item) {
         // Capture into effectively-final locals before handing off to
         // the background executor + main-thread lambda. The compile rule
-        // forbids reassigning a captured variable inside a lambda, so we
-        // wrap the success/failure flag in a single-shot final boolean.
+        // forbids reassigning a captured variable inside a lambda (and
+        // also forbids assigning a 'final' local twice across try/catch
+        // branches), so we route the success flag through a one-element
+        // holder. itemTitle is captured by value once.
         final String itemTitle = item.getTitle();
+        final boolean[] okHolder = new boolean[1];
         io.execute(() -> {
-            final boolean ok;
             try {
-                ok = Emulator.uninstallJ2meApp(item.getAppId());
+                okHolder[0] = Emulator.uninstallJ2meApp(item.getAppId());
             } catch (Throwable t) {
-                ok = false;
+                okHolder[0] = false;
             }
             if (getActivity() == null) {
                 return;
             }
             getActivity().runOnUiThread(() -> {
-                if (ok) {
+                if (okHolder[0]) {
                     Toast.makeText(requireContext(),
                             getString(R.string.j2me_uninstall_done, itemTitle),
                             Toast.LENGTH_SHORT).show();
