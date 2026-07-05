@@ -137,8 +137,19 @@ namespace eka2l1::j2me {
             return fin_err;
         }
 
+        // The original code hard-rejected MIDP 2.0+ JARs because the
+        // bundled KMID runner only implemented MIDP 1.0. We now let
+        // those JARs install anyway and surface a warning, because:
+        //   * Some S60 ROMs ship a newer KMID that handles MIDP 2.0.
+        //   * The user might want to install a MIDP 2.0 game to test
+        //     compatibility before reporting it upstream.
+        // The runner will simply fail to launch it on ROMs that don't
+        // support MIDP 2.0; we'll log a warning so the symptom is
+        // diagnosable, but never block the install itself.
         if (midp_ver > 1) {
-            return INSTALL_ERROR_JAR_ONLY_MIDP1_SUPPORTED;
+            LOG_WARN(J2ME, "Installing JAR '{}' which declares MIDP {}. This may not "
+                "run on the current ROM's KMID runner (best effort).",
+                entry.name_, midp_ver);
         }
 
         fseek(jar_file_handle, 0, SEEK_SET);

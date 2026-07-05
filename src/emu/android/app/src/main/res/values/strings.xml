@@ -44,11 +44,11 @@
     <string name="j2me_install_failed_title">Install failed</string>
     <string name="j2me_err_not_found">JAR file not found.</string>
     <string name="j2me_err_invalid">Invalid JAR. Manifest missing or corrupt.</string>
-    <string name="j2me_err_midp2">This JAR requires MIDP 2.0, but the S60v1 runner only supports MIDP 1.0. Pick an older game or install a separate J2ME loader.</string>
+    <string name="j2me_err_midp2">This JAR requires MIDP 2.0, but the bundled KMID runner only supports MIDP 1.0. Install succeeded anyway — the game may launch on a newer ROM or fail at runtime.</string>
     <string name="j2me_err_db">Couldn\'t write the J2ME apps database. Check storage permissions.</string>
-    <string name="j2me_err_platform">J2ME install isn\'t supported on the current device profile. Switch to an S60v1 (Symbian 6.1) device.</string>
+    <string name="j2me_err_platform">J2ME install failed for this device profile. The active Symbian device doesn\'t expose a Java runtime — try a different profile that ships KMID.</string>
     <string name="j2me_err_unknown">Install failed (code %1$d).</string>
-    <string name="j2me_no_device_dialog">No compatible S60v1 device is installed.\n\nJ2ME games run via the S60v1 KMID runner. Please install a device with that profile (Nokia 7650/3650/6600 era) first.</string>
+    <string name="j2me_no_device_dialog">No compatible device is installed for running J2ME games.\n\nJ2ME games use the KMID Java runtime baked into Symbian ROMs. Please install a device whose ROM includes KMID (most S60 / S^3 devices do).</string>
     <string name="j2me_uninstall_title">Uninstall MIDlet</string>
     <string name="j2me_uninstall_confirm">Remove %1$s from this device? The JAR and its saved data will be deleted.</string>
     <string name="j2me_uninstall_done">%1$s removed.</string>

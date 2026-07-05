@@ -42,11 +42,11 @@
     <string name="j2me_install_failed_title">安装失败</string>
     <string name="j2me_err_not_found">找不到 JAR 文件。</string>
     <string name="j2me_err_invalid">JAR 文件无效，MANIFEST 缺失或已损坏。</string>
-    <string name="j2me_err_midp2">这个 JAR 需要 MIDP 2.0，但 S60v1 运行器只支持 MIDP 1.0。请选个老一点的 Java 游戏，或者装一个专门的 J2ME 模拟器。</string>
+    <string name="j2me_err_midp2">这个 JAR 需要 MIDP 2.0，但内置 KMID 只支持 MIDP 1.0。依然安装成功—在新 ROM 上可能能跑，老 ROM 上会在启动时报错。</string>
     <string name="j2me_err_db">写入 J2ME 应用数据库失败，请检查存储权限。</string>
-    <string name="j2me_err_platform">当前设备不支持 J2ME 安装。请切换到 S60v1（Symbian 6.1）设备。</string>
+    <string name="j2me_err_platform">当前设备不支持 J2ME 安装。Symbian 设备必须 ROM 里包含 KMID 才能跑 J2ME，请换个带 KMID 的设备。</string>
     <string name="j2me_err_unknown">安装失败（错误码 %1$d）。</string>
-    <string name="j2me_no_device_dialog">当前没有可用的 S60v1 设备。\n\nJ2ME 游戏通过 S60v1 的 KMID 运行器执行。请先安装一台该平台的设备（比如 Nokia 7650/3650/6600 那一代）。</string>
+    <string name="j2me_no_device_dialog">当前没有可以跑 J2ME 的设备。\n\nJ2ME 游戏靠 Symbian ROM 里烧录的 KMID Java 运行器执行。请安装一台 ROM 里带 KMID 的设备（绝大多数 S60 / S^3 设备都有）。</string>
     <string name="j2me_uninstall_title">卸载 MIDlet</string>
     <string name="j2me_uninstall_confirm">从本机移除 %1$s 吗？JAR 文件和它的存档数据都会被删除。</string>
     <string name="j2me_uninstall_done">已移除 %1$s。</string>

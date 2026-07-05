@@ -408,42 +408,6 @@ public class AppsListFragment extends Fragment
         }
     }
 
-    /**
-     * The J2ME runner is S60v1-only — the native side rejects any other
-     * epocver with INSTALL_ERROR_NOT_SUPPORTED_FOR_PLAT. We pre-check
-     * by looking at the currently active device's firmware code; S60v1
-     * is "epoc6" in eka2l1's naming. If we can't tell (e.g. the device
-     * list isn't loaded yet) we let the user try and rely on the
-     * precise error message from the install flow.
-     */
-    private boolean isCurrentDeviceJ2meCompatible() {
-        if (!Emulator.isInitialized()) {
-            return true; // let the picker run, native will fail loudly
-        }
-        try {
-            int currentId = Emulator.getCurrentDevice();
-            String[] codes = Emulator.getDeviceFirmwareCodes();
-            if (currentId < 0 || codes == null || currentId >= codes.length) {
-                return true;
-            }
-            String code = codes[currentId];
-            // S60v1 firmware codes are 4 characters ending with a digit
-            // (e.g. "RM-5", "RM-7", "RM-8"). The native bridge is the
-            // authoritative gate, this is purely a heads-up.
-            return code != null && code.toLowerCase().startsWith("rm-");
-        } catch (Throwable t) {
-            return true;
-        }
-    }
-
-    private void showJ2meIncompatibleDialog() {
-        new AlertDialog.Builder(getContext())
-                .setTitle(R.string.j2me_install_failed_title)
-                .setMessage(R.string.j2me_no_device_dialog)
-                .setPositiveButton(android.R.string.ok, null)
-                .show();
-    }
-
     @Override
     public void launch(long appId) {
         // The MIDlet runner spawns a Symbian KMID process; the running
@@ -762,12 +726,12 @@ public class AppsListFragment extends Fragment
         } else if (itemId == R.id.action_install_ng_game) {
             openNGageGameLauncher.launch(null);
         } else if (itemId == R.id.action_install_j2me_app) {
+            // J2ME is a Java standard — it runs on any device profile
+            // that ships a compatible Java VM. The native backend now
+            // forwards every device's install request to the KMID-based
+            // path, so we no longer gate this menu by Symbian version.
             // Picker accepts jar/jad/kjx so the user can pre-stage the
             // JAD alongside the JAR if they have one.
-            if (!isCurrentDeviceJ2meCompatible()) {
-                showJ2meIncompatibleDialog();
-                return true;
-            }
             openJ2meJarLauncher.launch(new String[]{".jar", ".jad", ".kjx"});
         } else if (itemId == R.id.action_open_j2me_list) {
             J2meAppListDialog.newInstance()

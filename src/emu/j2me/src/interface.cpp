@@ -30,22 +30,22 @@ namespace eka2l1::j2me {
         if (!entry.has_value()) {
             return false;
         }
-        const epocver sysver = sys->get_symbian_version_use();
-        if (sysver <= epocver::epoc6) {
-            launch_through_kmidrun(sys, entry.value(), exit_cb);
-            return true;
-        }
-
-        return false;
+        // J2ME is a Java standard, not a Symbian-version-specific API.
+        // The historical S60v1-only check was tied to the KMID runner's
+        // availability on a particular ROM, but a JAR that the user
+        // installs through this UI should be launchable from any device
+        // profile — the runner fallback to KMID will still kick in if
+        // there's a better candidate, but we no longer block outright.
+        launch_through_kmidrun(sys, entry.value(), exit_cb);
+        return true;
     }
 
     install_error install(system *sys, const std::string &path, app_entry &entry_info) {
         app_list *applist = sys->get_j2me_applist();
-        const epocver sysver = sys->get_symbian_version_use();
-        if (sysver <= epocver::epoc6) {
-            return install_for_kmidrun(sys, applist, path, entry_info);
-        }
-        return INSTALL_ERROR_NOT_SUPPORTED_FOR_PLAT;
+        // Same reasoning as launch(): J2ME itself is platform-neutral,
+        // so we route through the KMID-based install path regardless
+        // of the active Symbian version.
+        return install_for_kmidrun(sys, applist, path, entry_info);
     }
 
     bool uninstall(system *sys, const std::uint32_t app_id) {
@@ -54,11 +54,7 @@ namespace eka2l1::j2me {
         if (!entry.has_value()) {
             return false;
         }
-        const epocver sysver = sys->get_symbian_version_use();
-        if (sysver <= epocver::epoc6) {
-            uninstall_for_kmidrun(sys, applist, entry.value());
-            return true;
-        }
-        return false;
+        uninstall_for_kmidrun(sys, applist, entry.value());
+        return true;
     }
 }
