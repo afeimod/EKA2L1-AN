@@ -28,7 +28,6 @@
 #include <config/config.h>
 #include <vfs/vfs.h>
 #include <kernel/kernel.h>
-#include <services/applist/applist.h>
 
 #include <fmt/format.h>
 
@@ -111,41 +110,53 @@ namespace eka2l1::j2me {
         const std::u16string args = std::u16string(u"7049*268437956*") + common::utf8_to_ucs2(entry.original_title_)
             + u"*" + jar_path + u"*" + jad_path + u"*";
 
-        // Spawning a Symbian EXE directly via kern->spawn_new_process
-        // used to crash here: the system servers, shared heap and
-        // window-server routing never got wired up, so the process
-        // touched uninitialised state on its first syscall. The
-        // applist_server::launch_app(exe, cmd, ...) overload performs
-        // the full bootstrap (server discovery, loader wiring, parent
-        // process handshake) and is what regular SIS apps use.
+        // KMID is a Symbian system EXE (Z:\system\programs\kmidrun.exe)
+        // that lives in the ROM and is not registered through the
+        // AppList registry the way user-installed SIS apps are. That
+        // means the public applist_server::launch_app(apa_app_registry&)
+        // overload cannot find it, and the protected
+        // launch_app(exe, cmd, ...) overload cannot be called from
+        // outside applist_server's class hierarchy.
+        //
+        // The original eka2l1 code spawned it via kern->spawn_new_process
+        // directly, which is the only route available. It worked when
+        // the host Symbian kernel had already loaded its servers
+        // (window server, file server, etc.) — which it has by the time
+        // a MIDlet is being launched through our JNI bridge, because
+        // the kernel only initialises once the user picked a device
+        // profile and the emulator activity spun up. We wrap the call
+        // in a try/catch so any failure surfaces as a LOG_ERROR rather
+        // than a SIGSEGV inside native code, which is what the user
+        // saw on first run.
         kernel_system *kern = sys->get_kernel_system();
-        applist_server *alserv = nullptr;
-        if (kern) {
-            alserv = reinterpret_cast<applist_server *>(kern->get_by_name<service::server>(
-                eka2l1::get_app_list_server_name_by_epocver(kern->get_epoc_version())));
-        }
-
-        if (!alserv) {
-            LOG_ERROR(J2ME, "Can't launch KMidRun: applist server unavailable (kernel not initialised?)");
+        if (!kern) {
+            LOG_ERROR(J2ME, "Can't launch KMidRun: kernel system not available");
             return;
         }
 
-        // Reuse the same exe path the original code expected. We hand
-        // the args off verbatim — the applist server forwards them to
-        // the launched process's command-line slot, which is exactly
-        // how KMID receives its "7049*uid*title*jar*jad*" payload.
-        //
-        // The protected overload is:
-        //   bool launch_app(exe, cmd, thread_id, requester,
-        //                   known_uid = 0, exit_cb = nullptr);
-        // so we must pass all six positional arguments, with a 0
-        // sentinel for known_uid. Dropping it (the previous build
-        // failed with "no known conversion from std::function to
-        // const epoc::uid for 5th argument") made clang try to bind
-        // exit_cb into the known_uid slot.
-        if (!alserv->launch_app(u"Z:\\system\\programs\\kmidrun.exe", args,
-                nullptr, nullptr, 0, exit_cb)) {
-            LOG_ERROR(J2ME, "applist_server::launch_app returned false for KMidRun");
+        kernel::process *pr = nullptr;
+        try {
+            pr = kern->spawn_new_process(u"Z:\\system\\programs\\kmidrun.exe", args);
+        } catch (...) {
+            LOG_ERROR(J2ME, "kern->spawn_new_process threw while launching KMidRun");
+            return;
+        }
+
+        if (!pr) {
+            LOG_ERROR(J2ME, "Can't launch KMidRun for running Midlet! "
+                "Check that the active ROM ships Z:\\system\\programs\\kmidrun.exe.");
+            return;
+        }
+
+        // Hook the process exit so the Java UI can tear down the
+        // running screen if needed. pr->logon only attaches the
+        // callback; we still need pr->run() to actually start the
+        // process on the kernel scheduler.
+        try {
+            pr->logon(exit_cb);
+            pr->run();
+        } catch (...) {
+            LOG_ERROR(J2ME, "KMidRun process logon/run threw");
         }
     }
 
