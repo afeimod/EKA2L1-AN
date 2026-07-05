@@ -106,6 +106,7 @@ public class EmulatorActivity extends AppCompatActivity {
     private Toolbar toolbar;
     private OverlayView overlayView;
     private long uid;
+    private Intent j2meLaunchIntent;
     private boolean launched;
     private boolean statusBarEnabled;
     private boolean actionBarEnabled;
@@ -198,6 +199,11 @@ public class EmulatorActivity extends AppCompatActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         final Intent intent = getIntent();
+        // Stash a reference for ViewCallbacks, which lives outside the
+        // onCreate scope. Inner-class captures of a local only work for
+        // effectively-final locals, but the callbacks fire long after
+        // onCreate returns so we still need a field.
+        j2meLaunchIntent = intent;
         boolean externalIntent = intent.getBooleanExtra(KEY_APP_IS_SHORTCUT, false) || ACTION_LAUNCH_GAME.equals(intent.getAction())
                 || intent.getData() != null;
 
@@ -992,8 +998,11 @@ public class EmulatorActivity extends AppCompatActivity {
                         // native j2me::launch helper, which spawns the
                         // S60v1 KMID process. The UID we pass in the
                         // Intent is the persistent j2me_applist id, not
-                        // an apa_app_registry uid.
-                        final boolean j2meLaunch = intent.getBooleanExtra("j2meLaunch", false);
+                        // an apa_app_registry uid. Read the flag off the
+                        // stashed field rather than the onCreate local,
+                        // which isn't visible from this inner class.
+                        final boolean j2meLaunch = j2meLaunchIntent != null
+                                && j2meLaunchIntent.getBooleanExtra("j2meLaunch", false);
                         if (j2meLaunch) {
                             runNativeCall(() -> Emulator.launchJ2meApp(uid));
                         } else {
