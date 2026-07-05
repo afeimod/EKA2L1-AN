@@ -28,6 +28,7 @@
 #include <config/config.h>
 #include <vfs/vfs.h>
 #include <kernel/kernel.h>
+#include <services/applist/applist.h>
 
 #include <fmt/format.h>
 
@@ -110,16 +111,32 @@ namespace eka2l1::j2me {
         const std::u16string args = std::u16string(u"7049*268437956*") + common::utf8_to_ucs2(entry.original_title_)
             + u"*" + jar_path + u"*" + jad_path + u"*";
 
+        // Spawning a Symbian EXE directly via kern->spawn_new_process
+        // used to crash here: the system servers, shared heap and
+        // window-server routing never got wired up, so the process
+        // touched uninitialised state on its first syscall. The
+        // applist_server::launch_app(exe, cmd, ...) overload performs
+        // the full bootstrap (server discovery, loader wiring, parent
+        // process handshake) and is what regular SIS apps use.
         kernel_system *kern = sys->get_kernel_system();
-        kernel::process *pr = kern->spawn_new_process(u"Z:\\system\\programs\\kmidrun.exe", args);
-
-        if (!pr) {
-            LOG_ERROR(J2ME, "Can't launch KMidRun for running Midlet!");
-        } else {
-            pr->logon(exit_cb);
+        applist_server *alserv = nullptr;
+        if (kern) {
+            alserv = reinterpret_cast<applist_server *>(kern->get_by_name<service::server>(
+                eka2l1::get_app_list_server_name_by_epocver(kern->get_epoc_version())));
         }
 
-        pr->run();
+        if (!alserv) {
+            LOG_ERROR(J2ME, "Can't launch KMidRun: applist server unavailable (kernel not initialised?)");
+            return;
+        }
+
+        // Reuse the same exe path the original code expected. We hand
+        // the args off verbatim — the applist server forwards them to
+        // the launched process's command-line slot, which is exactly
+        // how KMID receives its "7049*uid*title*jar*jad*" payload.
+        if (!alserv->launch_app(u"Z:\\system\\programs\\kmidrun.exe", args, nullptr, nullptr, exit_cb)) {
+            LOG_ERROR(J2ME, "applist_server::launch_app returned false for KMidRun");
+        }
     }
 
     install_error install_for_kmidrun(system *sys, app_list *applist, const std::string &path, app_entry &entry_info) {
