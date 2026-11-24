@@ -34,7 +34,7 @@ android {
         externalNativeBuild {
             cmake {
                 arguments "-DEKA2L1_BUILD_TOOLS=OFF", "-DEKA2L1_BUILD_TESTS=OFF",
-                        "-DEKA2L1_BUILD_VULKAN_BACKEND=OFF", ciArg
+                        "-DEKA2L1_BUILD_VULKAN_BACKEND=OFF", "-DBUILD_SHARED_LIBS=OFF", ciArg
                 cppFlags "-std=c++20"
             }
         }
