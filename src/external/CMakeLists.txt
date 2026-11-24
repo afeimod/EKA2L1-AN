@@ -7,6 +7,10 @@ include(CheckSymbolExists)
 # subtree only, rather than making every caller pass the flag.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 
+# libarchive declares BUILD_SHARED_LIBS with option(); make CMP0077 NEW the
+# default for child projects so its project() call preserves the OFF value above.
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+
 # libarchive is the one archive reader in this tree: device dumps packed as .7z, N-Gage game cards as
 # .zip / .7z / .rar. It is here rather than a bare 7z decoder so that another container is a matter of
 # flipping options instead of another vendored codebase.
