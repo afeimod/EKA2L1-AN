@@ -145,6 +145,8 @@ add_subdirectory(fmt)
 if (ANDROID)
     # fmt 11.2 uses malloc/free in a public header without including <stdlib.h>.
     target_compile_options(fmt PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include stdlib.h>")
+    # Avoid consteval format-string parsing issues with the Android NDK Clang.
+    target_compile_definitions(fmt PUBLIC FMT_USE_CONSTEVAL=0)
 endif()
 add_library(fmt::fmt ALIAS fmt)
 set (fmt_DIR fmt)
