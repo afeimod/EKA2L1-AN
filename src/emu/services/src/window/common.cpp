@@ -184,6 +184,8 @@ namespace eka2l1::epoc {
             return epoc::display_mode::color16mu;
         if (disp_str_lower == "color64k")
             return epoc::display_mode::color64k;
+        if (disp_str_lower == "color4k")
+            return epoc::display_mode::color4k;
 
         LOG_TRACE(SERVICE_WINDOW, "Unhandled string to convert to display mode: {}", disp_str);
         return epoc::display_mode::color16ma;
@@ -303,6 +305,9 @@ namespace eka2l1::epoc {
     
     int get_approximate_pixel_to_twips_mul(const epocver ver) {
         switch (ver) {
+        case epocver::epoc70:
+            return 16;
+
         case epocver::epoc6:
         case epocver::epoc7:
         case epocver::epoc80:
@@ -310,6 +315,7 @@ namespace eka2l1::epoc {
         case epocver::epoc81b:
             return 15;
 
+        case epocver::epoc91:
         case epocver::epoc93fp1:
         case epocver::epoc93fp2:
         case epocver::epoc94:

@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include <common/path_types.h>
 #include <common/buffer.h>
 #include <cstdint>
 #include <utils/des.h>
@@ -45,7 +46,7 @@ namespace eka2l1 {
         std::int32_t screen_mode_;
         std::uint32_t icon_count_;
         std::u16string caption_;
-        std::u16string icon_path_;
+        guest_path icon_path_;
     };
 
     using file_ownership_list = std::vector<std::u16string>;
@@ -106,11 +107,22 @@ namespace eka2l1 {
     };
 #pragma pack(pop)
 
-    struct data_recog_result {
-        recog_data_type type_;
-        std::uint32_t confidence_rating_;
+    // TRecognitionConfidence, from AppArc's apmrec.h. The values matter: a client
+    // compares them, and EPossible is zero rather than the middle of the scale.
+    enum data_recognition_confidence : std::int32_t {
+        data_recognition_confidence_certain = 0x7FFFFFFF,
+        data_recognition_confidence_probable = 100,
+        data_recognition_confidence_possible = 0,
+        data_recognition_confidence_unlikely = -100,
+        data_recognition_confidence_not_recognized = (-0x7FFFFFFF - 1)
     };
 
+    struct data_recog_result {
+        recog_data_type type_;
+        std::int32_t confidence_rating_;
+    };
+
+    static_assert(sizeof(data_recog_result) == 272);
     static_assert(sizeof(apa_capability) == 64);
 
     static constexpr const char16_t *MAPPED_EXECUTABLE_HEAD_STRING = u"MappedExecutable";

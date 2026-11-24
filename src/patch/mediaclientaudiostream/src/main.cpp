@@ -29,6 +29,18 @@
 #include <e32std.h>
 
 /// == AUDIO OUTPUT STREAM PROXY ==
+#ifndef EKA2
+CMdaAudioOutputStream *CMdaAudioOutputStream::NewLegacyL(MMdaAudioOutputStreamCallback &aCallBack, CMdaServer *aServer) {
+    CMdaAudioOutputStream *stream = new (ELeave) CMdaAudioOutputStream();
+    CleanupStack::PushL(stream);
+    // Pre-MMF MDA completes copied buffers above standard-priority animation timers.
+    stream->iProperties = CMMFMdaAudioOutputStream::NewL(aCallBack, 0, EMdaPriorityPreferenceTimeAndQuality, 20, ETrue);
+    CleanupStack::Pop(stream);
+
+    return stream;
+}
+#endif
+
 CMdaAudioOutputStream *CMdaAudioOutputStream::NewL(MMdaAudioOutputStreamCallback &aCallBack, CMdaServer *aServer) {
     CMdaAudioOutputStream *stream = new (ELeave) CMdaAudioOutputStream();
     CleanupStack::PushL(stream);
@@ -52,8 +64,18 @@ CMdaAudioOutputStream::CMdaAudioOutputStream()
 }
 
 void CMdaAudioOutputStream::Open(TMdaPackage *aPackage) {
+    if (iProperties->IsOpenPending()) {
+        // A completion is already on its way and the open timer must not be re-armed.
+        LogOut(KMcaCat, _L("WARN:: An open is already in progress! This open call is ignored."));
+        return;
+    }
+
     if (iProperties->HasAlreadyPlay()) {
-        LogOut(KMcaCat, _L("WARN:: Stream has already been opened! This open call is ignored."));
+        // Re-opening a stream that is already streaming: leave the running stream and its
+        // settings alone, but still answer. Dropping MaoscOpenComplete strands a client
+        // that waits for it.
+        LogOut(KMcaCat, _L("WARN:: Stream has already been opened! Keeping the current settings."));
+        iProperties->Play();
         return;
     }
 
@@ -248,8 +270,16 @@ void CMdaAudioInputStream::SetAudioPropertiesL(TInt aSampleRate, TInt aChannels)
 }
 
 void CMdaAudioInputStream::Open(TMdaPackage* aPackage) {
+    if (iProperties->IsOpenPending()) {
+        // A completion is already on its way and the open timer must not be re-armed.
+        LogOut(KMcaCat, _L("WARN:: An open is already in progress! This open call is ignored."));
+        return;
+    }
+
     if (iProperties->HasAlreadyPlay()) {
-        LogOut(KMcaCat, _L("WARN:: Stream has already been opened! This open call is ignored."));
+        // See CMdaAudioOutputStream::Open - answer instead of stranding the client.
+        LogOut(KMcaCat, _L("WARN:: Stream has already been opened! Keeping the current settings."));
+        iProperties->Play();
         return;
     }
 

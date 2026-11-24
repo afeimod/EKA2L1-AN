@@ -349,9 +349,8 @@ namespace eka2l1 {
                 std::memcpy(thread_free_modify_local_storage_ptr, ldata, NATIVE_THREAD_LOCAL_DATA_COPY_SIZE);
 
                 if (kern->get_epoc_version() < epocver::epoc10) {
-                    // Anna and above add thread ID to the local storage at offset 12
-                    // While the TLS heap is expected on at least OS version S60v3 to be at offset 12 instead
-                    // So nullify the thread ID
+                    // Only Belle euser has iThreadId at offset 12; earlier releases, Anna included,
+                    // keep iTlsHeap there and lazily initialise the TLS array only while it is null.
                     reinterpret_cast<thread_local_data*>(thread_free_modify_local_storage_ptr)->thread_id = 0;
                 }
 
@@ -398,10 +397,12 @@ namespace eka2l1 {
 
         void thread::do_cleanup() {
             // Close all thread handles
-            if (!kern->wipeout_in_progress())
+            if (!kern->wipeout_in_progress()) {
                 thread_handles.reset();
 
-            kern->free_msg(sync_msg);
+                // Wipeout destroys every message before the threads.
+                kern->free_msg(sync_msg);
+            }
             cleanup_detachs();
         }
 
@@ -460,14 +461,16 @@ namespace eka2l1 {
                 return false;
             }
 
-            sleep_level = 0;
+            sleep_level = 1;
 
-            while (state == thread_state::run) {
-                wait_for_any_request();
-                sleep_level++;
+            // A host-side frame-pacing sleep. It must not consume or restore guest
+            // request signals: the request semaphore carries the active scheduler's
+            // accounting, and one extra signal there is a stray-signal panic.
+            if (!scheduler->sleep(this, ussecs, true)) {
+                sleep_level = 0;
+                return false;
             }
 
-            scheduler->sleep(this, ussecs, false);
             return true;
         }
 
@@ -482,13 +485,20 @@ namespace eka2l1 {
             kern->lock();
 
             if (sleep_nof_sts) {
-                (sleep_nof_sts.get(owning_process()))->set(errcode, kern->is_eka1());
+                // The wakeup event can already be in flight - popped from the timing
+                // queue and running outside the timing lock - when the sleeping thread
+                // is torn down. The guest request status page may be unmapped by then,
+                // so translation returns null. Guard it like notify_info::complete.
+                epoc::request_status *sts_real = sleep_nof_sts.get(owning_process());
+                if (sts_real) {
+                    sts_real->set(errcode, kern->is_eka1());
+                }
                 sleep_nof_sts = 0;
 
                 signal_request();
             } else {
-                signal_request(sleep_level);
                 sleep_level = 0;
+                scheduler->dewait(this);
             }
 
             sleep_nof_sts = 0;
@@ -496,6 +506,12 @@ namespace eka2l1 {
         }
 
         bool thread::stop() {
+            // A dead thread left in a wait queue would later be handed the mutex or a semaphore count
+            if (wait_obj && !kern->is_eka1() && !kern->wipeout_in_progress()) {
+                end_timeout_early();
+                cancel_wait_object();
+            }
+
             return scheduler->stop(this);
         }
 
@@ -975,7 +991,10 @@ namespace eka2l1 {
                 kernel::codeseg::attached_info *info = E_LOFF(first, kernel::codeseg::attached_info, closing_lib_link);
 
                 info->parent_seg->detaching_report(info->attached_process);
-                results.push_back(info->parent_seg->get_entry_point(info->attached_process));
+                const address entry_point = info->parent_seg->get_entry_point(info->attached_process);
+                if (entry_point) {
+                    results.push_back(entry_point);
+                }
 
                 first = first->next;
             } while (first != end);
@@ -993,7 +1012,8 @@ namespace eka2l1 {
             if (*count) {
                 std::memcpy(addrs, cached_detach_eps.data(), *count * sizeof(address));
                 cached_detach_eps.erase(cached_detach_eps.begin(), cached_detach_eps.begin() + *count);
-
+            }
+            if (*count || !closing_libs.empty()) {
                 return epoc::error_none;
             }
 
@@ -1030,6 +1050,25 @@ namespace eka2l1 {
             }
         }
 
+        void thread::cancel_wait_object() {
+            switch (wait_obj->get_object_type()) {
+            case object_type::mutex:
+                reinterpret_cast<mutex *>(wait_obj)->cancel_wait(this);
+                break;
+
+            case object_type::sema:
+                reinterpret_cast<semaphore *>(wait_obj)->cancel_wait(this);
+                break;
+
+            case object_type::condvar:
+                reinterpret_cast<condvar *>(wait_obj)->cancel_wait(this);
+                break;
+
+            default:
+                break;
+            }
+        }
+
         void thread::handle_wait_object_timeout() {
             // The wait object's native signal may got the upper hands
             if (!is_in_timeout) {
@@ -1042,13 +1081,14 @@ namespace eka2l1 {
             }
 
             if (!kern->is_eka1()) {
-                switch (wait_obj->get_object_type()) {
-                case kernel::object_type::sema:
-                    reinterpret_cast<kernel::semaphore*>(wait_obj)->timeouted(this);
-                    break;
+                const bool suspended = is_suspended();
+                cancel_wait_object();
 
-                default:
-                    break;
+                // A suspended thread stays blocked until it is resumed
+                if (suspended) {
+                    state = thread_state::wait;
+                } else {
+                    scheduler->dewait(this);
                 }
 
                 // Set the return value of the previous wait function to timed out

@@ -17,6 +17,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/path_types.h>
 #include <android/input_dialog.h>
 #include <android/state.h>
 #include <common/algorithm.h>
@@ -60,47 +61,38 @@ namespace eka2l1::android {
     }
 
     void emulator::register_draw_callback() {
-        if (!winserv) {
-            LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Cannot register draw callback: winserv is null!");
-            return;
-        }
-        
-        if (!window || !graphics_driver || !launcher) {
-            LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Cannot register draw callback: window={}, graphics_driver={}, launcher={}",
-                (void*)window.get(), (void*)graphics_driver.get(), (void*)launcher.get());
-            return;
-        }
-        
-        // TODO: Clean these handles up somewhere (+ threads too!)
-        eka2l1::epoc::screen *screens = winserv->get_screens();
-        while (screens) {
-            std::size_t change_handle = screens->add_screen_redraw_callback(this, [](void *userdata,
+        if (winserv) {
+            // TODO: Clean these handles up somewhere (+ threads too!)
+            eka2l1::epoc::screen *screens = winserv->get_screens();
+            while (screens) {
+                std::size_t change_handle = screens->add_screen_redraw_callback(this, [](void *userdata,
                                                                                            eka2l1::epoc::screen *scr, const bool is_dsa) {
-                emulator *state_ptr = reinterpret_cast<emulator*>(userdata);
-                if (!state_ptr->graphics_driver || !state_ptr->launcher || !state_ptr->window) {
-                    return;
-                }
+                    emulator *state_ptr = reinterpret_cast<emulator*>(userdata);
+                    if (!state_ptr->graphics_driver) {
+                        return;
+                    }
 
-                // Check if previous presenting is done yet (to prevent input delay because frame
-                // submit request is too fast)
-                state_ptr->graphics_driver->wait_for(&state_ptr->present_status);
+                    // Check if previous presenting is done yet (to prevent input delay because frame
+                    // submit request is too fast)
+                    state_ptr->graphics_driver->wait_for(&state_ptr->present_status);
 
-                drivers::graphics_command_builder builder;
-                state_ptr->launcher->draw(builder, scr, state_ptr->window->window_fb_size().x,
+                    drivers::graphics_command_builder builder;
+                    state_ptr->launcher->draw(builder, scr, state_ptr->window->window_fb_size().x,
                                               state_ptr->window->window_fb_size().y);
 
-                // Submit, present, and wait for the presenting
-                // Don't wait for present to be done, let the game during this time to do
-                // something meaningful. (Callback tied to draw thread)
-                state_ptr->present_status = -100;
-                builder.present(&state_ptr->present_status);
+                    // Submit, present, and wait for the presenting
+                    // Don't wait for present to be done, let the game during this time to do
+                    // something meaningful. (Callback tied to draw thread)
+                    state_ptr->present_status = -100;
+                    builder.present(&state_ptr->present_status);
 
-                drivers::command_list retrieved = builder.retrieve_command_list();
-                state_ptr->graphics_driver->submit_command_list(retrieved);
-            });
+                    drivers::command_list retrieved = builder.retrieve_command_list();
+                    state_ptr->graphics_driver->submit_command_list(retrieved);
+                });
 
-            screen_change_handles.push_back(change_handle);
-            screens = screens->next;
+                screen_change_handles.push_back(change_handle);
+                screens = screens->next;
+            }
         }
     }
 
@@ -108,10 +100,14 @@ namespace eka2l1::android {
         winserv = reinterpret_cast<eka2l1::window_server *>(the_sys->get_kernel_system()->get_by_name<eka2l1::service::server>(
                 eka2l1::get_winserv_name_by_epocver(symsys->get_symbian_version_use())));
 
+        if (debug_backend) {
+            launcher = std::make_unique<eka2l1::android::launcher>(the_sys);
+            eka2l1::drivers::ui::launcher_instance = launcher.get();
+        }
+
         if (stage_two_inited) {
+            register_draw_callback();
             the_sys->initialize_user_parties();
-            // Note: register_draw_callback() is now called from graphics_driver_thread_initialization()
-            // after window and graphics_driver are created, to ensure proper initialization order
         }
     }
 
@@ -125,7 +121,7 @@ namespace eka2l1::android {
             log::filterings->parse_filter_string(conf.log_filter);
         }
 
-        LOG_INFO(eka2l1::FRONTEND_CMDLINE, "EKA2L1 v0.0.1 ({}-{})", GIT_BRANCH, GIT_COMMIT_HASH);
+        LOG_INFO(FRONTEND_CMDLINE, "EKA2L1 v0.0.1 ({}-{})", GIT_BRANCH, GIT_COMMIT_HASH);
 
         app_settings = std::make_unique<config::app_settings>(&conf);
         system_create_components comp;
@@ -142,17 +138,15 @@ namespace eka2l1::android {
             symsys->startup();
 
             if (!symsys->set_device(conf.device)) {
-                LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Failed to set a device, device index is out of range (device index in config file is: {})", conf.device);
-                LOG_INFO(eka2l1::FRONTEND_CMDLINE, "We are setting the default device back to the first device on the installed list for you");
+                LOG_ERROR(FRONTEND_CMDLINE, "Failed to set a device, device index is out of range (device index in config file is: {})", conf.device);
+                LOG_INFO(FRONTEND_CMDLINE, "We are setting the default device back to the first device on the installed list for you");
 
                 conf.device = 0;
                 symsys->rescan_devices(drive_z);
                 symsys->set_device(0);
             }
 
-            symsys->mount(drive_c, drive_media::physical, eka2l1::add_path(conf.storage, "/drives/c/"), io_attrib_internal);
-            symsys->mount(drive_d, drive_media::physical, eka2l1::add_path(conf.storage, "/drives/d/"), io_attrib_internal);
-            symsys->mount(drive_e, drive_media::physical, eka2l1::add_path(conf.storage, "/drives/e/"), io_attrib_removeable);
+            symsys->mount_device_drives();
 
             on_system_reset(symsys.get());
         }
@@ -175,11 +169,11 @@ namespace eka2l1::android {
             device *dvc = dvcmngr->get_current();
 
             if (!dvc) {
-                LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "No current device is available. Stage two initialisation abort");
+                LOG_ERROR(FRONTEND_CMDLINE, "No current device is available. Stage two initialisation abort");
                 return false;
             }
 
-            LOG_INFO(eka2l1::FRONTEND_CMDLINE, "Device being used: {} ({})", dvc->model, dvc->firmware_code);
+            LOG_INFO(FRONTEND_CMDLINE, "Device being used: {} ({})", dvc->model, dvc->firmware_code);
 
             // Mount the drive Z after the ROM was loaded. The ROM load than a new FS will be
             // created for ROM purpose.
@@ -203,15 +197,15 @@ namespace eka2l1::android {
                 player_be);
 
             if (audio_driver) {
-                audio_driver->set_bank_path(drivers::MIDI_BANK_TYPE_HSB, conf.hsb_bank_path);
-                audio_driver->set_bank_path(drivers::MIDI_BANK_TYPE_SF2, conf.sf2_bank_path);
+                audio_driver->set_bank_path(drivers::MIDI_BANK_TYPE_HSB, eka2l1::host_path{conf.hsb_bank_path});
+                audio_driver->set_bank_path(drivers::MIDI_BANK_TYPE_SF2, eka2l1::host_path{conf.sf2_bank_path});
             }
             symsys->set_audio_driver(audio_driver.get());
 
             // Create sensor driver
             sensor_driver = drivers::sensor_driver::instantiate();
             if (!sensor_driver) {
-                LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Failed to create sensor driver");
+                LOG_WARN(FRONTEND_CMDLINE, "Failed to create sensor driver");
             }
 
             symsys->set_sensor_driver(sensor_driver.get());
@@ -219,20 +213,20 @@ namespace eka2l1::android {
 
             io_system *io = symsys->get_io_system();
 
-            std::string current_dir;
+            eka2l1::host_path current_dir;
             common::get_current_directory(current_dir);
 
             if (!conf.svg_icon_cache_reset) {
-                common::delete_folder(eka2l1::absolute_path("cache", current_dir));
+                common::delete_folder(eka2l1::host_path{current_dir.join("cache")});
 
                 conf.svg_icon_cache_reset = true;
                 conf.serialize(false);
             }
 
             // Copy additional DLLs
-            std::vector<std::tuple<std::u16string, std::string, epocver>> dlls_need_to_copy = {
-                { u"Z:\\sys\\bin\\goommonitor.dll", "patch\\goommonitor_general.dll", epocver::epoc94 },
-                { u"Z:\\sys\\bin\\avkonfep.dll", "patch\\avkonfep_general.dll", epocver::epoc93fp1 }
+            std::vector<std::tuple<guest_path, host_path, epocver>> dlls_need_to_copy = {
+                { guest_path(u"Z:\\sys\\bin\\goommonitor.dll"), host_path("patch/goommonitor_general.dll"), epocver::epoc94 },
+                { guest_path(u"Z:\\sys\\bin\\avkonfep.dll"), host_path("patch/avkonfep_general.dll"), epocver::epoc93fp1 }
             };
 
             for (std::size_t i = 0; i < dlls_need_to_copy.size(); i++) {
@@ -241,17 +235,17 @@ namespace eka2l1::android {
                     continue;
                 }
 
-                std::u16string org_file_path = std::get<0>(dlls_need_to_copy[i]);
+                guest_path org_file_path = std::get<0>(dlls_need_to_copy[i]);
                 auto where_to_copy = io->get_raw_path(org_file_path);
 
-                if (where_to_copy.has_value()) {
-                    std::string where_to_copy_u8 = common::ucs2_to_utf8(where_to_copy.value());
-                    std::string where_to_backup_u8 = where_to_copy_u8 + ".bak";
+                const eka2l1::host_path source_copy(eka2l1::absolute_path(std::get<1>(dlls_need_to_copy[i]), current_dir));
+
+                if (where_to_copy.has_value() && common::exists(source_copy)) {
+                    eka2l1::host_path where_to_copy_u8(where_to_copy.value());
+                    eka2l1::host_path where_to_backup_u8(where_to_copy_u8 + ".bak");
                     if (common::exists(where_to_copy_u8) && !common::exists(where_to_backup_u8)) {
-                        common::move_file(where_to_copy_u8, where_to_copy_u8 + ".bak");
+                        common::move_file(where_to_copy_u8, eka2l1::host_path{where_to_copy_u8 + ".bak"});
                     }
-                    std::string source_copy = std::get<1>(dlls_need_to_copy[i]);
-                    source_copy = eka2l1::absolute_path(source_copy, current_dir);
                     common::copy_file(source_copy, where_to_copy_u8, true);
                 }
             }
@@ -261,14 +255,9 @@ namespace eka2l1::android {
             pkgmngr->load_registries();
             pkgmngr->migrate_legacy_registries();
 
-            // Mark stage_two_inited first
-            stage_two_inited = true;
+            register_draw_callback();
 
-            // Initialize user parties and set winserv
-            on_system_reset(symsys.get());
-            
-            // Note: register_draw_callback() will be called from graphics thread
-            // after window and graphics_driver are created
+            stage_two_inited = true;
         }
 
         return true;

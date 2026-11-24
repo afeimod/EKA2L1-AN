@@ -23,6 +23,9 @@
 #include <utils/err.h>
 
 namespace eka2l1 {
+    // MAlfGfxEffectPlugin::ETfxServerOpControlCancelPolicyUpdate
+    static constexpr std::int32_t ALF_TFX_OP_CANCEL_POLICY_UPDATE = 35;
+
     alf_streamer_server::alf_streamer_server(eka2l1::system *sys)
         : service::typical_server(sys, "alfstreamerserver") {
     }
@@ -38,7 +41,46 @@ namespace eka2l1 {
     }
 
     void alf_streamer_session::fetch(service::ipc_context *ctx) {
-        LOG_ERROR(SERVICE_SMS, "Unimplemented opcode for ALF streamer server 0x{:X}", ctx->msg->function);
-        ctx->complete(epoc::error_none);
+        int function = ctx->msg->function;
+        if ((function >= 20000) && (function <= 20005)) {
+            function -= 20000;
+        }
+
+        switch (function) {
+        case 2: {
+            // Synchronous effect-plugin calls return a serialized TInt error
+            // in argument 2. Effects are intentionally disabled, so success
+            // is sufficient for all no-op transition commands.
+            std::optional<std::int32_t> op = ctx->get_argument_data_from_descriptor<std::int32_t>(1, true);
+            if (op && (*op == ALF_TFX_OP_CANCEL_POLICY_UPDATE) && pending_plugin_request_) {
+                // The client's CActive destructor waits for its policy request to complete.
+                pending_plugin_request_->complete(epoc::error_cancel);
+                pending_plugin_request_.reset();
+            }
+
+            const std::int32_t result = epoc::error_none;
+            ctx->write_data_to_descriptor_argument(2, result);
+            ctx->complete(epoc::error_none);
+            break;
+        }
+        case 3:
+            // This is a long-lived transition-policy notification. The client
+            // fetches policy data only after the request is completed.
+            if (pending_plugin_request_) {
+                pending_plugin_request_->complete(epoc::error_cancel);
+            }
+            pending_plugin_request_ = ctx->move_to_new();
+            break;
+        case 4:
+            if (pending_plugin_request_) {
+                pending_plugin_request_->complete(epoc::error_cancel);
+                pending_plugin_request_.reset();
+            }
+            ctx->complete(epoc::error_none);
+            break;
+        default:
+            ctx->complete(epoc::error_none);
+            break;
+        }
     }
 }

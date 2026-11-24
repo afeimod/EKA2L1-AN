@@ -190,7 +190,7 @@ namespace eka2l1::kernel {
         elem.first = nullptr;
     }
 
-    process::process(kernel_system *kern, memory_system *mem, const std::string &process_name, const std::u16string &exe_path,
+    process::process(kernel_system *kern, memory_system *mem, const std::string &process_name, const guest_path &exe_path,
         const std::u16string &cmd_args, bool use_memory)
         : kernel_obj(kern, process_name, nullptr, access_type::local_access)
         , mm_impl_(nullptr)
@@ -423,9 +423,30 @@ namespace eka2l1::kernel {
 
         // Cleanup resources
         if (!kern->wipeout_in_progress()) {
+            // HLE state this process owns outside of the kernel (dispatcher audio players
+            // for instance) is released by the guest destructors, which never run when the
+            // process is killed or panics. Let the owners drop it now.
+            kern->call_process_exit_callbacks(this);
+
             finish_logons();
             process_handles.reset();
         }
+
+        // Break the parent/child links now, after the logons that may inspect the
+        // child list. A dead process must not linger in its parent's child list, nor
+        // keep children pointing back at it: launch-exit callbacks walk those raw
+        // pointers long after this object is freed.
+        while (!child_processes_.empty()) {
+            kernel::process *child = child_processes_.back();
+
+            if (child->parent_process_ == this) {
+                child->detatch_from_parent();
+            } else {
+                child_processes_.pop_back();
+            }
+        }
+
+        detatch_from_parent();
 
         kern->destroy(dll_lock);
 
@@ -499,15 +520,28 @@ namespace eka2l1::kernel {
         }
 
         rendezvous_requests.clear();
+        kern->boot_server_settled(this);
     }
 
     void process::finish_logons() {
+        kern->boot_server_settled(this);
+
+        // The thread that armed a Logon/Rendezvous lives in another process and may
+        // already have exited, leaving a dangling requester in the queues.
+        // notify_info::complete() dereferences that requester to translate the
+        // request status, so completing a stale entry faults on a half-torn thread.
+        // Signal only the requesters that are still alive; the queues are cleared
+        // below either way.
         for (auto &req : logon_requests) {
-            req.complete(exit_reason);
+            if (kern->is_thread_alive(req.requester)) {
+                req.complete(exit_reason);
+            }
         }
 
         for (auto &req : rendezvous_requests) {
-            req.complete(exit_reason);
+            if (kern->is_thread_alive(req.requester)) {
+                req.complete(exit_reason);
+            }
         }
 
         logon_requests.clear();

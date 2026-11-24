@@ -22,27 +22,27 @@
 #include <common/log.h>
 
 #include <array>
-#include <miniz.h>
+#include <zlib.h>
 
 namespace eka2l1 {
     namespace flate {
-        bool inflate_data(mz_stream *stream, void *in, void *out, uint32_t in_size, uint32_t *out_size) {
+        bool inflate_data(z_stream *stream, void *in, void *out, uint32_t in_size, uint32_t *out_size) {
             stream->avail_in = in_size;
-            stream->next_in = static_cast<const unsigned char *>(in);
+            stream->next_in = static_cast<unsigned char *>(in);
             stream->next_out = static_cast<unsigned char *>(out);
             stream->avail_out = CHUNK_MAX_INFLATED_SIZE;
 
             auto res = inflate(stream, Z_NO_FLUSH);
 
-            if (res != MZ_OK) {
-                if (res == MZ_STREAM_END) {
+            if (res != Z_OK) {
+                if (res == Z_STREAM_END) {
                     if (out_size)
                         *out_size = CHUNK_MAX_INFLATED_SIZE - stream->avail_out;
 
                     return true;
                 }
 
-                LOG_ERROR(COMMON, "Inflate failed description: {}", mz_error(res));
+                LOG_ERROR(COMMON, "Inflate failed description: {}", zError(res));
 
                 if (out_size)
                     *out_size = CHUNK_MAX_INFLATED_SIZE - stream->avail_out;
@@ -603,7 +603,24 @@ namespace eka2l1 {
 
                 // Things are still remain shit
                 if (remain > 0) {
-                    tbits = swap_bo(*buf_ptr++);
+                    if (remain >= 32) {
+                        tbits = swap_bo(*buf_ptr++);
+                    } else {
+                        // Final partial word: the stream does not have to be word-sized,
+                        // so a full 32-bit load would run past the caller's buffer.
+                        // Assemble the valid bytes instead; the missing low bytes are
+                        // zero and never consumed (count is capped by remain below).
+                        const std::uint8_t *tail = reinterpret_cast<const std::uint8_t *>(buf_ptr);
+                        const int valid_bytes = (remain + 7) / 8;
+
+                        tbits = 0;
+                        for (int i = 0; i < valid_bytes; i++) {
+                            tbits |= static_cast<std::uint32_t>(tail[i]) << (24 - (i * 8));
+                        }
+
+                        buf_ptr++;
+                    }
+
                     count += 32;
                     remain -= 32;
 

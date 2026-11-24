@@ -25,6 +25,8 @@
 #include <cassert>
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <queue>
 #include <set>
 #include <type_traits>
@@ -44,14 +46,17 @@
 #include <services/window/fifo.h>
 #include <services/window/io.h>
 #include <services/window/opheader.h>
+#include <services/window/protocol.h>
 #include <services/window/scheduler.h>
 #include <services/window/screen.h>
+#include <services/window/surface.h>
 
 #include <kernel/server.h>
 #include <mem/ptr.h>
 #include <utils/des.h>
 #include <utils/version.h>
 
+#include <drivers/graphics/emu_window.h>
 #include <drivers/input/common.h>
 
 namespace eka2l1 {
@@ -118,6 +123,21 @@ namespace eka2l1::epoc {
         eka2l1::vec2 pixel_size;
         graphics_orientation orientation;
     };
+
+    // Binary layout of Symbian's TSizeMode, returned by
+    // CWsScreenDevice::GetCurrentScreenModeAttributes().
+    struct screen_size_mode_attributes {
+        graphics_orientation rotation;
+        eka2l1::vec2 origin;
+        eka2l1::vec2 screen_size;
+        eka2l1::vec2 screen_twips_size;
+        std::uint32_t alternative_rotations;
+        eka2l1::rect pointer_cursor_area;
+        eka2l1::vec2 screen_scale;
+        display_mode default_display_mode;
+    };
+
+    static_assert(sizeof(screen_size_mode_attributes) == 60);
 
     struct canvas_base;
 
@@ -210,6 +230,8 @@ namespace eka2l1::epoc {
         void get_redraw(service::ipc_context &ctx, ws_cmd &cmd);
         void get_event(service::ipc_context &ctx, ws_cmd &cmd);
         void get_focus_window_group(service::ipc_context &ctx, ws_cmd &cmd);
+        void get_default_owning_window(service::ipc_context &ctx, ws_cmd &cmd);
+        void get_window_group_handle(service::ipc_context &ctx, ws_cmd &cmd);
         void get_window_group_name_from_id(service::ipc_context &ctx, ws_cmd &cmd);
         void clear_all_redraw_stores(service::ipc_context &ctx, ws_cmd &cmd);
         void set_window_group_ordinal_position(service::ipc_context &ctx, ws_cmd &cmd);
@@ -219,6 +241,7 @@ namespace eka2l1::epoc {
         void set_pointer_cursor_position(service::ipc_context &ctx, ws_cmd &cmd);
         void get_number_of_screen(service::ipc_context &ctx, ws_cmd &cmd);
         void add_raw_event(service::ipc_context &ctx, ws_cmd &cmd);
+        void add_key_event(service::ipc_context &ctx, ws_cmd &cmd);
         void set_keyboard_repeat_rate(service::ipc_context &ctx, ws_cmd &cmd);
         void get_keyboard_repeat_rate(service::ipc_context &ctx, ws_cmd &cmd);
         void get_focus_screen(service::ipc_context &ctx, ws_cmd &cmd);
@@ -244,6 +267,8 @@ namespace eka2l1::epoc {
         epoc::version client_version() {
             return cli_version;
         }
+
+        window_server_protocol protocol();
 
         void get_ready(service::ipc_context &ctx, ws_cmd *cmd, const event_listener_type type);
 
@@ -293,6 +318,8 @@ namespace eka2l1::epoc {
 
         void send_screen_change_events(epoc::screen *scr);
         void send_focus_group_change_events(epoc::screen *scr);
+        void send_modifier_changed_events(std::uint32_t changed, std::uint32_t modifiers);
+        void remove_modifier_changed_events(epoc::window *win);
 
         // We have been blessed with so much reflection that it's actually seems evil now.
         template <typename T>
@@ -300,6 +327,7 @@ namespace eka2l1::epoc {
             const std::lock_guard guard_(ws_client_lock);
 
             if constexpr (std::is_same_v<T, epoc::event_mod_notifier_user>) {
+                mod_notifies.erase(evt);
                 mod_notifies.emplace(std::move(evt));
                 return static_cast<ws::uid>(mod_notifies.size());
             } else if constexpr (std::is_same_v<T, epoc::event_screen_change_user>) {
@@ -350,7 +378,12 @@ namespace eka2l1 {
             clients;
 
         common::ini_file ws_config;
-        bool loaded{ false };
+        // Frontend threads read screens too, so the lazy base init has to run exactly once.
+        std::atomic<bool> loaded{ false };
+        std::mutex base_init_lock_;
+        // Answered on first input: the frontend may mount drive Z only after this server exists.
+        std::optional<int> uiq_version_;
+        std::int32_t uiq_scancode(const std::int32_t scancode);
 
         std::atomic<epoc::ws::uid> key_capture_uid_counter{ 0 };
         std::atomic<epoc::ws::uid> obj_uid{ 0 };
@@ -364,6 +397,7 @@ namespace eka2l1 {
         epoc::pointer_cursor_mode cursor_mode_{ epoc::pointer_cursor_mode::fixed };
 
         epoc::bitmap_cache bmp_cache;
+        epoc::surface_registry surface_registry_;
         epoc::animation_scheduler anim_sched;
 
         fbs_server *fbss{ nullptr };
@@ -379,6 +413,9 @@ namespace eka2l1 {
 
         std::uint64_t initial_repeat_delay_; ///< Time before first repeat event generated after the key event.
         std::uint64_t next_repeat_delay_; ///< Time that the next repeat event after the previous being generated.
+
+        int direct_framebuffer_refresh_evt_ = -1;
+        void refresh_direct_framebuffers();
 
         int repeatable_event_;
         int deliver_report_visibility_evt_;
@@ -406,6 +443,9 @@ namespace eka2l1 {
         epoc::window_pointer_focus_walker touch_shipper;
         epoc::window_key_shipper key_shipper;
 
+        /// Last guest position each pointer was reported at; a repeat of it is a host resample.
+        std::array<std::optional<eka2l1::vec2>, MAX_SYMBIAN_SUPPORTED_POINTERS> last_pointer_pos_;
+
         void handle_input_from_driver(drivers::input_event input_event);
         void init_screens();
         void init_ws_mem();
@@ -413,13 +453,20 @@ namespace eka2l1 {
         void emit_ws_thread_code();
 
         void make_mouse_event(drivers::input_event &driver_evt_, epoc::event &guest_evt_, epoc::screen *scr);
+        bool update_pointer_position(const epoc::event &guest_evt_);
 
     public:
         explicit window_server(system *sys);
         ~window_server();
 
+        void map_direct_framebuffer(epoc::screen *scr);
+
         epoc::ws::uid next_uid() {
             return ++obj_uid;
+        }
+
+        epoc::surface_registry &surfaces() {
+            return surface_registry_;
         }
 
         epoc::bitmap_cache *get_bitmap_cache() {
@@ -511,7 +558,7 @@ namespace eka2l1 {
         void do_base_init();
 
         void send_event_to_window_group(epoc::window_group *group, const epoc::event &evt);
-        void send_event_to_window_groups(const epoc::event &evt);
+        void send_event_to_window_groups(const epoc::event &evt, const bool one_per_client = false);
 
         void send_screen_change_events(epoc::screen *scr);
         void send_focus_group_change_events(epoc::screen *scr);
@@ -525,6 +572,10 @@ namespace eka2l1 {
 
         int get_deliver_delay_report_visiblity_event() const {
             return deliver_report_visibility_evt_;
+        }
+
+        void release_pointer_grab(epoc::window *win) {
+            touch_shipper.release_grab(win);
         }
     };
 }

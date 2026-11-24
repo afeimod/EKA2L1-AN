@@ -98,7 +98,8 @@ namespace eka2l1 {
         std::size_t last_size = seri.size();
 
         for (std::size_t i = start_index; i < (count_filename ? obj->file_descriptions.size() : (start_index + fcount)); i++) {
-            epoc::absorb_des_string(obj->file_descriptions[i].target, seri, true);
+            auto target = obj->file_descriptions[i].target.utf16();
+            epoc::absorb_des_string(target, seri, true);
 
             if (count_filename) {
                 if (seri.size() <= max_size) {
@@ -168,7 +169,8 @@ namespace eka2l1 {
             if ((ctx->msg->function >= sisregistry_get_matching_supported_languages) && (ctx->msg->function <= sisregistry_separator_minimum_read_user_data)) {
                 ctx->msg->function++;                
 
-                if (ctx->sys->get_symbian_version_use() == epocver::epoc93fp1) {
+                const epocver version = ctx->sys->get_symbian_version_use();
+                if ((version == epocver::epoc91) || (version == epocver::epoc93fp1)) {
                     ctx->msg->function++;
                 }
             }
@@ -883,7 +885,8 @@ namespace eka2l1 {
             return;
         }
 
-        bool old_ver_sisreg = ctx->sys->get_symbian_version_use() == epocver::epoc93fp1;
+        const epocver version = ctx->sys->get_symbian_version_use();
+        bool old_ver_sisreg = (version == epocver::epoc91) || (version == epocver::epoc93fp1);
 
         std::optional<sisregistry_stub_extraction_mode> package_mode;
         if (old_ver_sisreg) {

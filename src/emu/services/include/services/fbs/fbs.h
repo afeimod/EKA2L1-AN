@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <common/path_types.h>
 #include <services/allocator.h>
 #include <services/fbs/adapter/font_adapter.h>
 #include <services/fbs/bitmap.h>
@@ -39,7 +40,9 @@
 #include <drivers/graphics/common.h>
 
 #include <atomic>
+#include <array>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <thread>
 #include <unordered_map>
@@ -144,7 +147,13 @@ namespace eka2l1 {
         fbs_atlas_font_count,
         fbs_atlas_glyph_count,
         fbs_oogm_notification,
-        fbs_get_glyph_cache_metrics
+        fbs_get_glyph_cache_metrics,
+
+        // Past the public TFbsMessage enum: Symbian^3 fbserv moves these CFbsBitmap
+        // header mutations server-side, where stock Symbian does them in the client.
+        fbs_bitmap_set_display_mode = 73,
+        fbs_bitmap_set_size_in_twips = 74,
+        fbs_bitmap_swap_width_height = 75
     };
 
     enum fbs_legacy_level {
@@ -209,6 +218,7 @@ namespace eka2l1 {
         void duplicate_bitmap(service::ipc_context *ctx);
         void create_bitmap(service::ipc_context *ctx);
         void resize_bitmap(service::ipc_context *ctx);
+        void set_bitmap_size_in_twips(service::ipc_context *ctx);
         void notify_dirty_bitmap(service::ipc_context *ctx);
         void cancel_notify_dirty_bitmap(service::ipc_context *ctx);
         void get_clean_bitmap(service::ipc_context *ctx);
@@ -287,12 +297,12 @@ namespace eka2l1 {
         fbsbitmap *final_clean();
 
         std::uint8_t *original_pointer(fbs_server *serv) {
-            return bitmap_->data_pointer(serv) - bitmap_->byte_width_ * reserved_height_each_side_;
+            return bitmap_->data_block_pointer(serv) - bitmap_->byte_width_ * reserved_height_each_side_;
         }
     };
 
     struct fbsbitmap_cache_info {
-        std::u16string path;
+        guest_path path;
         int bitmap_idx;
     };
 
@@ -317,6 +327,10 @@ namespace std {
 
 namespace eka2l1 {
     class io_system;
+
+    namespace common {
+        class ro_stream;
+    }
 
     enum fbs_load_data_err {
         fbs_load_data_err_none,
@@ -353,12 +367,23 @@ namespace eka2l1 {
         eka2l1::ptr<void> bmp_font_vtab;
         codeseg_ptr fntstr_seg;
 
+        // Bytes the client library expects between a large bitmap's data offset and its pixels.
+        std::uint32_t bitmap_data_header_size_ = 0;
+
         std::u16string default_system_font;
 
         std::unordered_map<fbsbitmap_cache_info, fbsbitmap *> shared_bitmaps;
+        std::unordered_map<address, fbsbitmap *> rom_bitmaps_;
 
         std::unique_ptr<epoc::chunk_allocator> shared_chunk_allocator;
         std::unique_ptr<epoc::chunk_allocator> large_chunk_allocator;
+
+        // The applist server loads registries (including their icon bitmaps) on a worker
+        // thread pool, so create_bitmap()/free_bitmap() and the general/large data
+        // allocators can be entered concurrently with the main HLE thread. The two chunk
+        // allocators are plain host allocators with no internal locking, so guard every
+        // mutation of them with this recursive mutex to avoid heap corruption.
+        std::recursive_mutex allocator_lock_;
 
         std::unique_ptr<compress_queue> compressor;
         std::unique_ptr<std::thread> compressor_thread;
@@ -368,7 +393,11 @@ namespace eka2l1 {
 
         epoc::font_store persistent_font_store;
 
+        std::array<std::uint32_t, 256> palette_256_{};
+
         void load_fonts(eka2l1::io_system *io);
+        void load_custom_fonts(const host_path &storage);
+        void load_linked_fonts(eka2l1::io_system *io);
 
         std::atomic<service::uid> connection_id_counter{ 0x1234 }; // Easier to debug
 
@@ -379,15 +408,28 @@ namespace eka2l1 {
 
     protected:
         void load_fonts_from_directory(eka2l1::io_system *io, eka2l1::directory *dir);
+        void load_linked_fonts_from_directory(eka2l1::io_system *io, const guest_path &fonts_folder_path);
         void initialize_server();
 
-        bool add_single_font(eka2l1::io_system *io, const std::u16string &path);
+        bool add_font(common::ro_stream &stream, const std::string &name, const bool user_font = false);
+        bool add_single_font(eka2l1::io_system *io, const guest_path &path);
 
     public:
         explicit fbs_server(eka2l1::system *sys);
         ~fbs_server() override;
 
         service::uid init();
+
+        /**
+         * \brief   Resolve the Color256 table from the ROM's palette or GDI library.
+         *
+         * Call once drive Z is mounted; until then the version-based table is used.
+         */
+        void initialize_palette();
+
+        const std::array<std::uint32_t, 256> &palette_256() const {
+            return palette_256_;
+        }
 
         void connect(service::ipc_context &context) override;
 
@@ -414,6 +456,28 @@ namespace eka2l1 {
          */
         fbsbitmap *create_bitmap(fbs_bitmap_data_info &info, const bool alloc_data = true, const bool support_current_display_mod_flag = true,
             const bool support_dirty = true);
+
+        /**
+         * \brief   Get the bitmap a client uses in place from ROM.
+         *
+         * CFbsBitmap::Handle() of such a bitmap is the address of its CBitwiseBitmap,
+         * which the server and the window server must accept like a normal handle.
+         *
+         * \returns The bitmap, or nullptr if the address is not a ROM bitmap.
+         */
+        fbsbitmap *get_rom_bitmap(const address addr);
+
+        /**
+         * \brief   Turn an NVG extended bitmap into a plain raster one, in place.
+         *
+         * Replaces the vector data in the shared region with rendered pixels in the
+         * bitmap's own display mode and clears the extended UID, so guest code that
+         * blits the bitmap itself gets pixels instead of the compressed commands.
+         *
+         * \param   bmp The server bitmap object.
+         * \returns True if the bitmap was an NVG one and has been rasterised.
+         */
+        bool rasterize_nvg_bitmap(fbsbitmap *bmp);
 
         /**
          * \brief   Free a bitmap object.
@@ -471,6 +535,21 @@ namespace eka2l1 {
             return static_cast<std::int32_t>(reinterpret_cast<std::uint8_t *>(ptr) - base_shared_chunk);
         }
 
+        /**
+         * @brief   Get the number of bytes readable from a host pointer that lives in
+         *          the shared or large bitmap chunk.
+         *
+         * Bitmap headers sit in guest-writable memory, so sizes derived from them can
+         * claim more data than the backing chunk actually commits. Use this to bound
+         * host-side reads of bitmap data.
+         *
+         * @returns Bytes readable up to the containing chunk's committed end, or zero
+         *          if the pointer belongs to neither chunk. All bitmap pixels are
+         *          allocated from one of the two, so a pointer that is in neither is
+         *          not something the host may read at all.
+         */
+        std::size_t readable_bytes_from(const std::uint8_t *ptr) const;
+
         template <typename T>
         void destroy_bitmap_font(T *bitmapfont);
 
@@ -517,6 +596,17 @@ namespace eka2l1 {
          */
         bool free_large_data(const void *ptr);
 
+        /**
+         * \brief    Allocate pixel storage for a bitmap in the large chunk.
+         *
+         * Reserves bitmap_data_header_size() bytes in front of the returned pointer.
+         */
+        void *allocate_bitmap_pixels(const std::size_t s);
+
+        std::uint32_t bitmap_data_header_size() const {
+            return bitmap_data_header_size_;
+        }
+
         /*! \brief Use to Allocate structure from server side.
          *
          * Symbian usually avoids sendings struct that usually changes its structure
@@ -526,6 +616,7 @@ namespace eka2l1 {
         */
         template <typename T, typename... Args>
         T *allocate_general_data(Args... construct_args) {
+            const std::lock_guard<std::recursive_mutex> guard(allocator_lock_);
             return shared_chunk_allocator->allocate_struct<T>(construct_args...);
         }
 

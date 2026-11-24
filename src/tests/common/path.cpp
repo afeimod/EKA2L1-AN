@@ -19,6 +19,7 @@
  */
 
 #include <catch2/catch.hpp>
+#include <common/fileutils.h>
 #include <common/path.h>
 #include <cstring>
 
@@ -40,6 +41,17 @@ TEST_CASE("absolute", "path_resolving_test") {
     const std::string expected = "Z:\\sys\\bin\\despacito";
 
     REQUIRE(eka2l1::absolute_path(example_path, current_dir, true) == expected);
+}
+
+TEST_CASE("absolute_rooted_path_uses_current_symbian_drive", "path_resolving_test") {
+    const std::string example_path = "\\log.txt";
+    const std::string current_dir = "E:\\system\\apps\\bowling\\";
+
+    REQUIRE(eka2l1::absolute_path(example_path, current_dir, true) == "E:\\log.txt");
+    REQUIRE(eka2l1::absolute_path(std::string("/log.txt"), current_dir, true) == "E:\\log.txt");
+    REQUIRE(eka2l1::absolute_path(std::u16string(u"\\log.txt"),
+                std::u16string(u"E:\\system\\apps\\bowling\\"), true)
+        == u"E:\\log.txt");
 }
 
 TEST_CASE("add_path_mess", "path_resolving_test") {
@@ -115,4 +127,22 @@ TEST_CASE("replace_extension", "path_resolving_test") {
     std::string expected = eka2l1::replace_extension(test_path, ".mom");
 
     REQUIRE(expected == "hiyou.ne.mom");
+}
+
+TEST_CASE("find_case_sensitive_directory_name", "path_resolving_test") {
+    REQUIRE(eka2l1::common::find_case_sensitive_file_name(
+                eka2l1::host_path{"commonassets"}, eka2l1::guest_path(u"mixedcasedirectory"), eka2l1::common::FILE_DIRECTORY)
+        == "MixedCaseDirectory");
+}
+
+TEST_CASE("copy_folder_lowercases_destination_without_lowercasing_source", "path_resolving_test") {
+    const std::string destination = "commonassets-copy-output";
+    eka2l1::common::delete_folder(eka2l1::host_path{destination});
+
+    REQUIRE(eka2l1::common::copy_folder(
+        eka2l1::host_path{"commonassets"}, eka2l1::host_path{destination}, eka2l1::common::FOLDER_COPY_FLAG_LOWERCASE_NAME));
+    REQUIRE(eka2l1::common::exists(
+        eka2l1::host_path{eka2l1::add_path(destination, "mixedcasedirectory/marker.txt")}));
+
+    REQUIRE(eka2l1::common::delete_folder(eka2l1::host_path{destination}));
 }

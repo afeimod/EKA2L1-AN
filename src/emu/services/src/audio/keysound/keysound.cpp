@@ -46,9 +46,8 @@ namespace eka2l1 {
                 [this](std::int16_t *dest, std::size_t frames) {
                     return play_sounds(dest, frames);
                 });
+            state_.target_freq_ = aud_driver->native_sample_rate();
         }
-
-        state_.target_freq_ = aud_driver->native_sample_rate();
     }
 
     keysound_session::parser_state::parser_state()
@@ -257,6 +256,10 @@ namespace eka2l1 {
             return;
         }
 
+        if (!aud_out_) {
+            return;
+        }
+
         if (aud_out_->is_playing()) {
             aud_out_->stop();
         }
@@ -348,6 +351,10 @@ namespace eka2l1 {
         ctx->complete(epoc::error_none);
     }
 
+    void keysound_session::release_context(eka2l1::service::ipc_context *ctx) {
+        ctx->complete(epoc::error_none);
+    }
+
     void keysound_session::fetch(service::ipc_context *ctx) {
         switch (ctx->msg->function) {
         case epoc::keysound::opcode_init: {
@@ -390,8 +397,15 @@ namespace eka2l1 {
             break;
         }
 
+        case epoc::keysound::opcode_release_context: {
+            release_context(ctx);
+            break;
+        }
+
         default:
+            // Clients send these synchronously; the real server completes unknown requests with KErrNotSupported.
             LOG_ERROR(SERVICE_KEYSOUND, "Unimplemented keysound server opcode: {}", ctx->msg->function);
+            ctx->complete(epoc::error_not_supported);
             break;
         }
     }

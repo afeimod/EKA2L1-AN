@@ -28,23 +28,78 @@
 
 #define SCRDVC_IMPL(name, base)                                                   \
     void name::Update(const TRegion &aRegion) {                                   \
-        UpdateScreen(1, iScreenNumber, aRegion.Count(), aRegion.RectangleList()); \
+        if (!aRegion.CheckError()) {                                             \
+            for (TInt i = 0; i < aRegion.Count(); ++i) {                          \
+                UpdateRegion(aRegion[i]);                                        \
+            }                                                                     \
+        }                                                                         \
+        Update();                                                                 \
     }                                                                             \
     void name::UpdateRegion(const TRect &aRect) {                                 \
-        UpdateScreen(1, iScreenNumber, 1, &aRect);                                \
+        if (aRect.IsEmpty()) {                                                    \
+            return;                                                               \
+        }                                                                         \
+        TRect bounds = iUpdateRegion.BoundingRect();                             \
+        iUpdateRegion.AddRect(aRect);                                             \
+        if (iUpdateRegion.CheckError()) {                                         \
+            bounds.BoundingRect(aRect);                                           \
+            iUpdateRegion.Clear();                                                \
+            iUpdateRegion.AddRect(bounds);                                        \
+        }                                                                         \
     }                                                                             \
     TInt name::Construct(TUint32 aScreenNumber, TSize aSize, TInt aDataStride) {  \
         iScreenNumber = aScreenNumber;                                            \
+        iDeviceOrientation = 1;                                                   \
         return base::Construct(aSize, aDataStride);                               \
     }                                                                             \
     TInt name::InitScreen() {                                                     \
         return 0;                                                                 \
     }                                                                             \
     void name::Update() {                                                         \
-        TRect updateRect;                                                         \
-        updateRect.iTl = TPoint(0, 0);                                            \
-        updateRect.iBr = updateRect.iTl + iSize;                                  \
-        UpdateScreen(1, iScreenNumber, 1, &updateRect);                           \
+        if (!iUpdateRegion.IsEmpty()) {                                           \
+            UpdateScreen(1, iScreenNumber, iUpdateRegion.Count(),                 \
+                iUpdateRegion.RectangleList());                                   \
+            iUpdateRegion.Clear();                                                \
+        }                                                                         \
+    }                                                                             \
+    TInt name::GetInterface(TInt aInterfaceId, TAny *&aInterface) {               \
+        if (aInterfaceId == KSurfaceInterfaceID) {                                \
+            aInterface = static_cast<Scdv::MSurfaceId *>(this);                   \
+            return KErrNone;                                                      \
+        }                                                                         \
+        return base::GetInterface(aInterfaceId, aInterface);                      \
+    }                                                                             \
+    void name::GetSurface(Scdv::TSurfaceId &aSurface) const {                     \
+        aSurface.iInternal[0] = iScreenNumber;                                    \
+        aSurface.iInternal[1] = 0;                                                \
+        aSurface.iInternal[2] = 0x1027549A;                                       \
+        aSurface.iInternal[3] = 0x01000000;                                       \
+    }                                                                             \
+    TUint name::DeviceOrientationsAvailable() const {                             \
+        return 1 | 2 | 4 | 8;                                                     \
+    }                                                                             \
+    TBool name::SetDeviceOrientation(TUint aOrientation) {                        \
+        if ((aOrientation != 1) && (aOrientation != 2) && (aOrientation != 4)     \
+            && (aOrientation != 8)) {                                             \
+            return EFalse;                                                        \
+        }                                                                         \
+        /* The surface itself turns: size and rows follow the rotated */          \
+        /* framebuffer rather than a software-rotated graphics orientation. */    \
+        if (IsFlippedOrientation(aOrientation)                                    \
+            != IsFlippedOrientation(iDeviceOrientation)) {                        \
+            base::SetSize(TSize(iSize.iHeight, iSize.iWidth));                    \
+            const TInt dataStride = ScreenDeviceDataStride(iScreenNumber,         \
+                iDisplayMode, iSize);                                             \
+            if (dataStride != -1) {                                               \
+                iScanLineWords = dataStride >> 2;                                 \
+                iLongWidth = dataStride >> 2;                                     \
+            }                                                                     \
+        }                                                                         \
+        iDeviceOrientation = aOrientation;                                        \
+        return ETrue;                                                             \
+    }                                                                             \
+    TUint name::DeviceOrientation() const {                                       \
+        return iDeviceOrientation;                                                \
     }
 
 SCRDVC_IMPL(CFbsTwelveBitScreenDrawDevice, CFbsTwelveBitDrawDevice)

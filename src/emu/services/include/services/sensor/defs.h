@@ -35,7 +35,15 @@ namespace eka2l1 {
         sensor_get_property,
         sensor_async_property_data,
         sensor_stop_property_listening,
-        sensor_get_all_properties
+        sensor_get_all_properties,
+        sensor_add_condition_set,
+        sensor_remove_condition_set,
+        sensor_start_condition_listening,
+        sensor_stop_condition_listening,
+        sensor_async_condition_met,
+        sensor_async_channel_change_notification,
+        sensor_stop_channel_change_listening,
+        sensor_set_property
     };
 
     constexpr std::uint32_t LOCATION_LENGTH = 16;
@@ -58,10 +66,22 @@ namespace eka2l1 {
     };
     #pragma pack(pop)
 
+    // OpenChannel also uses this count to size the client receive buffer.
+    constexpr std::uint32_t SENSOR_MAX_BUFFERING_COUNT = 4;
+
     struct listening_parameters {
         std::uint32_t desired_buffering_count;
         std::uint32_t maximum_buffering_count;
         std::uint32_t buffering_period;
+
+        void normalize_buffering_counts(std::uint32_t limit) {
+            if (desired_buffering_count == 0 || desired_buffering_count > limit) {
+                desired_buffering_count = limit;
+            }
+            if (maximum_buffering_count < desired_buffering_count || maximum_buffering_count > limit) {
+                maximum_buffering_count = limit;
+            }
+        }
     };
 
     struct data_count_ret_val {

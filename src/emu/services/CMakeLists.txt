@@ -11,6 +11,7 @@ add_library(epocservs
         include/services/accessory/common.h
         include/services/alarm/alarm.h
         include/services/applist/applist.h
+        include/services/applist/icons.h
         include/services/applist/common.h
         include/services/applist/op.h
         include/services/audio/alf/alf.h
@@ -38,13 +39,16 @@ add_library(epocservs
         include/services/centralrepo/centralrepo.h
         include/services/centralrepo/common.h
         include/services/centralrepo/repo.h
+        include/services/camera/camera.h
         include/services/comm/comm.h
         include/services/internet/protocols/common.h
         include/services/internet/protocols/inet.h
         include/services/internet/protocols/overall.h
         include/services/internet/browser.h
+        include/services/internet/accesspoints.h
         include/services/internet/connmonitor.h
         include/services/internet/nifman.h
+        include/services/domain/domain.h
         include/services/drm/notifier/events.h
         include/services/drm/notifier/notifier.h
         include/services/drm/rights/object.h
@@ -61,6 +65,7 @@ add_library(epocservs
         include/services/fbs/adapter/font_adapter.h
         include/services/fbs/adapter/freetype_font_adapter.h
         include/services/fbs/adapter/gdr_font_adapter.h
+        include/services/fbs/adapter/linked_font_adapter.h
         include/services/fbs/adapter/stb_font_adapter.h
         include/services/fbs/bitmap.h
         include/services/fbs/compress_queue.h
@@ -68,12 +73,15 @@ add_library(epocservs
         include/services/fbs/font.h
         include/services/fbs/font_atlas.h
         include/services/fbs/font_store.h
+        include/services/fbs/linked_font_config.h
         include/services/fbs/palette.h
         include/services/featmgr/featmgr.h
         include/services/fs/sec.h
         include/services/fs/fs.h
         include/services/goommonitor/goommonitor.h
         include/services/hwrm/def.h
+        include/services/hwrm/haptics/haptics.h
+        include/services/hwrm/haptics/protocol.h
         include/services/hwrm/hwrm.h
         include/services/hwrm/op.h
         include/services/hwrm/light/light_data.h
@@ -95,13 +103,19 @@ add_library(epocservs
         include/services/msv/msv.h
         include/services/msv/store.h
         include/services/notifier/notifier.h
+        include/services/notifier/bluetooth.h
         include/services/notifier/queries.h
+        include/services/posix/op.h
+        include/services/posix/posix.h
         include/services/redir/redir.h
         include/services/remcon/common.h
         include/services/remcon/controller.h
         include/services/remcon/remcon.h
         include/services/remcon/target.h
         include/services/sensor/sensor.h
+        include/services/memorymanager/memorymanager.h
+        include/services/lbs/lbs.h
+        include/services/linnea/linnea.h
         include/services/shutdown/shutdown.h
         include/services/sisregistry/common.h
         include/services/sisregistry/sisregistry.h
@@ -116,6 +130,7 @@ add_library(epocservs
         include/services/socket/server.h
         include/services/socket/socket.h
         include/services/sysagt/sysagt.h
+        include/services/timezone/timezone.h
         include/services/ui/cap/coestorage.h
         include/services/ui/cap/consts.h
         include/services/ui/cap/eiksrv.h
@@ -160,6 +175,7 @@ add_library(epocservs
         src/accessory/common.cpp
         src/alarm/alarm.cpp
         src/applist/applist.cpp
+        src/applist/icons.cpp
         src/applist/common.cpp
         src/applist/registeration.cpp
         src/audio/alf/alf.cpp
@@ -186,13 +202,16 @@ add_library(epocservs
         src/centralrepo/centralrepo.cpp
         src/centralrepo/cre.cpp
         src/centralrepo/repo.cpp
+        src/camera/camera.cpp
         src/comm/comm.cpp
         src/internet/protocols/overall.cpp
         src/internet/protocols/resolver.cpp
         src/internet/protocols/socket.cpp
         src/internet/browser.cpp
+        src/internet/accesspoints.cpp
         src/internet/connmonitor.cpp
         src/internet/nifman.cpp
+        src/domain/domain.cpp
         src/drm/notifier/events.cpp
         src/drm/notifier/exchange.cpp
         src/drm/notifier/notifier.cpp
@@ -209,13 +228,16 @@ add_library(epocservs
         src/fbs/adapter/font_adapter.cpp
         src/fbs/adapter/freetype_font_adapter.cpp
         src/fbs/adapter/gdr_font_adapter.cpp
+        src/fbs/adapter/linked_font_adapter.cpp
         src/fbs/adapter/stb_font_adapter.cpp
         src/fbs/compress_queue.cpp
         src/fbs/fbs.cpp
+        src/fbs/palette.cpp
         src/fbs/font_atlas.cpp
         src/fbs/impls/bitmap.cpp
         src/fbs/impls/font.cpp
         src/fbs/impls/font_store.cpp
+        src/fbs/impls/linked_font_config.cpp
         src/featmgr/featmgr.cpp
         src/fs/dirs.cpp
         src/fs/drives.cpp
@@ -224,6 +246,8 @@ add_library(epocservs
         src/fs/parser.cpp
         src/fs/std.cpp
         src/goommonitor/goommonitor.cpp
+        src/hwrm/haptics/protocol.cpp
+        src/hwrm/haptics/haptics.cpp
         src/hwrm/hwrm.cpp
         src/hwrm/light/light_data.cpp
         src/hwrm/light/light.cpp
@@ -241,13 +265,19 @@ add_library(epocservs
         src/msv/registry.cpp
         src/msv/store.cpp
         src/notifier/notifier.cpp
+        src/notifier/bluetooth.cpp
         src/notifier/queries.cpp
+        src/notifier/message_query.cpp
+        src/posix/posix.cpp
         src/redir/redir.cpp
         src/remcon/common.cpp
         src/remcon/controller.cpp
         src/remcon/remcon.cpp
         src/remcon/target.cpp
         src/sensor/sensor.cpp
+        src/memorymanager/memorymanager.cpp
+        src/lbs/lbs.cpp
+        src/linnea/linnea.cpp
         src/shutdown/shutdown.cpp
         src/sisregistry/sisregistry.cpp
         src/sms/mtm/factory.cpp
@@ -266,6 +296,7 @@ add_library(epocservs
         src/socket/socket.cpp
         src/socket/server.cpp
         src/sysagt/sysagt.cpp
+        src/timezone/timezone.cpp
         src/ui/cap/coestorage.cpp
         src/ui/cap/eiksrv.cpp
         src/ui/cap/oom_app.cpp
@@ -311,6 +342,7 @@ add_library(epocservs
         src/window/io.cpp
         src/window/scheduler.cpp
         src/window/screen.cpp
+        src/window/surface.cpp
         src/window/util.cpp
         src/window/window.cpp)
 
@@ -343,8 +375,15 @@ target_link_libraries(epocservs PRIVATE
         xxHash
         pugixml
         sqlite3
-        re2::re2)
+        re2::re2
+        mbedcrypto)
 
 if (WIN32)
         target_link_libraries(epocservs PRIVATE Ws2_32.lib)
+endif()
+
+if (APPLE)
+        target_sources(epocservs PRIVATE src/bluetooth/protocols/mdns_dnssd.cpp)
+else()
+        target_sources(epocservs PRIVATE src/bluetooth/protocols/mdns_socket.cpp)
 endif()

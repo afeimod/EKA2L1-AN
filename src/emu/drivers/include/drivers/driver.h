@@ -20,8 +20,8 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
-#include <chrono>
 #include <condition_variable>
 #include <mutex>
 
@@ -52,18 +52,23 @@ namespace eka2l1::drivers {
     };
 
     /**
-     * \brief A linked list of command.
+     * \brief Contiguous commands passed to the driver as one batch.
      */
     struct command_list {
         command *base_;
 
         std::size_t size_;
         std::size_t max_cap_;
+        std::size_t allocated_ = 0;
+        std::size_t first_capacity_;
 
-        explicit command_list(std::size_t max_cap = 0)
+        static constexpr std::size_t DEFAULT_FIRST_CAPACITY = 32;
+
+        explicit command_list(std::size_t max_cap = 0, std::size_t first_capacity = DEFAULT_FIRST_CAPACITY)
             : base_(nullptr)
             , size_(0)
-            , max_cap_(max_cap) {
+            , max_cap_(max_cap)
+            , first_capacity_(first_capacity) {
         }
 
         bool empty() const {
@@ -75,9 +80,7 @@ namespace eka2l1::drivers {
                 return nullptr;
             }
 
-            if (!base_) {
-                renew();
-            }
+            reserve(size_ + 1);
 
             command *res = base_ + size_;
             res->status_ = nullptr;
@@ -87,14 +90,25 @@ namespace eka2l1::drivers {
             return res;
         }
 
-        void renew() {
-            if (max_cap_ == 0) {
+        void reserve(std::size_t count) {
+            if (count <= allocated_) {
                 return;
             }
-            // NOTE: After command all iterated, the base will be deleted.
-            // No memory leak!
-            base_ = new command[max_cap_];
-            size_ = 0;
+
+            // max_cap_ only limits merges; a batch may still outgrow it after a full merge.
+            std::size_t capacity = allocated_ ? allocated_ * 2 : first_capacity_;
+            if (count <= max_cap_) {
+                capacity = std::min(capacity, max_cap_);
+            }
+            capacity = std::max(capacity, count);
+
+            command *grown = new command[capacity];
+            if (base_) {
+                std::copy_n(base_, size_, grown);
+                delete[] base_;
+            }
+            base_ = grown;
+            allocated_ = capacity;
         }
     };
 
@@ -111,23 +125,13 @@ namespace eka2l1::drivers {
         }
 
         virtual void wait_for(int *status) {
-            // Bound the wait so a stuck graphics driver can't take down the
-            // Android UI thread (this method is invoked from the JNI bridge
-            // on the main thread, e.g. by surfaceRedrawNeeded). Cap at 1s;
-            // if the driver hasn't produced a frame by then we drop the wait
-            // and let the next present hook catch up.
             std::unique_lock<std::mutex> ulock(mut_);
-
-            if (status == nullptr) {
-                return;
-            }
 
             if (*status == 0) {
                 return;
             }
 
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
-            cond_.wait_until(ulock, deadline, [&]() { return (*status != -100) || aborted(); });
+            cond_.wait(ulock, [&]() { return (*status != -100) || aborted(); });
         }
 
         void finish(int *status, const int code) {

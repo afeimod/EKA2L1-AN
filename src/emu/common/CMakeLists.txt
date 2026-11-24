@@ -13,7 +13,11 @@ else ()
 endif ()
 
 add_library(common
+        include/common/path_types.h
+        src/path_types.cpp
+        src/path_case_folding.inl
         include/common/applauncher.h
+        include/common/archive.h
         include/common/arghandler.h
         include/common/atomic.h
         include/common/advstream.h
@@ -63,6 +67,7 @@ add_library(common
         include/common/virtualmem.h
         include/common/watcher.h
         include/common/wildcard.h
+        src/archive.cpp
         src/atomic.cpp
         src/arghandler.cpp
         src/armemitter.cpp
@@ -114,11 +119,32 @@ if (ANDROID)
         src/android/storage.cpp
         src/android/jniutils.cpp
         )
+elseif (EKA2L1_IOS)
+    target_sources(common PRIVATE
+        src/ios/applauncher.mm
+        )
+    target_link_libraries(common PRIVATE "-framework UIKit" "-framework Foundation")
 endif()
 
-target_include_directories(common PUBLIC include)
-target_link_libraries(common PUBLIC fmt miniz spdlog)
-target_link_libraries(common PRIVATE pugixml miniupnpc::miniupnpc re2::re2)
+if (APPLE)
+    target_link_libraries(common PRIVATE "-framework CoreFoundation")
+endif()
+
+set(COMMON_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/include")
+file(MAKE_DIRECTORY "${COMMON_GENERATED_INCLUDE_DIR}/common")
+
+target_include_directories(common PUBLIC
+        "${COMMON_GENERATED_INCLUDE_DIR}"
+        include)
+target_link_libraries(common PUBLIC fmt spdlog zlibstatic)
+target_link_libraries(common PRIVATE archive_static pugixml miniupnpc::miniupnpc re2::re2)
+
+if (WIN32)
+    # libarchive names its temporary files with BCryptGenRandom whatever ENABLE_CNG says, but only links
+    # bcrypt when that option is on. It cannot be added to its own target from here (CMP0079).
+    target_link_libraries(common PRIVATE bcrypt)
+endif()
+target_link_libraries(common PRIVATE miniupnpc::miniupnpc)
 
 if (UNIX OR APPLE)
     set_property(TARGET common PROPERTY POSITION_INDEPENDENT_CODE ON)
@@ -145,7 +171,7 @@ execute_process(
 )
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/common/configure.h.in
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/common/configure.h)
+        ${COMMON_GENERATED_INCLUDE_DIR}/common/configure.h)
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/include/common/version.h.in
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/common/version.h)
+        ${COMMON_GENERATED_INCLUDE_DIR}/common/version.h)

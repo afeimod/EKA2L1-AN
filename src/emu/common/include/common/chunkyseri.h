@@ -19,6 +19,7 @@
  */
 
 #pragma once
+#include <common/path_types.h>
 
 #include <cstdint>
 #include <string>
@@ -68,6 +69,10 @@ namespace eka2l1::common {
         std::uint8_t *org;
         std::uint8_t *end;
 
+        // Measure mode has no buffer to walk: it is handed a null pointer, and
+        // advancing that is undefined behaviour rather than a way to count.
+        std::size_t measured = 0;
+
         chunkyseri_mode mode;
 
         bool do_marker(const std::string &name, std::uint16_t cookie = 0x18);
@@ -77,11 +82,11 @@ namespace eka2l1::common {
             : buf(buf)
             , org(buf)
             , mode(mode)
-            , end(org + max) {
+            , end(buf ? buf + max : nullptr) {
         }
 
         std::size_t size() {
-            return buf - org;
+            return (mode == SERI_MODE_MEASURE) ? measured : static_cast<std::size_t>(buf - org);
         }
 
         std::size_t left() {
@@ -97,6 +102,15 @@ namespace eka2l1::common {
         }
 
         bool backwards(std::size_t len_back) {
+            if (mode == SERI_MODE_MEASURE) {
+                if (len_back > measured) {
+                    return false;
+                }
+
+                measured -= len_back;
+                return true;
+            }
+
             if (buf - len_back < org) {
                 return false;
             }
@@ -131,6 +145,18 @@ namespace eka2l1::common {
 
         void absorb(std::string &dat);
         void absorb(std::u16string &dat);
+
+        void absorb(host_path &path) {
+            auto text = path.utf8();
+            absorb(text);
+            if (get_seri_mode() == SERI_MODE_READ) path = host_path(std::move(text));
+        }
+
+        void absorb(guest_path &path) {
+            auto text = path.utf16();
+            absorb(text);
+            if (get_seri_mode() == SERI_MODE_READ) path = guest_path(std::move(text));
+        }
 
         template <typename T>
         void absorb_container(std::vector<T> &c) {

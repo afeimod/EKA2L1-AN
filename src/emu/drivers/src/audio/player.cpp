@@ -18,7 +18,9 @@
  */
 
 #include <common/platform.h>
+#if EKA2L1_HAS_FFMPEG
 #include <drivers/audio/backend/ffmpeg/player_ffmpeg.h>
+#endif
 #include <drivers/audio/backend/minibae/player_minibae.h>
 #include <drivers/audio/backend/tinysoundfont/player_tsf.h>
 #include <drivers/audio/backend/wmf/player_wmf.h>
@@ -31,7 +33,9 @@ namespace eka2l1::drivers {
         callback_ = callback;
 
         userdata_.resize(data_size);
-        std::memcpy(userdata_.data(), data, data_size);
+        if (data_size != 0) {
+            std::memcpy(userdata_.data(), data, data_size);
+        }
 
         return true;
     }
@@ -60,8 +64,10 @@ namespace eka2l1::drivers {
         case player_type_tsf:
             return std::make_unique<player_tsf>(aud);
 
+#if EKA2L1_HAS_FFMPEG
         case player_type_ffmpeg:
             return std::make_unique<player_ffmpeg>(aud);
+#endif
 
         default:
             break;

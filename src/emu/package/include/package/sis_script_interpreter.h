@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <common/path_types.h>
 #include <common/types.h>
 
 #include <atomic>
@@ -63,10 +64,14 @@ namespace eka2l1 {
             config::state *conf;
 
             std::stack<sis_controller *> current_controllers;
-            std::vector<std::u16string> gathered_sis_paths;
+            std::vector<host_path> gathered_sis_paths;
 
             struct extract_target_info {
-                std::string file_path_;
+                // The guest path, resolved to a host one only when the file is about to be
+                // written: a package may spell the same folder in two cases, and the resolver
+                // can only fold the second spelling onto a directory that already exists.
+                guest_path install_path_;
+                host_path file_path_;
                 std::uint32_t data_unit_index_;
                 std::uint16_t data_unit_block_index_;
             };
@@ -101,7 +106,13 @@ namespace eka2l1 {
             int gasp_true_form_of_integral_expression(const sis_expression &expr);
 
         protected:
-            bool interpret(sis_install_block &install_block, sis_registry_tree &parent_tree, std::uint16_t crr_blck_idx = 0);
+            // register_files tells whether the files in this block still have to be
+            // added to the package's file list. fill_controller_registeration has
+            // already registered the controller's own install block, but not the
+            // blocks nested in conditionals; leaving those unregistered leaves their
+            // files, an app's own _reg.rsc included, behind at uninstall time.
+            bool interpret(sis_install_block &install_block, sis_registry_tree &parent_tree, std::uint16_t crr_blck_idx = 0,
+                const bool register_files = false);
             bool interpret(sis_controller *controller, sis_registry_tree &tree, const std::uint16_t base_data_idx);
 
             /**
@@ -128,7 +139,7 @@ namespace eka2l1 {
              * \param data_idx      The index of the source buffer in block buffer.
              * \param crr_block_idx The block index..
              */
-            bool extract_file(const std::string &path, const uint32_t idx, uint16_t crr_blck_idx);
+            bool extract_file(const host_path &path, const uint32_t idx, uint16_t crr_blck_idx);
 
         public:
             show_text_func show_text; ///< Hook function to display texts.
@@ -140,7 +151,7 @@ namespace eka2l1 {
 
             std::unique_ptr<sis_registry_tree> interpret(progress_changed_callback cb = nullptr, cancel_requested_callback cancel_cb = nullptr);
 
-            const std::vector<std::u16string> &extra_sis_files() const {
+            const std::vector<host_path> &extra_sis_files() const {
                 return gathered_sis_paths;
             }
         };

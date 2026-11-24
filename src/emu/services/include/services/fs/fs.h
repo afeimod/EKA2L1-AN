@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <common/path_types.h>
 #include <kernel/server.h>
 #include <services/context.h>
 #include <services/framework.h>
@@ -91,22 +92,32 @@ namespace eka2l1 {
         ~fs_node() override;
     };
 
-    struct fs_path_case_insensitive_hasher {
-        size_t operator()(const utf16_str &key) const;
+    enum class file_name_error : std::uint32_t {
+        none,
+        bad_character,
+        bad_name,
+        too_long
     };
 
-    struct fs_path_case_insensitive_comparer {
-        bool operator()(const utf16_str &x, const utf16_str &y) const;
+    // RFs::TNameValidParam is packaged in IPC slot 3.
+    struct file_name_validation_params {
+        file_name_error error_;
+        std::int32_t use_session_path_;
+        std::uint32_t invalid_char_pos_;
     };
 
-    std::u16string get_full_symbian_path(const std::u16string &session_path, const std::u16string &target_path);
-    bool check_path_capabilities_pass(const std::u16string &path, kernel::process *pr, epoc::security_policy &private_policy, epoc::security_policy &sys_policy, epoc::security_policy &resource_policy);
+    static_assert(sizeof(file_name_validation_params) == 12);
+
+    guest_path get_full_symbian_path(const guest_path &session_path, const guest_path &target_path);
+    std::int32_t validate_file_name(const std::u16string &name, const guest_path &session_path,
+        char16_t &bad_character, file_name_validation_params *params = nullptr);
+    bool check_path_capabilities_pass(const guest_path &path, kernel::process *pr, epoc::security_policy &private_policy, epoc::security_policy &sys_policy, epoc::security_policy &resource_policy);
 
     struct fs_server_client : public service::typical_session {
-        std::u16string ss_path;
+        guest_path ss_path;
 
         fs_node *get_file_node(const int handle) {
-            return obj_table_.get<fs_node>(handle);
+            return dynamic_cast<fs_node *>(obj_table_.get_raw(handle));
         }
 
         explicit fs_server_client(service::typical_server *srv, kernel::uid suid, epoc::version client_version, kernel::thread *own_thr);
@@ -119,6 +130,8 @@ namespace eka2l1 {
         void file_replace(service::ipc_context *ctx);
         void file_temp(service::ipc_context *ctx);
         void file_flush(service::ipc_context *ctx);
+        void file_map_open(service::ipc_context *ctx);
+        void file_map_flush(service::ipc_context *ctx);
         void file_close(service::ipc_context *ctx);
         void file_duplicate(service::ipc_context *ctx);
         void file_adopt(service::ipc_context *ctx);
@@ -160,7 +173,7 @@ namespace eka2l1 {
         void set_session_to_private(service::ipc_context *ctx);
         void create_private_path(service::ipc_context *ctx);
 
-        int new_node(io_system *io, kernel::thread *sender, std::u16string name, int org_mode,
+        int new_node(io_system *io, kernel::thread *sender, guest_path name, int org_mode,
             bool overwrite = false, bool temporary = false, bool ignore_caps = false);
 
         void entry(service::ipc_context *ctx);
@@ -193,7 +206,7 @@ namespace eka2l1 {
         void is_file_opened(service::ipc_context *ctx);
         void filesystem_name(service::ipc_context *ctx);
 
-        bool is_file_opened_here(const std::u16string &path);
+        bool is_file_opened_here(const guest_path &path);
 
         enum class notify_type {
             entry = 1,
@@ -213,6 +226,7 @@ namespace eka2l1 {
 
         std::vector<notify_entry> notify_entries;
         epoc::notify_info dismount_notify_;
+        epoc::notify_info disk_space_notify_;
 
         void notify(const utf16_str &entry, const notify_type type);
         bool should_notify_failures;
@@ -309,9 +323,9 @@ namespace eka2l1 {
         friend struct fs_server_client;
         friend struct fs_node;
 
-        std::unordered_map<std::u16string, file_attrib, fs_path_case_insensitive_hasher> attribs;
+        std::unordered_map<guest_path, file_attrib> attribs;
         service::property *system_drive_prop;
-        std::u16string default_sys_path;
+        guest_path default_sys_path;
 
         void connect(service::ipc_context &ctx) override;
         void disconnect(service::ipc_context &ctx) override;
@@ -322,11 +336,11 @@ namespace eka2l1 {
         void get_default_system_path(service::ipc_context *ctx);
 
         enum {
-            FLAG_INITED = 0
+            FLAG_INITED = 1 << 0
         };
 
         std::uint32_t flags;
-        std::set<std::u16string> temporary_file_cleanset_;
+        std::set<guest_path> temporary_file_cleanset_;
 
         void init();
 
@@ -343,8 +357,8 @@ namespace eka2l1 {
         }
 
         file *get_file(const kernel::uid session_uid, const std::uint32_t handle);
-        bool is_file_opened(const std::u16string &path);
-        symfile get_temp_file(const std::u16string &base_dir);
+        bool is_file_opened(const guest_path &path);
+        symfile get_temp_file(const guest_path &base_dir);
 
         fs_server_client *get_correspond_client(service::session *ss);
     };

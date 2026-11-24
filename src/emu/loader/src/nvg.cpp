@@ -195,7 +195,8 @@ namespace eka2l1::loader {
                 return false;
             }
 
-            info.color_[3] = alpha / 255.0f;
+            // The paint alpha scales each stop's own alpha (CNvgEngine::SetColorRampL).
+            info.color_[3] *= alpha / 255.0f;
             target_brush.ramps_.push_back(info);
         }
 
@@ -325,19 +326,29 @@ namespace eka2l1::loader {
             { VG_LCCWARC_TO, 'A' },
             { VG_SCCWARC_TO, 'A' },
             { VG_LCWARC_TO, 'A' },
-            { VG_SCCWARC_TO, 'A' }
+            { VG_SCWARC_TO, 'A' }
         };
 
         T values[6];
 
         for (std::uint8_t segment_type: segment_types) {
-            if (segment_type == VG_CLOSE_PATH) {
-                break;
+            // Bit 0 is the absolute/relative flag (VG_ABSOLUTE=0, VG_RELATIVE=1);
+            // the command itself lives in the remaining bits. Strip the flag
+            // before matching the command so relative segments (odd values) are
+            // dispatched to the same handler as their absolute counterparts.
+            const std::uint8_t base_type = segment_type & ~1;
+
+            if (base_type == VG_CLOSE_PATH) {
+                // Close the current subpath and keep going: a single VGPath can
+                // hold several closed contours (glyph outlines, holes...), and
+                // bailing out here dropped every segment behind the first one.
+                direction += "Z ";
+                continue;
             }
 
-            auto correspond_find_res = CORRESPOND_SVG_CMD_CHAR.find(static_cast<vg_path_segment_type>(segment_type & ~1));
+            auto correspond_find_res = CORRESPOND_SVG_CMD_CHAR.find(static_cast<vg_path_segment_type>(base_type));
             if (correspond_find_res == CORRESPOND_SVG_CMD_CHAR.end()) {
-                errors.emplace_back(NVG_UNKNOWN_PATH_SEGMENT_TYPE, in.tell(), segment_type & ~1);
+                errors.emplace_back(NVG_UNKNOWN_PATH_SEGMENT_TYPE, in.tell(), base_type);
                 continue;
             }
 
@@ -347,7 +358,7 @@ namespace eka2l1::loader {
                 result_char_res = static_cast<char>(std::tolower(result_char_res));
             }
 
-            switch (segment_type) {
+            switch (base_type) {
             case VG_HLINE_TO:
             case VG_VLINE_TO: {
                 T to_pos = 0;
@@ -377,8 +388,8 @@ namespace eka2l1::loader {
             case VG_SCWARC_TO:
             case VG_LCCWARC_TO:
             case VG_LCWARC_TO: {
-                const bool is_counterclock_wise = (segment_type == VG_SCCWARC_TO) || (segment_type == VG_LCCWARC_TO);
-                const bool is_small = (segment_type == VG_SCWARC_TO) || (segment_type == VG_SCCWARC_TO);
+                const bool is_counterclock_wise = (base_type == VG_SCCWARC_TO) || (base_type == VG_LCCWARC_TO);
+                const bool is_small = (base_type == VG_SCWARC_TO) || (base_type == VG_SCCWARC_TO);
 
                 if (in.read(values, ELEM_T_SIZE * 5) != ELEM_T_SIZE * 5) {
                     errors.emplace_back(NVG_READ_COMMAND_DATA_FAILED, in.tell());
@@ -448,12 +459,17 @@ namespace eka2l1::loader {
 
         std::string direction;
 
+        // Path coordinates are OpenVG S15.16/S11.4 fixed-point, i.e. *signed*.
+        // Reading them unsigned turns every negative value (relative segments
+        // moving left/up, or absolute coordinates left of the origin) into a
+        // huge positive one — e.g. -22 in S15.16 comes out as 65514 — which
+        // blows up the path bounds and wrecks the rendered icon.
         if (state.path_datatype_ == NVG_PATH_THIRTYTWO_BIT_DECODING) {
             if ((in.tell() % 4) != 0) {
                 in.seek(4 - (in.tell() % 4), common::seek_where::cur);
             }
 
-            if (!nvg_generate_direction<std::uint32_t>(in, direction, errors, segment_types, 1.0f / 65536.0f)) {
+            if (!nvg_generate_direction<std::int32_t>(in, direction, errors, segment_types, 1.0f / 65536.0f)) {
                 return false;
             }
         } else {
@@ -467,7 +483,7 @@ namespace eka2l1::loader {
                 scale = 1.0f / 16.0f;
             }
             
-            if (!nvg_generate_direction<std::uint16_t>(in, direction, errors, segment_types, scale)) {
+            if (!nvg_generate_direction<std::int16_t>(in, direction, errors, segment_types, scale)) {
                 return false;
             }
         }
@@ -649,6 +665,9 @@ namespace eka2l1::loader {
     // Offset vector: contains offset of the data for a command. First 2 byte is number of vector, later nvector * 2 bytes are offsets
     // Commands: Each command is 32-bit integer, upper 16-bit is opcode, lower 16-bit contains index of the data offset in the offset vector.
 
+    bool convert_nvg_tlv_to_svg(common::ro_stream &in, common::wo_stream &out, std::vector<nvg_convert_error_description> &errors,
+        nvg_options *options);
+
     bool convert_nvg_commands_to_svg(common::ro_stream &in, common::wo_stream &out, std::vector<nvg_convert_error_description> &errors, nvg_options *options) {
         std::int16_t header_size = 0;
         std::uint8_t version = 0;
@@ -685,8 +704,15 @@ namespace eka2l1::loader {
 
         // 2 is the size of the vector count
         std::uint64_t commands_offset = vector_offset + 2 * vector_count;
-        if (((commands_offset % 4) != 0) && (version >= 2)) {
-            // Version 2 or above needs offset aligned
+
+        // From version 2 the command section starts on a word boundary. Symbian's
+        // own decoder decides that from the offset vector count alone -- an even
+        // count means the section is padded -- not from the resulting address, and
+        // the files were produced to be read by it. The two rules agree only while
+        // the header size is a multiple of four; for any other header size they
+        // disagree for every count, so follow the one the encoder was written
+        // against rather than the one that looks arithmetically right.
+        if ((version >= 2) && ((vector_count & 1) == 0)) {
             commands_offset += 2;
         }
 
@@ -786,12 +812,14 @@ namespace eka2l1::loader {
             return false;
         }
 
-        if ((nvg_type & 3) == 0) {
+        switch (nvg_type & 3) {
+        case 0:
             return convert_nvg_commands_to_svg(in, out, errors, options);
-        } else {
+        case 1:
+            return convert_nvg_tlv_to_svg(in, out, errors, options);
+        default:
             errors.emplace_back(NVG_TVL_FORMAT_UNSUPPORTED, 0);
+            return false;
         }
-
-        return false;
     }
 }

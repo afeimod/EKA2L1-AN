@@ -18,6 +18,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/path_types.h>
 #include <services/applist/applist.h>
 #include <services/applist/op.h>
 #include <services/fs/fs.h>
@@ -25,6 +26,7 @@
 #include <services/fbs/fbs.h>
 
 #include <common/benchmark.h>
+#include <common/algorithm.h>
 #include <common/cvt.h>
 #include <common/log.h>
 #include <common/path.h>
@@ -40,18 +42,26 @@
 #include <utils/des.h>
 #include <vfs/vfs.h>
 
+#include <algorithm>
 #include <functional>
 #include <utils/err.h>
 
 #include <config/config.h>
 
 namespace eka2l1 {
-    static const std::array<std::u16string, 6> RECOG_MIME_TYPES = {
+    static const std::array<std::u16string, 13> RECOG_MIME_TYPES = {
         u"image/png",
         u"image/jpeg",
         u"image/bmp",
+        u"audio/wav",
         u"audio/mpeg",
+        u"audio/amr",
+        u"audio/amr-wb",
+        u"application/vnd.nokia.ringing-tone",
         u"video/mp4",
+        u"text/html",
+        u"text/xml",
+        u"application/x-shockwave-flash",
         u"application/octet-stream"
     };
 
@@ -67,6 +77,14 @@ namespace eka2l1 {
             seri.absorb(uid);
         }
     } 
+
+    static void populate_owned_files(common::chunkyseri &seri, apa_app_registry *reg) {
+        std::uint32_t count = static_cast<std::uint32_t>(reg->ownership_list.size());
+        seri.absorb(count);
+        for (auto &file : reg->ownership_list) {
+            epoc::absorb_des_string(file, seri, true);
+        }
+    }
 
     static void populate_icon_sizes(common::chunkyseri &seri, apa_app_registry *reg) {
         std::uint32_t size = reg->app_icons.size();
@@ -87,6 +105,56 @@ namespace eka2l1 {
 
     static const char16_t *APA_APP_RUNNER = u"apprun.exe";
 
+    // Which of two registrations for the same app uid to keep. An installed copy
+    // supersedes the one in ROM, the way it does on a device; otherwise the drive the
+    // scan reaches first wins, so the answer does not depend on scan order.
+    static bool should_replace_duplicate_registry(const apa_app_registry &replacement, const apa_app_registry &existing) {
+        if (replacement.mandatory_info.uid != existing.mandatory_info.uid) {
+            return false;
+        }
+
+        if ((existing.land_drive == drive_z) != (replacement.land_drive == drive_z)) {
+            return existing.land_drive == drive_z;
+        }
+
+        return replacement.land_drive < existing.land_drive;
+    }
+
+    // load_registry() checks for a registration of the same path before it starts
+    // reading, but the read happens outside the lock, so two workers can both get past
+    // that check. Repeat it here, where the entry actually goes in, and settle app uids
+    // claimed by more than one registration file while we hold the lock.
+    static bool commit_registry(std::vector<apa_app_registry> &regs, apa_app_registry &&reg) {
+        auto same_path = std::find_if(regs.begin(), regs.end(), [&reg](const apa_app_registry &existing) {
+            return (existing.rsc_path == reg.rsc_path);
+        });
+
+        if (same_path != regs.end()) {
+            if (same_path->last_rsc_modified == reg.last_rsc_modified) {
+                return false;
+            }
+
+            regs.erase(same_path);
+        }
+
+        if (reg.mandatory_info.uid != 0) {
+            auto same_uid = std::find_if(regs.begin(), regs.end(), [&reg](const apa_app_registry &existing) {
+                return existing.mandatory_info.uid == reg.mandatory_info.uid;
+            });
+
+            if (same_uid != regs.end()) {
+                if (!should_replace_duplicate_registry(reg, *same_uid)) {
+                    return false;
+                }
+
+                regs.erase(same_uid);
+            }
+        }
+
+        regs.push_back(std::move(reg));
+        return true;
+    }
+
     applist_server::applist_server(system *sys)
         : service::typical_server(sys, get_app_list_server_name_by_epocver(sys->get_symbian_version_use()))
         , drive_change_handle_(0)
@@ -100,9 +168,9 @@ namespace eka2l1 {
         io->remove_drive_change_notify(drive_change_handle_);
     }
 
-    bool applist_server::load_registry_oldarch(eka2l1::io_system *io, const std::u16string &path, drive_number land_drive,
+    bool applist_server::load_registry_oldarch(eka2l1::io_system *io, const guest_path &path, drive_number land_drive,
         const language ideal_lang) {
-        symfile f = io->open_file(path, READ_MODE | BIN_MODE);
+        symfile f = io->open_file(eka2l1::guest_path{path}, READ_MODE | BIN_MODE);
 
         if (!f) {
             return false;
@@ -114,7 +182,7 @@ namespace eka2l1 {
             const std::lock_guard<std::mutex> guard(list_access_mut_);
 
             auto existed = std::find_if(regs.begin(), regs.end(), [=](const apa_app_registry &reg) {
-                return (common::compare_ignore_case(reg.rsc_path, path) == 0);
+                return (reg.rsc_path == path);
             });
 
             last_mof = f->last_modify_since_0ad();
@@ -139,7 +207,7 @@ namespace eka2l1 {
         reg.land_drive = land_drive;
         reg.rsc_path = path;
         reg.last_rsc_modified = last_mof;
-        reg.mandatory_info.app_path = eka2l1::replace_extension(path, u".app"); // It seems so.
+        reg.mandatory_info.app_path = path.with_extension(u".app").utf16(); // It seems so.
 
         if (!read_registeration_info_aif(reinterpret_cast<common::ro_stream *>(&std_rsc_raw), reg, land_drive,
                 ideal_lang)) {
@@ -148,8 +216,7 @@ namespace eka2l1 {
 
         if (reg.mandatory_info.short_caption.get_length() == 0) {
             // Use the filename of the register file as the caption
-            const std::u16string caption_to_use = eka2l1::replace_extension(eka2l1::filename(path, true),
-                u"");
+            const std::u16string caption_to_use = path.filename().with_extension(u"").utf16();
 
             reg.mandatory_info.short_caption.assign(nullptr, caption_to_use);
             reg.mandatory_info.long_caption.assign(nullptr, caption_to_use);
@@ -174,7 +241,7 @@ namespace eka2l1 {
             }
         }
 
-        std::u16string caption_file_path = eka2l1::replace_extension(path, u"") + u"_caption.rsc";
+        guest_path caption_file_path(eka2l1::replace_extension(path, u"") + u"_caption.rsc");
         caption_file_path = utils::get_nearest_lang_file(io, caption_file_path, ideal_lang, land_drive);
 
         f = io->open_file(caption_file_path, READ_MODE | BIN_MODE);
@@ -195,15 +262,13 @@ namespace eka2l1 {
         }
 
         const std::lock_guard<std::mutex> guard(list_access_mut_);
-        regs.push_back(std::move(reg));
-
-        return true;
+        return commit_registry(regs, std::move(reg));
     }
 
-    bool applist_server::load_registry(eka2l1::io_system *io, const std::u16string &path, drive_number land_drive,
+    bool applist_server::load_registry(eka2l1::io_system *io, const guest_path &path, drive_number land_drive,
         const language ideal_lang) {
         // common::benchmarker marker(__FUNCTION__);
-        const std::u16string nearest_path = utils::get_nearest_lang_file(io, path, ideal_lang, land_drive);
+        const guest_path nearest_path(utils::get_nearest_lang_file(io, eka2l1::guest_path{path}, ideal_lang, land_drive));
         symfile f = io->open_file(nearest_path, READ_MODE | BIN_MODE);
 
         if (!f) {
@@ -216,7 +281,7 @@ namespace eka2l1 {
             const std::lock_guard<std::mutex> guard(list_access_mut_);
 
             auto find_result = std::find_if(regs.begin(), regs.end(), [=](const apa_app_registry &reg) {
-                return (common::compare_ignore_case(reg.rsc_path, nearest_path) == 0);
+                return (reg.rsc_path == nearest_path);
             });
 
             last_modified = f->last_modify_since_0ad();
@@ -270,33 +335,24 @@ namespace eka2l1 {
             return false;
         }
 
-        // Getting our localised resource info
         if (reg.localised_info_rsc_path.empty()) {
-            // Assume default path is used
-            reg.localised_info_rsc_path.append(1, drive_to_char16(land_drive));
-            reg.localised_info_rsc_path += u":\\resource\\apps\\";
-
-            std::u16string name_rsc = eka2l1::replace_extension(eka2l1::filename(reg.rsc_path), u"");
-
-            if (common::lowercase_ucs2_string(name_rsc.substr(name_rsc.length() - 4, 4)) == u"_reg") {
-                name_rsc.erase(name_rsc.length() - 4, 4);
-            }
-
-            reg.localised_info_rsc_path += name_rsc + u".rsc";
+            // Localisable resources are optional, including for background app services.
+            const std::lock_guard<std::mutex> guard(list_access_mut_);
+            return commit_registry(regs, std::move(reg));
         }
 
         // Absolute the localised info path
         reg.localised_info_rsc_path = eka2l1::absolute_path(reg.localised_info_rsc_path,
             eka2l1::root_dir(path), true);
 
-        const auto localised_path = utils::get_nearest_lang_file(io, reg.localised_info_rsc_path,
+        const auto localised_path = utils::get_nearest_lang_file(io, eka2l1::guest_path{reg.localised_info_rsc_path},
             ideal_lang, land_drive);
 
         if (localised_path.empty()) {
             return true;
         }
 
-        f = io->open_file(localised_path, READ_MODE | BIN_MODE);
+        f = io->open_file(eka2l1::guest_path{localised_path}, READ_MODE | BIN_MODE);
 
         dat = read_rsc_from_file(f, reg.localised_info_rsc_id, true, nullptr);
 
@@ -313,35 +369,34 @@ namespace eka2l1 {
             common::ucs2_to_utf8(reg.mandatory_info.long_caption.to_std_string(nullptr)),
             reg.mandatory_info.uid);
 
-        if (!eka2l1::is_absolute(reg.icon_file_path, std::u16string(u"c:\\"), true)) {
+        if (!eka2l1::is_absolute(reg.icon_file_path, guest_path(u"c:\\"), true)) {
             // Try to absolute icon path
             // Search the registration file drive, and than the localizable registration file
-            std::u16string try_1 = eka2l1::absolute_path(reg.icon_file_path,
+            guest_path try_1 = eka2l1::absolute_path(reg.icon_file_path,
                 std::u16string(1, drive_to_char16(land_drive)) + u":\\", true);
 
             if (io->exist(try_1)) {
                 reg.icon_file_path = try_1;
             } else {
-                try_1[0] = localised_path[0];
+                try_1.replace(0, 1, std::u16string(1, localised_path[0]));
 
                 if (io->exist(try_1)) {
                     reg.icon_file_path = try_1;
                 } else {
-                    reg.icon_file_path = u"";
+                    reg.icon_file_path.clear();
                 }
             }
         }
 
         const std::lock_guard<std::mutex> guard(list_access_mut_);
-        regs.push_back(std::move(reg));
-        return true;
+        return commit_registry(regs, std::move(reg));
     }
 
-    bool applist_server::delete_registry(const std::u16string &rsc_path) {
+    bool applist_server::delete_registry(const guest_path &rsc_path) {
         const std::lock_guard<std::mutex> guard(list_access_mut_);
 
         auto result = std::find_if(regs.begin(), regs.end(), [rsc_path](const apa_app_registry &reg) {
-            return common::compare_ignore_case(reg.rsc_path, rsc_path) == 0;
+            return reg.rsc_path == rsc_path;
         });
 
         if (result == regs.end()) {
@@ -375,7 +430,7 @@ namespace eka2l1 {
         switch (act) {
         case drive_action_mount: {
             avail_drives_ |= 1 << (drv - drive_a);
-            std::vector<std::u16string> register_file_paths;
+            std::vector<guest_path> register_file_paths;
 
             if (kern->is_eka1()) {
                 rescan_registries_on_drive_oldarch(io, drv, register_file_paths);
@@ -384,13 +439,13 @@ namespace eka2l1 {
             }
 
             auto load_registry_task = loading_thread_pool_.submit_loop<std::size_t>(0, register_file_paths.size(),
-                [this, &register_file_paths, &modified, io](std::size_t idx) {
+                [this, &register_file_paths, &modified, io, drv](std::size_t idx) {
                     bool entry_modified = false;
 
                     if (kern->is_eka1()) {
-                        entry_modified = load_registry_oldarch(io, register_file_paths[idx], drive_number(idx % drive_count), language::en);
+                        entry_modified = load_registry_oldarch(io, register_file_paths[idx], drv, language::en);
                     } else {
-                        entry_modified = load_registry(io, register_file_paths[idx], drive_number(idx % drive_count), language::en);
+                        entry_modified = load_registry(io, register_file_paths[idx], drv, language::en);
                     }
 
                     if (entry_modified) {
@@ -419,15 +474,14 @@ namespace eka2l1 {
     }
 
     void applist_server::rescan_registries_on_drive_oldarch(eka2l1::io_system *io, const drive_number drv,
-        std::vector<std::u16string> &register_file_paths) {
-        const std::u16string base_dir = std::u16string(1, drive_to_char16(drv)) + u":\\System\\Apps\\";
+        std::vector<guest_path> &register_file_paths) {
+        const guest_path base_dir(std::u16string(1, drive_to_char16(drv)) + u":\\System\\Apps\\");
         auto reg_dir = io->open_dir(base_dir, {}, io_attrib_include_dir);
 
         if (reg_dir) {
             while (auto ent = reg_dir->get_next_entry()) {
-                if ((ent->type == io_component_type::dir) && (ent->name != ".") && (ent->name != "..")) {
-                    const std::u16string aif_reg_file = common::utf8_to_ucs2(eka2l1::add_path(
-                        ent->full_path, ent->name + OLDARCH_REG_FILE_EXT, true));
+                if ((ent->type == io_component_type::dir) && (ent->name != u".") && (ent->name != u"..")) {
+                    const guest_path aif_reg_file = ent->full_path.join(ent->name + guest_path::from_utf8(OLDARCH_REG_FILE_EXT));
 
                     register_file_paths.push_back(aif_reg_file);
                 }
@@ -436,24 +490,24 @@ namespace eka2l1 {
     }
 
     void applist_server::rescan_registries_on_drive_newarch(eka2l1::io_system *io, const drive_number drv,
-        std::vector<std::u16string> &register_file_paths) {
-        const std::u16string import_rsc_path = std::u16string(1, drive_to_char16(drv)) + u":\\Private\\10003a3f\\import\\apps\\" + NEWARCH_REG_FILE_SEARCH_WILDCARD16;
-        const std::u16string rom_rscs_path = std::u16string(1, drive_to_char16(drv)) + u":\\Private\\10003a3f\\apps\\" + NEWARCH_REG_FILE_SEARCH_WILDCARD16;
+        std::vector<guest_path> &register_file_paths) {
+        const guest_path import_rsc_path(std::u16string(1, drive_to_char16(drv)) + u":\\Private\\10003a3f\\import\\apps\\" + NEWARCH_REG_FILE_SEARCH_WILDCARD16);
+        const guest_path rom_rscs_path(std::u16string(1, drive_to_char16(drv)) + u":\\Private\\10003a3f\\apps\\" + NEWARCH_REG_FILE_SEARCH_WILDCARD16);
 
         // Supposedly to only scan in ROM, but it's not really that strict on the emulator ;)
         rescan_registries_on_drive_newarch_with_path(io, drv, rom_rscs_path, register_file_paths);
         rescan_registries_on_drive_newarch_with_path(io, drv, import_rsc_path, register_file_paths);
     }
 
-    void applist_server::rescan_registries_on_drive_newarch_with_path(eka2l1::io_system *io, const drive_number drv, const std::u16string &path,
-        std::vector<std::u16string> &results) {
-        auto reg_dir = io->open_dir(path, {}, io_attrib_include_file);
+    void applist_server::rescan_registries_on_drive_newarch_with_path(eka2l1::io_system *io, const drive_number drv, const guest_path &path,
+        std::vector<guest_path> &results) {
+        auto reg_dir = io->open_dir(eka2l1::guest_path{path}, {}, io_attrib_include_file);
         bool modded = false;
 
         if (reg_dir) {
             while (auto ent = reg_dir->get_next_entry()) {
                 if (ent->type == io_component_type::file) {
-                    results.push_back(common::utf8_to_ucs2(ent->full_path));
+                    results.push_back(ent->full_path);
                 }
             }
         }
@@ -465,7 +519,9 @@ namespace eka2l1 {
         std::atomic_bool global_modified = false;
 
         if (avail_drives_ == 0) {
-            for (drive_number drv = drive_z; drv >= drive_a; drv--) {
+            // Stepping one below drive_a would leave the enum's value range.
+            for (int drv_index = drive_z; drv_index >= drive_a; drv_index--) {
+                const drive_number drv = static_cast<drive_number>(drv_index);
                 if (io->get_drive_entry(drv)) {
                     avail_drives_ |= 1 << (drv - drive_a);
                 }
@@ -476,14 +532,14 @@ namespace eka2l1 {
         std::size_t prev = regs.size();
 
         common::erase_elements(regs, [io](const apa_app_registry &reg) {
-            return !io->exist(reg.rsc_path);
+            return !io->exist(eka2l1::guest_path{reg.rsc_path});
         });
 
         if (prev != regs.size()) {
             global_modified = true;
         }
 
-        std::vector<std::u16string> register_file_paths;
+        std::vector<guest_path> register_file_paths;
 
         for (std::uint8_t i = 0; i < drive_count; i++) {
             if (avail_drives_ & (1 << i)) {
@@ -621,12 +677,34 @@ namespace eka2l1 {
     }
 
     void applist_server::app_language(service::ipc_context &ctx) {
-        LOG_TRACE(SERVICE_APPLIST, "AppList::AppLanguage stubbed to returns ELangEnglish");
+        // Apparc derives this from the phone language -- "Get application language
+        // for current phone language" in aplappinforeader.cpp, which then narrows it
+        // to the nearest localised resource file the app actually ships. Answering a
+        // constant here pins every app's UI to English whatever the locale says.
+        // EKA2L1 has no per-app resource set to narrow against, so the phone language
+        // is the whole answer; keep the old reply for the values that are not one
+        // (ELangTest and the internal "any").
+        language app_lang = kern->get_current_language();
+        if ((app_lang < language::en) || (app_lang == language::any)) {
+            app_lang = language::en;
+        }
 
-        language default_lang = language::en;
-
-        ctx.write_data_to_descriptor_argument<language>(1, default_lang);
+        ctx.write_data_to_descriptor_argument<language>(1, app_lang);
         ctx.complete(0);
+    }
+
+    void applist_server::app_count(service::ipc_context &ctx) {
+        // Apparc answers with the count as the completion code, and leaves control panel
+        // items out of the application list.
+        std::int32_t count = 0;
+
+        for (const auto &reg : regs) {
+            if (!(reg.caps.flags & apa_capability::control_panel_item)) {
+                count++;
+            }
+        }
+
+        ctx.complete(count);
     }
 
     void applist_server::get_app_info(service::ipc_context &ctx) {
@@ -665,7 +743,7 @@ namespace eka2l1 {
             return;
         }
 
-        epoc::filename fname_des(reg->icon_file_path);
+        epoc::filename fname_des(reg->icon_file_path.utf16());
 
         ctx.write_data_to_descriptor_argument<epoc::filename>(1, fname_des);
         ctx.complete(epoc::error_none);
@@ -676,12 +754,20 @@ namespace eka2l1 {
         std::uint32_t mask_bmp_handle;
     };
 
-    void applist_server::get_app_icon(service::ipc_context &ctx) {
+    void applist_server::get_app_icon(service::ipc_context &ctx, const bool by_index) {
         std::optional<epoc::uid> app_uid = ctx.get_argument_value<epoc::uid>(0);
         std::optional<std::int32_t> icon_size_width = std::nullopt;
         std::optional<std::int32_t> icon_size_height = std::nullopt;
 
-        if (legacy_level() == APA_LEGACY_LEVEL_OLD) {
+        if (by_index) {
+            static constexpr std::int32_t LEGACY_ICON_SIDES[] = { 24, 32, 48 };
+            const auto index = ctx.get_argument_value<std::int32_t>(1);
+            if (!index || *index < 0 || *index >= 3) {
+                ctx.complete(epoc::error_argument);
+                return;
+            }
+            icon_size_width = icon_size_height = LEGACY_ICON_SIDES[*index];
+        } else if (legacy_level() == APA_LEGACY_LEVEL_OLD) {
             std::optional<eka2l1::vec2> size_vec = ctx.get_argument_data_from_descriptor<eka2l1::vec2>(1);
             if (size_vec.has_value()) {
                 icon_size_width = size_vec->x;
@@ -704,38 +790,42 @@ namespace eka2l1 {
             return;
         }
 
-        if (reg->app_icons.size() == 0) {
-            // Usually it must have 1
+        if (reg->app_icons.size() < 2) {
             ctx.complete(epoc::error_not_supported);
             return;
         }
 
-        app_icon_handles handle_result;
+        std::size_t pair = 0;
+        if (by_index) {
+            const auto icon = get_icon_by_size(*reg, { *icon_size_width, *icon_size_height });
+            if (!icon) {
+                ctx.complete(epoc::error_not_found);
+                return;
+            }
 
-        // TODO: Iterate and choose right size. But have to do many code....
-        if (reg->app_icons[0].bmp_rom_addr_) {
-            handle_result.bmp_handle = reg->app_icons[0].bmp_rom_addr_;
-        } else {
-            handle_result.bmp_handle = reg->app_icons[0].bmp_->id;
+            for (; pair < reg->app_icons.size() / 2; pair++) {
+                const auto candidate = get_icon(*reg, pair);
+                if (candidate == icon) {
+                    break;
+                }
+            }
         }
 
-        if (reg->app_icons[1].bmp_rom_addr_) {
-            handle_result.mask_bmp_handle = reg->app_icons[1].bmp_rom_addr_;
+        const auto get_handle = [](const apa_app_icon &icon) {
+            return icon.bmp_rom_addr_ ? icon.bmp_rom_addr_ : (icon.bmp_ ? icon.bmp_->id : 0);
+        };
+        const app_icon_handles handles{ get_handle(reg->app_icons[pair * 2]), get_handle(reg->app_icons[pair * 2 + 1]) };
+        bool written;
+        if (!by_index && legacy_level() == APA_LEGACY_LEVEL_OLD) {
+            written = ctx.write_data_to_descriptor_argument<std::uint32_t>(2, handles.bmp_handle)
+                && ctx.write_data_to_descriptor_argument<std::uint32_t>(3, handles.mask_bmp_handle);
         } else {
-            handle_result.mask_bmp_handle = reg->app_icons[1].bmp_->id;
+            written = ctx.write_data_to_descriptor_argument<app_icon_handles>(by_index ? 2 : 3, handles);
         }
-
-        if (legacy_level() == APA_LEGACY_LEVEL_OLD) {
-            ctx.write_data_to_descriptor_argument<std::uint32_t>(2, handle_result.bmp_handle);
-            ctx.write_data_to_descriptor_argument<std::uint32_t>(3, handle_result.mask_bmp_handle);
-        } else {
-            ctx.write_data_to_descriptor_argument<app_icon_handles>(3, handle_result);
-        }
-
-        ctx.complete(epoc::error_none);
+        ctx.complete(written ? epoc::error_none : epoc::error_bad_descriptor);
     }
 
-    void applist_server::get_app_icon_sizes(service::ipc_context &ctx) {
+    void applist_server::get_app_icon_sizes(service::ipc_context &ctx, const bool check_client_size) {
         std::optional<epoc::uid> app_uid = ctx.get_argument_value<epoc::uid>(0);
 
         if (!app_uid) {
@@ -755,6 +845,20 @@ namespace eka2l1 {
             return;
         }
 
+        if (check_client_size) {
+            // SendArrayL: a positive completion asks the client to retry with a buffer of that size.
+            std::optional<std::int32_t> client_buf_size = ctx.get_argument_value<std::int32_t>(1);
+            const std::int32_t size_required = 4 + static_cast<std::int32_t>(reg->app_icons.size()) * 8;
+            if (!client_buf_size) {
+                ctx.complete(epoc::error_argument);
+                return;
+            }
+            if (size_required > client_buf_size.value()) {
+                ctx.complete(size_required);
+                return;
+            }
+        }
+
         std::vector<std::uint8_t> buf;
         common::chunkyseri seri(nullptr, 0, common::SERI_MODE_MEASURE);
         populate_icon_sizes(seri, reg);
@@ -767,7 +871,44 @@ namespace eka2l1 {
         ctx.complete(epoc::error_none);
     }
 
-    void applist_server::launch_app(service::ipc_context &ctx) {
+    void applist_server::get_app_owned_files(service::ipc_context &ctx) {
+        std::optional<epoc::uid> app_uid = ctx.get_argument_value<epoc::uid>(0);
+        std::optional<std::int32_t> client_buf_size = ctx.get_argument_value<std::int32_t>(1);
+
+        if (!app_uid || !client_buf_size) {
+            ctx.complete(epoc::error_argument);
+            return;
+        }
+
+        apa_app_registry *reg = get_registration(app_uid.value());
+
+        if (!reg) {
+            ctx.complete(epoc::error_not_found);
+            return;
+        }
+
+        // The server reserves a TFileName per entry; a positive completion asks the client to retry with that size.
+        constexpr std::int32_t TFILENAME_SIZE = 8 + 256 * 2;
+        const std::int32_t size_required = 4 + static_cast<std::int32_t>(reg->ownership_list.size()) * TFILENAME_SIZE;
+
+        if (size_required > client_buf_size.value()) {
+            ctx.complete(size_required);
+            return;
+        }
+
+        std::vector<std::uint8_t> buf;
+        common::chunkyseri seri(nullptr, 0, common::SERI_MODE_MEASURE);
+        populate_owned_files(seri, reg);
+
+        buf.resize(seri.size());
+        seri = common::chunkyseri(buf.data(), buf.size(), common::SERI_MODE_WRITE);
+        populate_owned_files(seri, reg);
+
+        ctx.write_data_to_descriptor_argument(2, buf.data(), static_cast<std::uint32_t>(buf.size()));
+        ctx.complete(epoc::error_none);
+    }
+
+    void applist_server::launch_app(service::ipc_context &ctx, const bool return_thread_id) {
         std::optional<std::u16string> cmd_line = ctx.get_argument_value<std::u16string>(0);
         if (!cmd_line) {
             LOG_ERROR(SERVICE_APPLIST, "Failed to launch a new app! Command line is not available.");
@@ -785,11 +926,11 @@ namespace eka2l1 {
         }
 
         // Simply load only
-        codeseg_ptr seg = kern->get_lib_manager()->load(arguments[0].std_str());
-        std::u16string app_launch = APA_APP_RUNNER;
+        codeseg_ptr seg = kern->get_lib_manager()->load(guest_path(arguments[0].std_str()));
+        guest_path app_launch(APA_APP_RUNNER);
 
         if (std::get<0>(seg->get_uids()) == epoc::EXECUTABLE_UID) {
-            app_launch = arguments[0].std_str();
+            app_launch = guest_path(arguments[0].std_str());
         }
 
         kernel::uid thread_id = 0;
@@ -800,17 +941,19 @@ namespace eka2l1 {
             return;
         }
 
-        if (kern->is_eka1()) {
-            ctx.write_data_to_descriptor_argument<kernel::uid_eka1>(1, static_cast<kernel::uid_eka1>(thread_id));
-        } else {
-            ctx.write_data_to_descriptor_argument<kernel::uid>(1, thread_id);
+        if (return_thread_id) {
+            if (kern->is_eka1()) {
+                ctx.write_data_to_descriptor_argument<kernel::uid_eka1>(1, static_cast<kernel::uid_eka1>(thread_id));
+            } else {
+                ctx.write_data_to_descriptor_argument<kernel::uid>(1, thread_id);
+            }
         }
 
         ctx.complete(epoc::error_none);
     }
 
     void applist_server::is_program(service::ipc_context &ctx) {
-        std::optional<std::u16string> path = ctx.get_argument_value<std::u16string>(0);
+        std::optional<guest_path> path = ctx.get_path_argument(0);
 
         if (!path.has_value()) {
             ctx.complete(epoc::error_argument);
@@ -829,7 +972,7 @@ namespace eka2l1 {
     }
 
     void applist_server::get_native_executable_name_if_non_native(service::ipc_context &ctx) {
-        std::optional<std::u16string> path = ctx.get_argument_value<std::u16string>(1);
+        std::optional<guest_path> path = ctx.get_path_argument(1);
 
         if (!path.has_value()) {
             ctx.complete(epoc::error_argument);
@@ -881,19 +1024,96 @@ namespace eka2l1 {
         ctx.complete(buf_size);
     }
 
-    void applist_server::get_app_for_document_impl(service::ipc_context &ctx, const std::u16string &path) {
+    static bool matches_data_type(const std::string &text, const std::string &pattern) {
+        std::size_t position = 0, token = 0, star = std::string::npos, retry = 0;
+        while (position < text.size()) {
+            if (token < pattern.size() && pattern[token] != '*'
+                && (pattern[token] == '?' || pattern[token] == text[position])) {
+                ++position;
+                ++token;
+            } else if (token < pattern.size() && pattern[token] == '*') {
+                star = token++;
+                retry = position;
+            } else if (star != std::string::npos) {
+                token = star + 1;
+                position = ++retry;
+            } else {
+                return false;
+            }
+        }
+        while (token < pattern.size() && pattern[token] == '*') {
+            ++token;
+        }
+        return token == pattern.size();
+    }
+
+    epoc::uid find_data_type_handler(const std::vector<apa_app_registry> &registries,
+        const std::string &mime_type, epoc::uid native_uid) {
+        epoc::uid result = 0;
+        std::int32_t highest_priority = -32768;
+        for (const auto &registry : registries) {
+            for (const auto &type : registry.data_types) {
+                std::int32_t priority = type.priority_;
+                if (type.type_ != mime_type) {
+                    if (!matches_data_type(mime_type, type.type_) && !matches_data_type(type.type_, mime_type)) {
+                        continue;
+                    }
+                    // AppArc lowers wildcard matches by one, except system-priority handlers.
+                    if (priority != 0xFFF9) {
+                        priority = static_cast<std::int16_t>(static_cast<std::uint32_t>(priority) - 1);
+                    }
+                }
+                if (priority > highest_priority) {
+                    highest_priority = priority;
+                    result = registry.mandatory_info.uid;
+                }
+                break;
+            }
+        }
+        return result ? result : native_uid;
+    }
+
+    void applist_server::get_app_for_data_type(service::ipc_context &ctx) {
+        if (ctx.get_argument_data_size(0) != sizeof(applist_data_type)) {
+            ctx.complete(epoc::error_argument);
+            return;
+        }
+        const auto type = ctx.get_argument_data_from_descriptor<applist_data_type>(0);
+        if (!type || type->data_type.get_length() > sizeof(type->data_type.data)) {
+            ctx.complete(epoc::error_argument);
+            return;
+        }
+        const std::string mime_type(type->data_type.data, type->data_type.get_length());
+        const epoc::uid uid = find_data_type_handler(regs, mime_type, type->uid);
+        ctx.complete(ctx.write_data_to_descriptor_argument(1, uid) ? epoc::error_none : epoc::error_argument);
+    }
+
+    void applist_server::get_app_for_document_impl(service::ipc_context &ctx, const guest_path &path) {
         applist_app_for_document app;
         app.uid = 0;
         app.data_type.uid = 0;
 
         config::state *conf = kern->get_config();
+        symfile document = sys->get_io_system()->open_file(eka2l1::guest_path{path}, READ_MODE | BIN_MODE);
+        data_recog_result recognised{};
+        std::string recognised_type;
 
-        if (conf && conf->mime_detection) {
+        if (document) {
+            ro_file_stream stream(document.get());
+            recognised = recognize_data_impl(stream, path);
+            recognised_type = recognised.type_.type_name_.to_std_string(nullptr);
+            document->close();
+        }
+
+        if (!recognised_type.empty() && (recognised_type != "application/octet-stream")) {
+            app.data_type.data_type = recognised.type_.type_name_;
+            app.uid = find_data_type_handler(regs, recognised_type, 0);
+        } else if (conf && conf->mime_detection) {
             LOG_TRACE(SERVICE_APPLIST, "AppList::AppForDocument datatype stubbed with file extension");
 
-            const std::u16string ext = eka2l1::path_extension(path);
+            const guest_path ext = path.extension();
             if (!ext.empty()) {
-                if (common::compare_ignore_case(ext, u".swf") == 0) {
+                if (ext == u".swf") {
                     app.data_type.data_type.assign(nullptr, "application/x-shockwave-flash");
                 } else {
                     app.data_type.data_type.assign(nullptr, common::uppercase_string(common::ucs2_to_utf8(ext.substr(1))));
@@ -905,8 +1125,17 @@ namespace eka2l1 {
             LOG_TRACE(SERVICE_APPLIST, "AppList::AppForDocument datatype left empty!");
         }
 
-        ctx.write_data_to_descriptor_argument<applist_app_for_document>(0, app);
-        ctx.complete(epoc::error_none);
+        if (legacy_level() == APA_LEGACY_LEVEL_OLD) {
+            // 6.x/7.0 clients take the UID and the TDataType in separate buffers in slots 1 and 2.
+            const bool written = ctx.write_data_to_descriptor_argument<epoc::uid>(1, app.uid)
+                && ctx.write_data_to_descriptor_argument<applist_data_type>(2, app.data_type);
+            ctx.complete(written ? epoc::error_none : epoc::error_argument);
+            return;
+        }
+
+        const int result_slot = (legacy_level() == APA_LEGACY_LEVEL_S60V2) ? 1 : 0;
+        ctx.complete(ctx.write_data_to_descriptor_argument<applist_app_for_document>(result_slot, app)
+            ? epoc::error_none : epoc::error_argument);
     }
 
     void applist_server::get_app_for_document_by_file_handle(service::ipc_context &ctx) {
@@ -923,7 +1152,9 @@ namespace eka2l1 {
     }
 
     void applist_server::get_app_for_document(service::ipc_context &ctx) {
-        std::optional<std::u16string> path = ctx.get_argument_value<std::u16string>(2);
+        // The 6.x-8.0 clients send the filename in slot 0; 7.0s/8.0 take the 272-byte result in slot 1.
+        const int filename_slot = (legacy_level() <= APA_LEGACY_LEVEL_S60V2) ? 0 : 2;
+        std::optional<guest_path> path = ctx.get_path_argument(filename_slot);
         if (!path.has_value()) {
             ctx.complete(epoc::error_argument);
             return;
@@ -932,30 +1163,114 @@ namespace eka2l1 {
         get_app_for_document_impl(ctx, path.value());
     }
 
-    std::string applist_server::recognize_data_impl(common::ro_stream &stream) {
+    data_recog_result applist_server::recognize_data_impl(common::ro_stream &stream, const guest_path &name) {
+        data_recog_result result{};
+        const guest_path extension = name.extension();
+
+        // Match the S60 web recognizer. It identifies XHTML as text/html; it
+        // does not advertise a separate application/xhtml+xml data type.
+        if ((extension == u".html")
+            || (extension == u".htm")
+            || (extension == u".shtml")
+            || (extension == u".shtm")
+            || (extension == u".xhtml")) {
+            result.type_.type_name_.assign(nullptr, "text/html");
+            result.confidence_rating_ = data_recognition_confidence_probable;
+            return result;
+        }
+
+        if (extension == u".xml") {
+            result.type_.type_name_.assign(nullptr, "text/xml");
+            result.confidence_rating_ = data_recognition_confidence_probable;
+            return result;
+        }
+
         std::uint8_t magic4[4] = { 0, 0, 0, 0 };
 
         stream.seek(0, common::seek_where::beg);
         stream.read(magic4, 4);
 
+        if ((extension == u".swf")
+            || (((magic4[0] == 'F') || (magic4[0] == 'C') || (magic4[0] == 'Z'))
+                && (magic4[1] == 'W') && (magic4[2] == 'S'))) {
+            result.type_.type_name_.assign(nullptr, "application/x-shockwave-flash");
+            result.confidence_rating_ = data_recognition_confidence_probable;
+            return result;
+        }
+
         // MP3
         if ((magic4[0] == 0xFF) && ((magic4[1] == 0xFB) || (magic4[1] == 0xF3) || (magic4[1] == 0xF2))) {
-            return "audio/mpeg";
+            result.type_.type_name_.assign(nullptr, "audio/mpeg");
+            result.confidence_rating_ = data_recognition_confidence_probable;
+            return result;
         }
 
         // MP3 ver2
         if ((magic4[0] == 0x49) && (magic4[1] == 0x44) && (magic4[2] == 0x33)) {
-            return "audio/mpeg";
+            result.type_.type_name_.assign(nullptr, "audio/mpeg");
+            result.confidence_rating_ = data_recognition_confidence_probable;
+            return result;
         }
 
         std::uint8_t magic8[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
         stream.read(magic8, 8);
 
-        if (memcmp(magic8, "ftypmp42", 8) == 0) {
-            return "video/mp4";
+        // RIFF size occupies bytes 4-7, followed by the WAVE form type.
+        if ((memcmp(magic4, "RIFF", 4) == 0) && (memcmp(magic8 + 4, "WAVE", 4) == 0)) {
+            result.type_.type_name_.assign(nullptr, "audio/wav");
+            result.confidence_rating_ = data_recognition_confidence_certain;
+            return result;
         }
 
-        return "application/octet-stream";
+        if ((memcmp(magic4, "#!AM", 4) == 0) && (memcmp(magic8, "R\n", 2) == 0)) {
+            result.type_.type_name_.assign(nullptr, "audio/amr");
+            result.confidence_rating_ = data_recognition_confidence_certain;
+            return result;
+        }
+
+        if ((memcmp(magic4, "#!AM", 4) == 0) && (memcmp(magic8, "R-WB\n", 5) == 0)) {
+            result.type_.type_name_.assign(nullptr, "audio/amr-wb");
+            result.confidence_rating_ = data_recognition_confidence_certain;
+            return result;
+        }
+
+        // Nokia smart messaging ringing tone: one to three command parts, the first ringing-tone programming.
+        if ((extension == u".rng") && (magic4[0] >= 1) && (magic4[0] <= 3)
+            && ((magic4[1] >> 1) == 0x25)) {
+            result.type_.type_name_.assign(nullptr, "application/vnd.nokia.ringing-tone");
+            result.confidence_rating_ = data_recognition_confidence_probable;
+            return result;
+        }
+
+        if (memcmp(magic8, "ftypmp42", 8) == 0) {
+            result.type_.type_name_.assign(nullptr, "video/mp4");
+            result.confidence_rating_ = data_recognition_confidence_probable;
+            return result;
+        }
+
+        // Probable, not possible: EPossible is numerically zero, which a client reads
+        // as "nothing recognised this" and answers by taking another path entirely.
+        result.type_.type_name_.assign(nullptr, "application/octet-stream");
+        result.confidence_rating_ = data_recognition_confidence_probable;
+        return result;
+    }
+
+    void applist_server::recognize_data(service::ipc_context &ctx) {
+        std::uint8_t *data = ctx.get_descriptor_argument_ptr(2);
+        const std::size_t data_size = ctx.get_argument_data_size(2);
+        const std::optional<std::u16string> name = ctx.get_argument_value<std::u16string>(1);
+
+        if (!data && data_size != 0) {
+            ctx.complete(epoc::error_argument);
+            return;
+        }
+
+        std::uint8_t empty_data = 0;
+        common::ro_buf_stream stream(data ? data : &empty_data, data_size);
+        const data_recog_result result = recognize_data_impl(stream, guest_path(name.value_or(std::u16string())));
+
+        ctx.write_data_to_descriptor_argument<data_recog_result>(0, result);
+        ctx.complete(epoc::error_none);
     }
 
     void applist_server::recognize_data_by_file_handle(service::ipc_context &ctx) {
@@ -971,17 +1286,14 @@ namespace eka2l1 {
         const std::uint64_t current_pos = source_file->tell();
         ro_file_stream stream_read(source_file);
 
-        const std::string mime_res = recognize_data_impl(stream_read);
+        const data_recog_result result = recognize_data_impl(stream_read, source_file->file_name());
         source_file->seek(current_pos, file_seek_mode::beg);
 
-        if (mime_res.empty()) {
+        if (result.type_.type_name_.get_length() == 0) {
             LOG_WARN(SERVICE_APPLIST, "File MIME data is not recognizable (filename: {})!", common::ucs2_to_utf8(source_file->file_name()));
             ctx.complete(epoc::error_not_supported);
+            return;
         }
-
-        data_recog_result result;
-        result.confidence_rating_ = 10;             // TODO: Fill with actual value
-        result.type_.type_name_.assign(nullptr, mime_res);
 
         ctx.write_data_to_descriptor_argument<data_recog_result>(0, result);
         ctx.complete(epoc::error_none);
@@ -1039,32 +1351,70 @@ namespace eka2l1 {
             return;
         }
 
-        auto executable_map_result = uids_app_to_executable.find(app_uid.value());
-        if (executable_map_result != uids_app_to_executable.end()) {
-            ctx.write_arg(0, kernel::BRIDAGED_EXECUTABLE_NAME);
-            ctx.write_arg(1, executable_map_result->second);
+        get_app_executable_name(ctx, *app_uid);
+    }
 
-            // Return value is opaque data length. Nothing like that at the moment
-            ctx.complete(0);
+    void applist_server::get_app_executable_name_given_document(service::ipc_context &ctx) {
+        const auto name = ctx.get_argument_value<std::u16string>(2);
+        auto *data = ctx.get_descriptor_argument_ptr(3);
+        const auto size = ctx.get_argument_data_size(3);
+        if (!name || (!data && size != 0)) {
+            ctx.complete(epoc::error_argument);
+            return;
+        }
+
+        std::uint8_t empty = 0;
+        common::ro_buf_stream stream(data ? data : &empty, size);
+        auto recognised = recognize_data_impl(stream, guest_path(*name));
+        get_app_executable_name(ctx, find_data_type_handler(regs, recognised.type_.type_name_.to_std_string(nullptr), 0));
+    }
+
+    void applist_server::get_app_executable_name(service::ipc_context &ctx, epoc::uid app_uid) {
+        auto executable_map_result = uids_app_to_executable.find(app_uid);
+        if (executable_map_result != uids_app_to_executable.end()) {
+            const bool written = ctx.write_arg(0, kernel::BRIDAGED_EXECUTABLE_NAME)
+                && ctx.write_arg(1, executable_map_result->second);
+            ctx.complete(written ? 0 : epoc::error_bad_descriptor);
             
             return;
         }
 
-        apa_app_registry *reg = get_registration(app_uid.value());
+        apa_app_registry *reg = get_registration(app_uid);
 
         if (!reg) {
             ctx.complete(epoc::error_not_found);
             return;
         }
 
-        // Return value is opaque data length. Nothing like that at the moment
-        ctx.write_arg(0, reg->mandatory_info.app_path.to_std_string(nullptr));
-        ctx.complete(0);
+        // Native apps leave slot 0 empty; completion carries the opaque-data length.
+        ctx.complete(ctx.write_arg(1, reg->mandatory_info.app_path.to_std_string(nullptr))
+            ? 0 : epoc::error_bad_descriptor);
     }
 
     applist_session::applist_session(service::typical_server *svr, kernel::uid client_ss_uid, epoc::version client_ver)
         : typical_session(svr, client_ss_uid, client_ver)
         , filter_method_(APP_FILTER_NONE) {
+    }
+
+    void applist_session::set_list_change_notify(service::ipc_context &ctx) {
+        if (!list_change_notify_.empty()) {
+            ctx.complete(epoc::error_in_use);
+            return;
+        }
+
+        // Registries are scanned synchronously, so no scan is ever impending when a client asks.
+        std::optional<std::int32_t> complete_if_no_scan = ctx.get_argument_value<std::int32_t>(0);
+        if (complete_if_no_scan && complete_if_no_scan.value()) {
+            ctx.complete(epoc::error_none);
+            return;
+        }
+
+        list_change_notify_ = epoc::notify_info(ctx.msg->request_sts, ctx.msg->own_thr);
+    }
+
+    void applist_session::cancel_list_change_notify(service::ipc_context &ctx) {
+        list_change_notify_.complete(epoc::error_cancel);
+        ctx.complete(epoc::error_none);
     }
 
     void applist_session::get_filtered_apps_by_flags(service::ipc_context &ctx) {
@@ -1079,7 +1429,7 @@ namespace eka2l1 {
 
         filter_method_ = APP_FILTER_BY_FLAGS;
         flags_mask_ = flags_mask.value();
-        flags_value = flags_value.value();
+        flags_match_value_ = flags_value.value();
         requested_screen_mode_ = screen_mode.value();
         current_index_ = 0;
 
@@ -1122,11 +1472,15 @@ namespace eka2l1 {
                 break;
 
             case applist_request_oldarch_start_app:
-                server<applist_server>()->launch_app(*ctx);
+                server<applist_server>()->launch_app(*ctx, true);
                 break;
 
             case applist_request_oldarch_is_program:
                 server<applist_server>()->is_program(*ctx);
+                break;
+
+            case applist_request_oldarch_app_for_document:
+                server<applist_server>()->get_app_for_document(*ctx);
                 break;
 
             case applist_request_oldarch_app_icon_by_uid_and_size:
@@ -1139,10 +1493,15 @@ namespace eka2l1 {
 
             default:
                 LOG_ERROR(SERVICE_APPLIST, "Unimplemented applist opcode {}", ctx->msg->function);
+                ctx->complete(epoc::error_not_supported);
                 break;
             }
         } else if (llevel == APA_LEGACY_LEVEL_S60V2) {
             switch (ctx->msg->function) {
+            case applist_request_s60v2_app_for_document:
+                server<applist_server>()->get_app_for_document(*ctx);
+                break;
+
             case applist_request_s60v2_app_info:
                 server<applist_server>()->get_app_info(*ctx);
                 break;
@@ -1153,6 +1512,7 @@ namespace eka2l1 {
 
             default:
                 LOG_ERROR(SERVICE_APPLIST, "Unimplemented applist opcode {}", ctx->msg->function);
+                ctx->complete(epoc::error_not_supported);
                 break;
             }
         } else if (llevel == APA_LEGACY_LEVEL_TRANSITION) {
@@ -1178,11 +1538,12 @@ namespace eka2l1 {
                 break;
 
             case applist_request_trans_start_app_without_returning_thread_id:
-                server<applist_server>()->launch_app(*ctx);
+                server<applist_server>()->launch_app(*ctx, false);
                 break;
 
             default:
                 LOG_ERROR(SERVICE_APPLIST, "Unimplemented applist opcode 0x{:X}", ctx->msg->function);
+                ctx->complete(epoc::error_not_supported);
                 break;
             }
         } else {
@@ -1193,6 +1554,10 @@ namespace eka2l1 {
 
             case applist_request_app_language:
                 server<applist_server>()->app_language(*ctx);
+                break;
+
+            case applist_request_app_count:
+                server<applist_server>()->app_count(*ctx);
                 break;
 
             case applist_request_rule_based_launching:
@@ -1223,6 +1588,10 @@ namespace eka2l1 {
                 server<applist_server>()->get_app_icon(*ctx);
                 break;
 
+            case applist_request_app_icon_by_uid:
+                server<applist_server>()->get_app_icon(*ctx, true);
+                break;
+
             case applist_request_preferred_buf_size:
                 server<applist_server>()->get_preferred_buf_size(*ctx);
                 break;
@@ -1231,8 +1600,16 @@ namespace eka2l1 {
                 server<applist_server>()->get_app_for_document(*ctx);
                 break;
 
+            case applist_request_app_for_data_type:
+                server<applist_server>()->get_app_for_data_type(*ctx);
+                break;
+
             case applist_request_app_for_document_passed_by_file_handle:
                 server<applist_server>()->get_app_for_document_by_file_handle(*ctx);
+                break;
+
+            case applist_request_recognize_data:
+                server<applist_server>()->recognize_data(*ctx);
                 break;
 
             case applist_request_recognize_data_passed_by_file_handle:
@@ -1241,6 +1618,10 @@ namespace eka2l1 {
 
             case applist_request_get_executable_name_given_app_uid:
                 server<applist_server>()->get_app_executable_name_given_app_uid(*ctx);
+                break;
+
+            case applist_request_get_executable_name_given_document:
+                server<applist_server>()->get_app_executable_name_given_document(*ctx);
                 break;
 
             case applist_request_get_data_types_phase1:
@@ -1259,8 +1640,32 @@ namespace eka2l1 {
                 get_next_app(*ctx);
                 break;
 
+            case applist_request_get_ownership_infos:
+                server<applist_server>()->get_app_owned_files(*ctx);
+                break;
+
+            case applist_request_get_app_icon_sizes:
+                server<applist_server>()->get_app_icon_sizes(*ctx, true);
+                break;
+
+            case applist_request_set_notify:
+                set_list_change_notify(*ctx);
+                break;
+
+            case applist_request_cancel_notify:
+                cancel_list_change_notify(*ctx);
+                break;
+
+            // Registries are scanned before any guest process runs, so the first scan is
+            // always complete already and the observer is satisfied as it registers.
+            case applist_request_register_list_population_complete_observer:
+            case applist_request_cancel_list_population_complete_observer:
+                ctx->complete(epoc::error_none);
+                break;
+
             default:
                 LOG_ERROR(SERVICE_APPLIST, "Unimplemented applist opcode 0x{:X}", ctx->msg->function);
+                ctx->complete(epoc::error_not_supported);
                 break;
             }
         }
@@ -1284,24 +1689,25 @@ namespace eka2l1 {
         return false;
     }
 
-    void apa_app_registry::get_launch_parameter(std::u16string &native_executable_path, epoc::apa::command_line &args) {
-        const std::u16string app_path = mandatory_info.app_path.to_std_string(nullptr);
+    void apa_app_registry::get_launch_parameter(guest_path &native_executable_path, epoc::apa::command_line &args) {
+        const guest_path app_path(mandatory_info.app_path.to_std_string(nullptr));
 
         if (caps.flags & apa_capability::built_as_dll) {
-            native_executable_path = APA_APP_RUNNER;
+            native_executable_path = guest_path(APA_APP_RUNNER);
         } else {
-            native_executable_path = mandatory_info.app_path.to_std_string(nullptr);
+            native_executable_path = guest_path(mandatory_info.app_path.to_std_string(nullptr));
         }
 
-        args.document_name_ = eka2l1::replace_extension(eka2l1::filename(app_path), u"");
+        args.document_name_ = app_path.filename().with_extension(u"").utf16();
         args.executable_path_ = app_path;
         args.default_screen_number_ = default_screen_number;
     }
 
     static constexpr std::uint8_t ENVIRONMENT_SLOT_MAIN = 1;
 
-    bool applist_server::launch_app(const std::u16string &exe_path, const std::u16string &cmd, kernel::uid *thread_id,
-                                    kernel::process *requester, const epoc::uid known_uid, std::function<void(kernel::process*)> app_exit_callback) {
+    bool applist_server::launch_app(const guest_path &exe_path, const std::u16string &cmd, kernel::uid *thread_id,
+                                    kernel::process *requester, const epoc::uid known_uid, std::function<void(kernel::process*)> app_exit_callback,
+                                    const std::string *environment_main) {
         static constexpr std::size_t MINIMAL_LAUNCH_STACK_SIZE = 0x10000;
         static constexpr std::size_t MINIMAL_LAUNCH_STACK_SIZE_S3 = 0x80000;
 
@@ -1317,7 +1723,10 @@ namespace eka2l1 {
             return false;
         }
 
-        if (legacy_level() < APA_LEGACY_LEVEL_MORDEN) {
+        // Symbian 9.1 reads the command line from process environment slot 1.
+        if (environment_main && !environment_main->empty()) {
+            pr->set_arg_slot(ENVIRONMENT_SLOT_MAIN, reinterpret_cast<std::uint8_t *>(
+                const_cast<char *>(environment_main->data())), environment_main->length());
         }
 
         if (thread_id)
@@ -1328,7 +1737,13 @@ namespace eka2l1 {
         }
 
         if (app_exit_callback) {
-            pr->logon([app_exit_callback, this](kernel::process *pr) {
+            guest_path app_directory;
+            if (legacy_level() < APA_LEGACY_LEVEL_MORDEN) {
+                if (auto *reg = get_registration(known_uid)) {
+                    app_directory = guest_path(reg->mandatory_info.app_path.to_std_string(nullptr)).parent();
+                }
+            }
+            pr->logon([app_exit_callback, app_directory, this](kernel::process *pr) {
                 auto child_processes = pr->get_child_processes();
 
                 // Handle case where a subsequence UI process is spawned
@@ -1339,7 +1754,10 @@ namespace eka2l1 {
                         if (child->get_exit_type() == kernel::entity_exit_type::pending) {
                             auto pid = child->get_uid();
 
-                            if (get_registration(pid)) {
+                            // EKA1 application DLLs can hand off to an unregistered EXE in their own directory.
+                            const bool bundled_executable = !app_directory.empty()
+                                && app_directory == file_directory(child->get_exe_path(), true);
+                            if (get_registration(pid) || bundled_executable) {
                                 child->logon([app_exit_callback](kernel::process *pr) {
                                     app_exit_callback(pr);
                                 });
@@ -1365,15 +1783,14 @@ namespace eka2l1 {
             pr->set_uid_type(current_uid_type);
         }
 
-        // Add it into our app running list
-        return pr->run();
+        return kern->run_after_boot_servers(pr);
     }
 
     bool applist_server::launch_app(apa_app_registry &registry, epoc::apa::command_line &parameter, kernel::uid *thread_id,
                                     std::function<void(kernel::process*)> app_exit_callback) {
         // OPL game check
         io_system *io = sys->get_io_system();
-        symfile app_file = io->open_file(registry.mandatory_info.app_path.to_std_string(nullptr), READ_MODE | BIN_MODE);
+        symfile app_file = io->open_file(eka2l1::guest_path{registry.mandatory_info.app_path.to_std_string(nullptr)}, READ_MODE | BIN_MODE);
 
         if (app_file != nullptr) {
             static constexpr std::uint32_t OPL_APP_UID2 = 0x100055C1;
@@ -1382,7 +1799,7 @@ namespace eka2l1 {
             std::uint32_t uid = 0;
             if (app_file->read_file(4, &uid, 1, 4) == 4) {
                 if (uid == OPL_APP_UID2) {
-                    std::u16string processed_app_path = registry.mandatory_info.app_path.to_std_string(nullptr);
+                    std::u16string processed_app_path(registry.mandatory_info.app_path.to_std_string(nullptr));
                     if (processed_app_path.find_first_of(' ') != std::string::npos) {
                         processed_app_path.insert(processed_app_path.begin(), u'\"');
                         processed_app_path += u'\"';
@@ -1412,18 +1829,31 @@ namespace eka2l1 {
             }
         }
 
-        std::u16string executable_to_run;
+        guest_path executable_to_run;
         registry.get_launch_parameter(executable_to_run, parameter);
 
-        std::u16string apacmddat = parameter.to_string(legacy_level() < APA_LEGACY_LEVEL_MORDEN);
-        return launch_app(executable_to_run, apacmddat, thread_id, nullptr, registry.mandatory_info.uid, app_exit_callback);
+        const bool oldarch = (legacy_level() < APA_LEGACY_LEVEL_MORDEN);
+
+        std::u16string apacmddat = parameter.to_string(oldarch);
+        std::string environment_main;
+
+        if (!oldarch && (kern->get_epoc_version() == epocver::epoc91)) {
+            epoc::apa::command_line environment_parameter = parameter;
+            environment_parameter.launch_cmd_ = epoc::apa::command_run;
+            environment_parameter.document_name_.clear();
+
+            environment_main = environment_parameter.to_buffer();
+        }
+
+        return launch_app(executable_to_run, apacmddat, thread_id, nullptr, registry.mandatory_info.uid, app_exit_callback,
+            environment_main.empty() ? nullptr : &environment_main);
     }
 
-    std::optional<apa_app_masked_icon_bitmap> applist_server::get_icon(apa_app_registry &registry, const std::int8_t index) {
+    std::optional<apa_app_masked_icon_bitmap> applist_server::get_icon(apa_app_registry &registry, const std::size_t index) {
         epoc::bitwise_bitmap *real_bmp = nullptr;
         epoc::bitwise_bitmap *real_mask_bmp = nullptr;
 
-        if (index * 2 >= registry.app_icons.size()) {
+        if (index >= registry.app_icons.size() / 2) {
             return std::nullopt;
         }
 
@@ -1442,6 +1872,60 @@ namespace eka2l1 {
             real_mask_bmp = eka2l1::ptr<epoc::bitwise_bitmap>(registry.app_icons[index * 2 + 1].bmp_rom_addr_).get(sys->get_memory_system());
 
         return std::make_optional(std::make_pair(real_bmp, real_mask_bmp));
+    }
+
+    std::optional<apa_app_masked_icon_bitmap> applist_server::get_icon_by_size(apa_app_registry &registry, const eka2l1::vec2 &size) {
+        const std::size_t pair_count = registry.app_icons.size() / 2;
+        std::optional<apa_app_masked_icon_bitmap> chosen;
+
+        for (std::size_t i = 0; i < pair_count; i++) {
+            std::optional<apa_app_masked_icon_bitmap> candidate = get_icon(registry, i);
+
+            if (candidate.has_value() && (candidate->first->header_.size_pixels == size)) {
+                chosen = candidate;
+            }
+        }
+
+        if (chosen.has_value()) {
+            return chosen;
+        }
+
+        const std::int64_t wanted_area = static_cast<std::int64_t>(size.x) * size.y;
+        std::int64_t smallest_diff = 0;
+
+        for (std::size_t i = 0; i < pair_count; i++) {
+            std::optional<apa_app_masked_icon_bitmap> candidate = get_icon(registry, i);
+
+            if (!candidate.has_value()) {
+                continue;
+            }
+
+            const eka2l1::vec2 candidate_size = candidate->first->header_.size_pixels;
+            const std::int64_t diff = wanted_area - static_cast<std::int64_t>(candidate_size.x) * candidate_size.y;
+
+            if ((diff >= 0) && (!chosen.has_value() || (diff < smallest_diff))) {
+                smallest_diff = diff;
+                chosen = candidate;
+            }
+        }
+
+        return chosen;
+    }
+
+    std::optional<apa_app_masked_icon_bitmap> applist_server::get_list_icon(apa_app_registry &registry) {
+        // S60 AIFs distinguish list and context icons by size, not by pair order.
+        static const eka2l1::vec2 LEGACY_LIST_ICON_SIZE(42, 29);
+
+        if (registry.rsc_path.has_extension(u".aif")) {
+            std::optional<apa_app_masked_icon_bitmap> icon = get_icon_by_size(registry, LEGACY_LIST_ICON_SIZE);
+
+            if (icon.has_value()) {
+                return icon;
+            }
+        }
+
+        // Preserve host launcher icons when no legacy list size fits or the resource is not an AIF.
+        return get_icon(registry, 0);
     }
 
     void applist_server::add_app_uid_to_host_launch_name(const epoc::uid app_uid, const std::u16string &host_launch_name) {

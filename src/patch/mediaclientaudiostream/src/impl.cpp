@@ -31,13 +31,21 @@
 
 #include <e32std.h>
 
-static const TUint32 KWaitBufferTimeInMicroseconds = 100000;
+// How long the client is given to hand over the next buffer once the sound device has
+// run out of queued data before we treat it as "the client is done" and report
+// KErrUnderflow. On hardware the client is only ever this late when it really has
+// stopped streaming; under emulation the whole guest can be held up for longer than
+// that by host-side work, and a client that takes KErrUnderflow as terminal (Puyo Pop
+// does) never recovers. A client that explicitly announced the end of its stream does
+// not wait at all - see HandleBufferInsufficient().
+static const TUint32 KWaitBufferTimeInMicroseconds = 500000;
 
-// This sits between the redraw priority (50) and ws events priority (100) of the UI framework.
-// Audio is intensive, we don't want redraw too take two much time, but at same time, we also
-// want input or other events to be responsive and not missing out any events.
-// Only apply to EKA2 onwards
+#ifdef EKA2
+// Buffer work outranks redraw (50) but yields to window events (100).
 static const TInt KMMFMdaOutputBufferPriority = 70;
+#else
+static const TInt KMMFMdaOutputBufferPriority = CActive::EPriorityStandard;
+#endif
 
 static TInt OnWaitBufferTimeout(void *aUserdata) {
     CMMFMdaAudioOutputStream *stream = reinterpret_cast<CMMFMdaAudioOutputStream *>(aUserdata);
@@ -48,12 +56,8 @@ static TInt OnWaitBufferTimeout(void *aUserdata) {
     return KErrNone;
 }
 
-CMMFMdaBufferQueue::CMMFMdaBufferQueue(CMMFMdaAudioStream *aStream)
-#ifdef EKA2
-    : CActive(KMMFMdaOutputBufferPriority)
-#else
-    : CActive(CActive::EPriorityStandard)
-#endif
+CMMFMdaBufferQueue::CMMFMdaBufferQueue(CMMFMdaAudioStream *aStream, TInt aPriority)
+    : CActive(aPriority)
     , iStream(aStream)
     , iBufferNodes(_FOFF(TMMFMdaBufferNode, iLink)) {
 }
@@ -83,8 +87,8 @@ void CMMFMdaBufferQueue::DoCancel() {
     iStream->CancelRegisterNotifyBufferSent();
 }
 
-CMMFMdaOutputBufferQueue::CMMFMdaOutputBufferQueue(CMMFMdaAudioStream *aStream)
-    : CMMFMdaBufferQueue(aStream)
+CMMFMdaOutputBufferQueue::CMMFMdaOutputBufferQueue(CMMFMdaAudioStream *aStream, TInt aPriority)
+    : CMMFMdaBufferQueue(aStream, aPriority)
     , iCopied(NULL) {
 }
 
@@ -123,6 +127,11 @@ void CMMFMdaOutputBufferQueue::RunL() {
         if (iCopied) {
             iCopied->iLink.Deque();
             delete iCopied;
+
+            // WriteAndWait() below normally hands us the next node, but it is skipped
+            // when the stream was cancelled or stopped. Leaving the freed node here
+            // would hand CleanQueue() a dangling buffer to report.
+            iCopied = NULL;
         }
     }
 
@@ -135,11 +144,30 @@ void CMMFMdaOutputBufferQueue::RunL() {
 void CMMFMdaOutputBufferQueue::CleanQueue() {
     CMMFMdaAudioOutputStream *outputStream = (CMMFMdaAudioOutputStream*) iStream;
 
-    if (iCopied)
-        outputStream->iCallback.MaoscBufferCopied(KErrAbort, *iCopied->iBuffer);
+    // Take the queue away before telling the client about it: MaoscBufferCopied may write
+    // a new buffer or stop us again, and walking the live queue would either never
+    // terminate or touch a node the callback has already taken back.
+    TDblQue<TMMFMdaBufferNode> aborted(_FOFF(TMMFMdaBufferNode, iLink));
 
-    CMMFMdaBufferQueue::CleanQueue();
+    while (!iBufferNodes.IsEmpty()) {
+        TMMFMdaBufferNode *node = iBufferNodes.First();
+        node->iLink.Deque();
+
+        aborted.AddLast(*node);
+    }
+
     iCopied = NULL;
+
+    // Every buffer the client handed over is now given back. MMF aborts all of them, not
+    // only the one that happened to be in flight - a client that waits for its buffers
+    // before reusing or freeing them would otherwise never get the rest back.
+    while (!aborted.IsEmpty()) {
+        TMMFMdaBufferNode *node = aborted.First();
+        node->iLink.Deque();
+
+        outputStream->iCallback.MaoscBufferCopied(KErrAbort, *node->iBuffer);
+        delete node;
+    }
 }
 
 void CMMFMdaOutputBufferQueue::StartTransfer() {
@@ -248,6 +276,10 @@ TBool CMMFMdaAudioStream::HasAlreadyPlay() const {
     return (iOpen.IsActive() || (iState != EMdaStateStop));
 }
 
+TBool CMMFMdaAudioStream::IsOpenPending() const {
+    return iOpen.IsActive();
+}
+
 TInt CMMFMdaAudioStream::RequestStop() {
     if (!iKeepOpenAtEnd) {
         return KErrNotSupported;
@@ -338,14 +370,19 @@ void CMMFMdaAudioStream::SetPriorityUnimplNotified() {
 }
 
 /// AUDIO OUTPUT STREAM
-CMMFMdaAudioOutputStream::CMMFMdaAudioOutputStream(MMdaAudioOutputStreamCallback &aCallback, const TInt aPriority, const TMdaPriorityPreference aPref)
+static const TInt KLegacyPlayCompletePriority = 19;
+
+CMMFMdaAudioOutputStream::CMMFMdaAudioOutputStream(MMdaAudioOutputStreamCallback &aCallback, const TInt aPriority, const TMdaPriorityPreference aPref, TInt aBufferPriority, TBool aLegacyMda)
     : CMMFMdaAudioStream(aPriority, aPref)
-    , iBufferQueue(this)
+    , iBufferQueue(this, aBufferPriority)
     , iWaitBufferEndTimer(NULL)
+    , iLegacyStopComplete(NULL)
+    , iLegacyMda(aLegacyMda)
     , iCallback(aCallback) {
 }
 
 CMMFMdaAudioOutputStream::~CMMFMdaAudioOutputStream() {
+    delete iLegacyStopComplete;
     iBufferQueue.Cancel();
     iWaitBufferEndTimer->Cancel();
 
@@ -353,7 +390,11 @@ CMMFMdaAudioOutputStream::~CMMFMdaAudioOutputStream() {
 }
 
 CMMFMdaAudioOutputStream *CMMFMdaAudioOutputStream::NewL(MMdaAudioOutputStreamCallback &aCallback, const TInt aPriority, const TMdaPriorityPreference aPref) {
-    CMMFMdaAudioOutputStream *newStream = new (ELeave) CMMFMdaAudioOutputStream(aCallback, aPriority, aPref);
+    return NewL(aCallback, aPriority, aPref, KMMFMdaOutputBufferPriority);
+}
+
+CMMFMdaAudioOutputStream *CMMFMdaAudioOutputStream::NewL(MMdaAudioOutputStreamCallback &aCallback, const TInt aPriority, const TMdaPriorityPreference aPref, TInt aBufferPriority, TBool aLegacyMda) {
+    CMMFMdaAudioOutputStream *newStream = new (ELeave) CMMFMdaAudioOutputStream(aCallback, aPriority, aPref, aBufferPriority, aLegacyMda);
     CleanupStack::PushL(newStream);
     newStream->ConstructL();
     CleanupStack::Pop(newStream);
@@ -365,6 +406,7 @@ void CMMFMdaAudioOutputStream::ConstructL() {
     ConstructBaseL(EFalse);
     
     iWaitBufferEndTimer = CPeriodic::NewL(CActive::EPriorityStandard);
+    iLegacyStopComplete = new (ELeave) CAsyncCallBack(TCallBack(LegacyStopComplete, this), KLegacyPlayCompletePriority);
 
     CActiveScheduler::Add(&iBufferQueue);
     iBufferQueue.FixupActiveStatus();
@@ -372,6 +414,12 @@ void CMMFMdaAudioOutputStream::ConstructL() {
 
 void CMMFMdaAudioOutputStream::NotifyOpenComplete() {
     iCallback.MaoscOpenComplete(KErrNone);
+}
+
+TInt CMMFMdaAudioOutputStream::LegacyStopComplete(TAny *aSelf) {
+    CMMFMdaAudioOutputStream *self = static_cast<CMMFMdaAudioOutputStream *>(aSelf);
+    self->iCallback.MaoscPlayComplete(KErrNone);
+    return KErrNone;
 }
 
 void CMMFMdaAudioOutputStream::Stop() {
@@ -392,17 +440,11 @@ void CMMFMdaAudioOutputStream::Stop() {
     } else {
         iState = EMdaStateStop;
 
-        // Cancel is the definite return code for MMF-based audio output stream, and MMF-based
-        // audio stream are implemented from 7.0 onwards
-        // Citing: https://www.25yearsofprogramming.com/c-4/output-streaming.html (they took it out of some book)
-        // On S60v1, the words are very ambiguous. I don't have a phone sadly to verify what it return. But let's guess this.
-        // KoF needs PlayComplete to be either not called or called with KErrNone,
-        // else while free, the object will call Stop and then call free inneath PlayComplete.
-        // Choose to call KErrNone because Ashen needs it to unstuck audio thread
-        if (result == KErrNone) {
-            iCallback.MaoscPlayComplete(KErrCancel);
+        // Legacy MDA completes playback through a separate active object.
+        if (iLegacyMda) {
+            iLegacyStopComplete->CallBack();
         } else {
-            iCallback.MaoscPlayComplete(KErrNone);
+            iCallback.MaoscPlayComplete(KErrCancel);
         }
     }
 }
@@ -510,7 +552,11 @@ void CMMFMdaAudioOutputStream::HandleBufferInsufficient() {
 
 /// INPUT STREAM BUFFER QUEUE
 CMMFMdaInputBufferQueue::CMMFMdaInputBufferQueue(CMMFMdaAudioStream *aStream)
-    : CMMFMdaBufferQueue(aStream) {
+#ifdef EKA2
+    : CMMFMdaBufferQueue(aStream, KMMFMdaOutputBufferPriority) {
+#else
+    : CMMFMdaBufferQueue(aStream, CActive::EPriorityStandard) {
+#endif
 
 }
 

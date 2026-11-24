@@ -19,6 +19,7 @@
 
 #include <dispatch/dispatcher.h>
 #include <dispatch/libraries/register.h>
+#include <dispatch/libraries/featmgr/register.h>
 #include <dispatch/libraries/sysutils/register.h>
 #include <dispatch/libraries/egl/register.h>
 #include <dispatch/libraries/gles1/register.h>
@@ -31,21 +32,38 @@
 namespace eka2l1::dispatch::libraries {
     void register_functions(kernel_system *kern, dispatcher *disp) {
         if (kern->get_epoc_version() <= epocver::epoc81a) {
-            disp->patch_libraries(u"Z:\\System\\Libs\\SysUtil.dll", SYSUTILS_PATCH_EPOCV81A_INFOS,
-                SYSUTILS_PATCH_EPOCV81A_COUNT);
-        } else if (kern->get_epoc_version() >= epocver::epoc93fp1) {
             config::state *conf = kern->get_config();
 
+            disp->patch_libraries(guest_path(u"Z:\\System\\Libs\\SysUtil.dll"), SYSUTILS_PATCH_EPOCV81A_INFOS,
+                SYSUTILS_PATCH_EPOCV81A_COUNT);
+
+            // EKA1 devices keep the GLES/EGL implementation in \System\Libs rather than
+            // \Sys\Bin. Their libgles_cm.dll only freezes the GLES 1.0 part of the DEF
+            // file, but the ordinals it does export match the 1.1 one, so the same patch
+            // table applies and the missing ordinals are skipped. Without this the guest
+            // runs Nokia's own software rasteriser, which wants frame buffer access the
+            // emulator does not reproduce.
             if (conf->enable_hw_gles1) {
-                disp->patch_libraries(u"Z:\\Sys\\Bin\\libgles_cm.dll", LIBGLES_CM_PATCH_INFOS, LIBGLES_CM_PATCH_COUNT);
-                disp->patch_libraries(u"Z:\\Sys\\Bin\\libegl.dll", LIBEGL_PATCH_INFOS, LIBEGL_PATCH_COUNT);
-                disp->patch_libraries(u"Z:\\Sys\\Bin\\libglesv1_cm.dll", LIBGLES_V1_CM_PATCH_INFOS, LIBGLES_V1_CM_PATCH_COUNT);
-                disp->patch_libraries(u"Z:\\Sys\\Bin\\libglesv2.dll", LIBGLESV2_PATCH_INFOS, LIBGLESV2_PATCH_COUNT);
+                disp->patch_libraries(guest_path(u"Z:\\System\\Libs\\libgles_cm.dll"), LIBGLES_CM_PATCH_INFOS,
+                    LIBGLES_CM_PATCH_COUNT);
+            }
+        } else if (kern->get_epoc_version() >= epocver::epoc91) {
+            config::state *conf = kern->get_config();
+
+            if (kern->get_epoc_version() == epocver::epoc91) {
+                disp->patch_libraries(guest_path(u"Z:\\Sys\\Bin\\FEATMGR.DLL"), FEATMGR_PATCH_INFOS, FEATMGR_PATCH_COUNT);
+            }
+
+            if (conf->enable_hw_gles1) {
+                disp->patch_libraries(guest_path(u"Z:\\Sys\\Bin\\libgles_cm.dll"), LIBGLES_CM_PATCH_INFOS, LIBGLES_CM_PATCH_COUNT);
+                disp->patch_libraries(guest_path(u"Z:\\Sys\\Bin\\libegl.dll"), LIBEGL_PATCH_INFOS, LIBEGL_PATCH_COUNT);
+                disp->patch_libraries(guest_path(u"Z:\\Sys\\Bin\\libglesv1_cm.dll"), LIBGLES_V1_CM_PATCH_INFOS, LIBGLES_V1_CM_PATCH_COUNT);
+                disp->patch_libraries(guest_path(u"Z:\\Sys\\Bin\\libglesv2.dll"), LIBGLESV2_PATCH_INFOS, LIBGLESV2_PATCH_COUNT);
             }
             
-            if (kern->get_epoc_version() >= epocver::epoc10) {
-                disp->patch_libraries(u"Z:\\Sys\\Bin\\libopenvg.dll", LIBOPENVG11_PATCH_INFOS, LIBOPENVG11_PATCH_COUNT);
-                disp->patch_libraries(u"Z:\\Sys\\Bin\\libopenvgu.dll", LIBOPENVGU11_PATCH_INFOS, LIBOPENVGU11_PATCH_COUNT);
+            if (kern->get_epoc_version() >= epocver::epoc95) {
+                disp->patch_libraries(guest_path(u"Z:\\Sys\\Bin\\libopenvg.dll"), LIBOPENVG11_PATCH_INFOS, LIBOPENVG11_PATCH_COUNT);
+                disp->patch_libraries(guest_path(u"Z:\\Sys\\Bin\\libopenvgu.dll"), LIBOPENVGU11_PATCH_INFOS, LIBOPENVGU11_PATCH_COUNT);
             }
         }
     }

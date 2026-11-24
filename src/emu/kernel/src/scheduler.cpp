@@ -75,9 +75,10 @@ namespace eka2l1::kernel {
             oldt->real_time_active_end();
             run_core->save_context(oldt->ctx);
 
+            // The remaining timeslice is kept, so a thread that never blocks still
+            // gets rotated behind its equal-priority peers once the slice runs out.
             if (oldt->state == thread_state::run) {
                 oldt->state = thread_state::ready;
-                oldt->time = oldt->timeslice;
             }
 
             oldt->decrease_access_count();
@@ -116,8 +117,9 @@ namespace eka2l1::kernel {
 
                 run_core->flush_tlb();
 
-                // NOTE: This is not needed now
-                //run_core->set_asid(mm_process->address_space_id());
+                // Let the core tag its translation cache with the new address
+                // space so blocks survive this switch instead of being discarded.
+                run_core->set_asid(mm_process->address_space_id());
             }
 
             run_core->load_context(crr_thread->ctx);
@@ -130,7 +132,6 @@ namespace eka2l1::kernel {
             if (kern->should_core_idle_when_inactive()) {
                 kern->unlock();
                 idle_event.wait();
-                idle_event.reset();
                 kern->lock();
             }
         }
@@ -164,26 +165,26 @@ namespace eka2l1::kernel {
         kernel::thread *next_thread = next_ready_thread();
 
         if (next_thread && next_thread->time == 0) {
-            // Restart the time
-            kernel::thread *old_friend = next_thread;
-            next_thread->time = next_thread->timeslice;
-
+            // A timeslice only yields to ready threads at the same priority.
             if (next_thread->scheduler_link.next != next_thread || next_thread->scheduler_link.previous != next_thread) {
+                next_thread->time = next_thread->timeslice;
                 // Move it to the end, and get the new thread next to it.
                 readys[next_thread->real_priority] = next_thread->scheduler_link.next;
                 next_thread = next_thread->scheduler_link.next;
-            } else {
-                // Deque the thread from ready queue in order to get the next highest priority and ready thread
-                dequeue_thread_from_ready(next_thread);
+            }
+        }
 
-                next_thread = next_ready_thread();
-                queue_thread_ready(old_friend);
+        // A ready thread can briefly outlive its process's memory model during a
+        // multi-step teardown. Drop the stale entries so switch_context receives a
+        // runnable thread with a valid address space.
+        while (next_thread) {
+            kernel::process *owner = next_thread->owning_process();
+            if (owner && owner->get_mem_model()) {
+                break;
             }
 
-            if (!next_thread && kern->should_core_idle_when_inactive()) {
-                // Use our old outdated friend, it seems only one thread exists
-                next_thread = old_friend;
-            }
+            dequeue_thread_from_ready(next_thread);
+            next_thread = next_ready_thread();
         }
 
         switch_context(crr_thread, next_thread);
@@ -281,6 +282,7 @@ namespace eka2l1::kernel {
 
             thr->state = thread_state::wait;
             dequeue_thread_from_ready(thr);
+            kern->prepare_reschedule();
         }
 
         // Schedule the thread to be waken up

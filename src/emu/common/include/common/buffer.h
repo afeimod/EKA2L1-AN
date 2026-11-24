@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <common/path_types.h>
 #include <common/algorithm.h>
 #include <common/platform.h>
 #include <common/fileutils.h>
@@ -48,6 +49,8 @@ namespace eka2l1 {
 
         class basic_stream {
         public:
+            virtual ~basic_stream() = default;
+
             virtual void seek(const std::int64_t amount, seek_where wh) = 0;
             virtual bool valid() = 0;
             virtual std::uint64_t left() = 0;
@@ -151,7 +154,9 @@ namespace eka2l1 {
             }
 
             uint64_t left() override {
-                return end - beg - crr_pos;
+                // seek() accepts a position past the end, where an unguarded subtraction would wrap.
+                const std::uint64_t total = static_cast<std::uint64_t>(end - beg);
+                return (crr_pos >= total) ? 0 : (total - crr_pos);
             }
 
             void seek(const std::int64_t amount, seek_where wh) override {
@@ -169,8 +174,7 @@ namespace eka2l1 {
             }
 
             std::uint64_t read(void *buf, const std::uint64_t read_size) override {
-                std::uint64_t actual_read_size = common::min(read_size,
-                    static_cast<std::uint64_t>(end - beg - crr_pos));
+                std::uint64_t actual_read_size = common::min(read_size, left());
 
                 if (actual_read_size == 0) {
                     return 0;
@@ -250,7 +254,8 @@ namespace eka2l1 {
             }
 
             uint64_t left() override {
-                return end - beg - crr_pos;
+                const std::uint64_t total = static_cast<std::uint64_t>(end - beg);
+                return (crr_pos >= total) ? 0 : (total - crr_pos);
             }
 
             void seek(const std::int64_t amount, seek_where wh) override {
@@ -287,7 +292,7 @@ namespace eka2l1 {
             mutable FILE *fi_;
 
         public:
-            explicit ro_std_file_stream(const std::string &path, const bool binary) {
+            explicit ro_std_file_stream(const host_path &path, const bool binary) {
                 fi_ = common::open_c_file(path, binary ? "rb" : "r");
             }
 
@@ -298,13 +303,14 @@ namespace eka2l1 {
             }
 
             bool valid() override {
-                return fi_ != nullptr;
+                return fi_;
             }
 
             std::uint64_t read(void *buf, const std::uint64_t read_size) override {
                 if (!fi_) {
                     return 0;
                 }
+
                 return fread(buf, 1, read_size, fi_);
             }
 
@@ -312,6 +318,7 @@ namespace eka2l1 {
                 if (!fi_) {
                     return;
                 }
+
                 int flags = 0;
                 switch (wh) {
                 case common::seek_where::beg: {
@@ -334,9 +341,6 @@ namespace eka2l1 {
             }
 
             std::uint64_t left() override {
-                if (!fi_) {
-                    return 0;
-                }
                 return size() - tell();
             }
 
@@ -344,6 +348,7 @@ namespace eka2l1 {
                 if (!fi_) {
                     return 0;
                 }
+
                 return ftell(fi_);
             }
 
@@ -351,6 +356,7 @@ namespace eka2l1 {
                 if (!fi_) {
                     return 0;
                 }
+
                 const std::uint64_t cur_pos = tell();
                 seek(0, common::end);
                 const std::uint64_t s = tell();
@@ -364,7 +370,7 @@ namespace eka2l1 {
             mutable FILE *fo_;
 
         public:
-            explicit wo_std_file_stream(const std::string &path, const bool binary)
+            explicit wo_std_file_stream(const host_path &path, const bool binary)
                 : fo_(nullptr) {
                 fo_ = common::open_c_file(path, binary ? "wb" : "w");
             }
@@ -401,23 +407,11 @@ namespace eka2l1 {
                     return;
                 }
 
-                int flags = SEEK_SET;
-                switch (wh) {
-                case common::seek_where::beg:
-                    flags = SEEK_SET;
-                    break;
-                case common::seek_where::cur:
-                    flags = SEEK_CUR;
-                    break;
-                default:
-                    flags = SEEK_END;
-                    break;
-                }
-                fseek(fo_, static_cast<long>(amount), flags);
+                fseek(fo_, static_cast<long>(amount), common::beg ? SEEK_SET : (common::cur ? SEEK_CUR : SEEK_END));
             }
 
             bool valid() override {
-                return fo_ != nullptr;
+                return fo_;
             }
 
             std::uint64_t left() override {

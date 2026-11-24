@@ -43,8 +43,6 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.RelativeLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
@@ -70,7 +68,6 @@ import com.github.eka2l1.util.FileUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -95,9 +92,10 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
     protected SeekBar sbScaleRatio;
     protected EditText etScaleRatioValue;
     protected Spinner spOrientation;
+    protected TextView tvScreenMode;
+    protected Spinner spScreenMode;
+    protected Spinner spScreenGravity;
     protected Spinner spScaleType;
-    protected CompoundButton cbScreenCustomLayout;
-    protected Button cmdEditScreenPosition;
     protected TextView tvUpscaleShader;
     protected Spinner spUpscaleShader;
 
@@ -113,33 +111,24 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
     private Spinner spVKType;
     private Spinner spButtonsShape;
     protected SeekBar sbVKAlpha;
-    protected TextView tvVKAlphaDefaultValue;
     protected EditText etVKHideDelay;
     protected EditText etVKFore;
     protected EditText etVKBack;
     protected EditText etVKSelFore;
     protected EditText etVKSelBack;
     protected EditText etVKOutline;
-    protected SeekBar sbVKForeAlpha;
-    protected SeekBar sbVKBackAlpha;
-    protected SeekBar sbVKSelForeAlpha;
-    protected SeekBar sbVKSelBackAlpha;
-    protected SeekBar sbVKOutlineAlpha;
-    protected TextView tvVKForeAlphaValue;
-    protected TextView tvVKBackAlphaValue;
-    protected TextView tvVKSelForeAlphaValue;
-    protected TextView tvVKSelBackAlphaValue;
-    protected TextView tvVKOutlineAlphaValue;
 
     private File keylayoutFile;
     private ProfileModel params;
     private boolean isProfile;
     private File configDir;
     private String defProfile;
+    private String deviceCode;
     private boolean needShow;
     private AppDataStore dataStore;
     private long uid;
     private boolean compatChanged;
+    private int loadedScreenMode = -1;
 
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
@@ -173,11 +162,12 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
             actionBar.setTitle(args.getString(KEY_APP_NAME));
             configDir = new File(Emulator.getConfigsDir(), uidStr);
             dataStore = AppDataStore.getAppStore(uidStr);
+            deviceCode = args.getString(KEY_DEVICE_CODE);
         }
         configDir.mkdirs();
 
         defProfile = AppDataStore.getAndroidStore().getString(PREF_DEFAULT_PROFILE, null);
-        params = ProfilesManager.loadConfigOrDefault(configDir, defProfile);
+        params = loadConfigOrDefault();
         if (!params.isNew && !needShow) {
             startApp();
             getParentFragmentManager().popBackStackImmediate();
@@ -204,48 +194,6 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
             public void onStopTrackingTouch(SeekBar seekBar) {
             }
         };
-    }
-
-    /**
-     * Listener that mirrors a SeekBar's progress (treated as 0..max, displayed
-     * as 0..100%) into a companion TextView. Used for the per-color alpha
-     * sliders where there is no EditText round-trip.
-     */
-    private SeekBar.OnSeekBarChangeListener getAlphaLabelSeekBarChangeListener(TextView label) {
-        return new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int max = seekBar.getMax();
-                if (max <= 0) max = 255;
-                int percent = Math.round(progress * 100f / max);
-                label.setText(getString(R.string.pref_opacity_percent, percent));
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-            }
-        };
-    }
-
-    /**
-     * Maps a stored alpha byte (0..255) onto the slider's 0..100 percent
-     * range so users see and tweak values as intuitive percentages.
-     */
-    private static int alphaToPercent(int alpha) {
-        if (alpha < 0) alpha = 0;
-        if (alpha > 255) alpha = 255;
-        return Math.round(alpha * 100f / 255f);
-    }
-
-    /** Inverse of {@link #alphaToPercent}. */
-    private static int percentToAlpha(int percent) {
-        if (percent < 0) percent = 0;
-        if (percent > 100) percent = 100;
-        return Math.round(percent * 255f / 100f);
     }
 
     private TextWatcher getConnectedTextWatcher(EditText edit, SeekBar seek) {
@@ -296,14 +244,15 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
 
         etScreenBack = view.findViewById(R.id.etScreenBack);
         cmdViewScreenBgImg = view.findViewById(R.id.cmdScreenViewBgImg);
+        spScreenGravity = view.findViewById(R.id.spScreenGravity);
         spScaleType = view.findViewById(R.id.spScaleType);
-        cbScreenCustomLayout = view.findViewById(R.id.cbScreenCustomLayout);
-        cmdEditScreenPosition = view.findViewById(R.id.cmdEditScreenPosition);
         sbBgImgOpacity = view.findViewById(R.id.sbScreenBgImgOpacity);
         etBgImgOpacityValue = view.findViewById(R.id.etScreenBgImgOpacityValue);
         sbScaleRatio = view.findViewById(R.id.sbScaleRatio);
         etScaleRatioValue = view.findViewById(R.id.etScaleRatioValue);
         spOrientation = view.findViewById(R.id.spOrientation);
+        tvScreenMode = view.findViewById(R.id.tvScreenMode);
+        spScreenMode = view.findViewById(R.id.spScreenMode);
         tvUpscaleShader = view.findViewById(R.id.tvUpscaleShader);
         spUpscaleShader = view.findViewById(R.id.spUpscaleShader);
         cbUseShaderForUpscale = view.findViewById(R.id.cbShouldUseShaderForUpscale);
@@ -319,23 +268,12 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         spVKType = view.findViewById(R.id.spVKType);
         spButtonsShape = view.findViewById(R.id.spButtonsShape);
         sbVKAlpha = view.findViewById(R.id.sbVKAlpha);
-        tvVKAlphaDefaultValue = view.findViewById(R.id.tvVKAlphaDefaultValue);
         etVKHideDelay = view.findViewById(R.id.etVKHideDelay);
         etVKFore = view.findViewById(R.id.etVKFore);
         etVKBack = view.findViewById(R.id.etVKBack);
         etVKSelFore = view.findViewById(R.id.etVKSelFore);
         etVKSelBack = view.findViewById(R.id.etVKSelBack);
         etVKOutline = view.findViewById(R.id.etVKOutline);
-        sbVKForeAlpha = view.findViewById(R.id.sbVKForeAlpha);
-        sbVKBackAlpha = view.findViewById(R.id.sbVKBackAlpha);
-        sbVKSelForeAlpha = view.findViewById(R.id.sbVKSelForeAlpha);
-        sbVKSelBackAlpha = view.findViewById(R.id.sbVKSelBackAlpha);
-        sbVKOutlineAlpha = view.findViewById(R.id.sbVKOutlineAlpha);
-        tvVKForeAlphaValue = view.findViewById(R.id.tvVKForeAlphaValue);
-        tvVKBackAlphaValue = view.findViewById(R.id.tvVKBackAlphaValue);
-        tvVKSelForeAlphaValue = view.findViewById(R.id.tvVKSelForeAlphaValue);
-        tvVKSelBackAlphaValue = view.findViewById(R.id.tvVKSelBackAlphaValue);
-        tvVKOutlineAlphaValue = view.findViewById(R.id.tvVKOutlineAlphaValue);
 
         view.findViewById(R.id.cmdScreenBack).setOnClickListener(this);
         view.findViewById(R.id.cmdScreenBgImg).setOnClickListener(this);
@@ -347,7 +285,6 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         view.findViewById(R.id.cmdVKSelFore).setOnClickListener(this);
         view.findViewById(R.id.cmdVKOutline).setOnClickListener(this);
         cmdViewScreenBgImg.setOnClickListener(this);
-        cmdEditScreenPosition.setOnClickListener(this);
 
         // Load shaders
         File upscaleShaderDir = new File(Emulator.getEmulatorDir() + "resources/upscale");
@@ -369,6 +306,17 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
                 upscaleShaderNames);
 
         spUpscaleShader.setAdapter(adapter);
+
+        // Entry 0 lets the app pick; entry i + 1 pins guest screen mode i.
+        List<String> screenModeNames = new ArrayList<>();
+        screenModeNames.add(getString(R.string.pref_guest_screen_mode_app));
+        int[] screenModeSizes = Emulator.getScreenModeSizes();
+        for (int i = 0; i + 1 < screenModeSizes.length; i += 2) {
+            screenModeNames.add(getString(R.string.pref_guest_screen_mode_entry_size, i / 2,
+                    screenModeSizes[i], screenModeSizes[i + 1]));
+        }
+        spScreenMode.setAdapter(new ArrayAdapter<>(getContext(),
+                android.R.layout.simple_spinner_dropdown_item, screenModeNames));
 
         etScreenRefreshRate.addTextChangedListener(new TextWatcher() {
             @Override
@@ -406,14 +354,6 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         sbScaleRatio.setOnSeekBarChangeListener(getConnectedWithEditTextSeekbarChangeListener(etScaleRatioValue));
         etScaleRatioValue.addTextChangedListener(getConnectedTextWatcher(etScaleRatioValue, sbScaleRatio));
 
-        // Each per-color alpha slider drives a TextView showing percent.
-        sbVKForeAlpha.setOnSeekBarChangeListener(getAlphaLabelSeekBarChangeListener(tvVKForeAlphaValue));
-        sbVKBackAlpha.setOnSeekBarChangeListener(getAlphaLabelSeekBarChangeListener(tvVKBackAlphaValue));
-        sbVKSelForeAlpha.setOnSeekBarChangeListener(getAlphaLabelSeekBarChangeListener(tvVKSelForeAlphaValue));
-        sbVKSelBackAlpha.setOnSeekBarChangeListener(getAlphaLabelSeekBarChangeListener(tvVKSelBackAlphaValue));
-        sbVKOutlineAlpha.setOnSeekBarChangeListener(getAlphaLabelSeekBarChangeListener(tvVKOutlineAlphaValue));
-        sbVKAlpha.setOnSeekBarChangeListener(getAlphaLabelSeekBarChangeListener(tvVKAlphaDefaultValue));
-
         cbShowNotch.setOnCheckedChangeListener((buttonView, isChecked) -> {
 
         });
@@ -428,6 +368,16 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
             }
 
             compatChanged = true;
+        });
+        spScreenMode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> adapterView, View view, int i, long l) {
+                if (i - 1 != loadedScreenMode) compatChanged = true;
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> adapterView) {
+            }
         });
         spUpscaleShader.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
@@ -481,6 +431,15 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         }
     }
 
+    // Show the keypad default the emulator will actually use, so saving untouched settings keeps it.
+    private ProfileModel loadConfigOrDefault() {
+        ProfileModel result = ProfilesManager.loadConfigOrDefault(configDir, defProfile);
+        if (!isProfile && ProfilesManager.hidesKeyboardByDefault(configDir, deviceCode)) {
+            result.showKeyboard = false;
+        }
+        return result;
+    }
+
     @Override
     public void onPause() {
         if (needShow && configDir != null) {
@@ -514,12 +473,23 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
     @SuppressLint("SetTextI18n")
     public void loadParams(boolean reloadFromFile) {
         if (reloadFromFile) {
-            params = ProfilesManager.loadConfigOrDefault(configDir, defProfile);
+            params = loadConfigOrDefault();
         }
         if (!isProfile) {
             etScreenRefreshRate.setText(dataStore.getString("fps", "60"));
             etSystemTimeDelay.setText(dataStore.getString("time-delay", "0"));
             cbShouldChildInherit.setChecked(dataStore.getBoolean("should-child-inherit-setting", true));
+
+            loadedScreenMode = parseInt(dataStore.getString("screen-mode", "-1"));
+            if (loadedScreenMode < -1) {
+                loadedScreenMode = -1;
+            }
+            // Keep a saved mode selectable even if the running device does not report it.
+            ArrayAdapter<String> screenModeAdapter = (ArrayAdapter<String>) spScreenMode.getAdapter();
+            while (loadedScreenMode + 1 >= screenModeAdapter.getCount()) {
+                screenModeAdapter.add(getString(R.string.pref_guest_screen_mode_entry, screenModeAdapter.getCount() - 1));
+            }
+            spScreenMode.setSelection(loadedScreenMode + 1);
 
             cbUseShaderForUpscale.setChecked(!dataStore.getString("screen-upscale-method", "0").equals("0"));
             if (!cbUseShaderForUpscale.isChecked()) {
@@ -544,6 +514,8 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         } else {
             tvUpscaleShader.setVisibility(View.GONE);
             spUpscaleShader.setVisibility(View.GONE);
+            tvScreenMode.setVisibility(View.GONE);
+            spScreenMode.setVisibility(View.GONE);
         }
 
         etScreenBack.setText(String.format("%06X", params.screenBackgroundColor));
@@ -552,7 +524,7 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         etScaleRatioValue.setText(Integer.toString(params.screenScaleRatio));
         spOrientation.setSelection(params.orientation);
         spScaleType.setSelection(params.screenScaleType);
-        cbScreenCustomLayout.setChecked(params.screenCustomLayout);
+        spScreenGravity.setSelection(params.screenGravity);
         cbShowNotch.setChecked(params.screenShowNotch);
         cbBgImgKeepAspectRatio.setChecked(params.screenBackgroundImageKeepAspectRatio);
 
@@ -570,8 +542,7 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
 
         spVKType.setSelection(params.vkType);
         spButtonsShape.setSelection(params.vkButtonShape);
-        sbVKAlpha.setProgress(alphaToPercent(params.vkAlpha));
-        tvVKAlphaDefaultValue.setText(getString(R.string.pref_opacity_percent, sbVKAlpha.getProgress()));
+        sbVKAlpha.setProgress(params.vkAlpha);
         int vkHideDelay = params.vkHideDelay;
         if (vkHideDelay > 0) {
             etVKHideDelay.setText(Integer.toString(vkHideDelay));
@@ -582,24 +553,6 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         etVKSelBack.setText(String.format("%06X", params.vkBgColorSelected));
         etVKSelFore.setText(String.format("%06X", params.vkFgColorSelected));
         etVKOutline.setText(String.format("%06X", params.vkOutlineColor));
-
-        // Per-color alpha sliders. Convert from 0..255 stored range into the
-        // 0..100 range the sliders expose, so the user sees a familiar percent.
-        sbVKForeAlpha.setProgress(alphaToPercent(params.getEffectiveFgAlpha()));
-        sbVKBackAlpha.setProgress(alphaToPercent(params.getEffectiveBgAlpha()));
-        sbVKSelForeAlpha.setProgress(alphaToPercent(params.getEffectiveFgAlphaSelected()));
-        sbVKSelBackAlpha.setProgress(alphaToPercent(params.getEffectiveBgAlphaSelected()));
-        sbVKOutlineAlpha.setProgress(alphaToPercent(params.getEffectiveOutlineAlpha()));
-        // SeekBar.setProgress doesn't fire the change listener, so mirror the
-        // percent into the label TextViews explicitly here.
-        tvVKForeAlphaValue.setText(getString(R.string.pref_opacity_percent, sbVKForeAlpha.getProgress()));
-        tvVKBackAlphaValue.setText(getString(R.string.pref_opacity_percent, sbVKBackAlpha.getProgress()));
-        tvVKSelForeAlphaValue.setText(getString(R.string.pref_opacity_percent, sbVKSelForeAlpha.getProgress()));
-        tvVKSelBackAlphaValue.setText(getString(R.string.pref_opacity_percent, sbVKSelBackAlpha.getProgress()));
-        tvVKOutlineAlphaValue.setText(getString(R.string.pref_opacity_percent, sbVKOutlineAlpha.getProgress()));
-        // Mirror the legacy global slider's initial value into its label.
-        tvVKAlphaDefaultValue.setText(getString(R.string.pref_opacity_percent,
-                alphaToPercent(params.vkAlpha)));
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             // Disable notch option on older version
@@ -616,7 +569,7 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
             params.screenBackgroundImageOpacity = sbBgImgOpacity.getProgress();
             params.screenScaleRatio = sbScaleRatio.getProgress();
             params.orientation = spOrientation.getSelectedItemPosition();
-            params.screenCustomLayout = cbScreenCustomLayout.isChecked();
+            params.screenGravity = spScreenGravity.getSelectedItemPosition();
             params.screenScaleType = spScaleType.getSelectedItemPosition();
             params.screenShowNotch = cbShowNotch.isChecked();
             params.screenBackgroundImageKeepAspectRatio = cbBgImgKeepAspectRatio.isChecked();
@@ -627,15 +580,8 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
 
             params.vkType = spVKType.getSelectedItemPosition();
             params.vkButtonShape = spButtonsShape.getSelectedItemPosition();
-            params.vkAlpha = percentToAlpha(sbVKAlpha.getProgress());
+            params.vkAlpha = sbVKAlpha.getProgress();
             params.vkHideDelay = parseInt(etVKHideDelay.getText().toString());
-            // Per-color alpha sliders: convert the displayed 0..100 percent
-            // back into a 0..255 alpha byte the emulator understands.
-            params.vkFgAlpha = percentToAlpha(sbVKForeAlpha.getProgress());
-            params.vkBgAlpha = percentToAlpha(sbVKBackAlpha.getProgress());
-            params.vkFgAlphaSelected = percentToAlpha(sbVKSelForeAlpha.getProgress());
-            params.vkBgAlphaSelected = percentToAlpha(sbVKSelBackAlpha.getProgress());
-            params.vkOutlineAlpha = percentToAlpha(sbVKOutlineAlpha.getProgress());
             try {
                 params.vkBgColor = Integer.parseInt(etVKBack.getText().toString(), 16);
             } catch (Exception ignored) {
@@ -662,6 +608,7 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
                 dataStore.putString("fps", etScreenRefreshRate.getText().toString());
                 dataStore.putString("time-delay", etSystemTimeDelay.getText().toString());
                 dataStore.putBoolean("should-child-inherit-setting", cbShouldChildInherit.isChecked());
+                dataStore.putString("screen-mode", Integer.toString(spScreenMode.getSelectedItemPosition() - 1));
                 dataStore.putString("screen-upscale-method", cbUseShaderForUpscale.isChecked() ? "1" : "0");
                 String toSaveFilterName = "Default";
                 if (spUpscaleShader.getSelectedItemPosition() != 0) {
@@ -755,10 +702,7 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
     public void onClick(View v) {
         int id = v.getId();
         if (id == R.id.cmdScreenBack) {
-            // Screen background color does not carry an alpha channel in this
-            // project (the native side expects 24-bit RGB), so we deliberately
-            // keep its picker untouched and don't route through showAlphaPicker.
-            showColorPicker(etScreenBack, null, null);
+            showColorPicker(etScreenBack);
         } else if (id == R.id.cmdScreenBgImg) {
             openBackgroundImageLauncher.launch(new String[]{ ".bmp", ".png", ".jpg", ".jpeg" });
         } else if (id == R.id.cmdScreenViewBgImg) {
@@ -766,15 +710,15 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
         } else if (id == R.id.cmdScreenClearBgImg) {
             clearBackgroundImage();
         } else if (id == R.id.cmdVKBack) {
-            showColorPicker(etVKBack, sbVKBackAlpha, tvVKBackAlphaValue);
+            showColorPicker(etVKBack);
         } else if (id == R.id.cmdVKFore) {
-            showColorPicker(etVKFore, sbVKForeAlpha, tvVKForeAlphaValue);
+            showColorPicker(etVKFore);
         } else if (id == R.id.cmdVKSelFore) {
-            showColorPicker(etVKSelFore, sbVKSelForeAlpha, tvVKSelForeAlphaValue);
+            showColorPicker(etVKSelFore);
         } else if (id == R.id.cmdVKSelBack) {
-            showColorPicker(etVKSelBack, sbVKSelBackAlpha, tvVKSelBackAlphaValue);
+            showColorPicker(etVKSelBack);
         } else if (id == R.id.cmdVKOutline) {
-            showColorPicker(etVKOutline, sbVKOutlineAlpha, tvVKOutlineAlphaValue);
+            showColorPicker(etVKOutline);
         } else if (id == R.id.cmdKeyMappings) {
             KeyMapperFragment keyMapperFragment = new KeyMapperFragment();
             Bundle args = new Bundle();
@@ -784,191 +728,24 @@ public class ConfigFragment extends Fragment implements View.OnClickListener {
                     .replace(R.id.container, keyMapperFragment)
                     .addToBackStack(null)
                     .commit();
-        } else if (id == R.id.cmdEditScreenPosition) {
-            // First, persist the current selection so the editor sees the
-            // exact same values we'd hand to the emulator. Then launch the
-            // free-form layout editor.
-            saveParams();
-            android.content.Intent intent = new android.content.Intent(getContext(),
-                    com.github.eka2l1.config.ScreenPositionActivity.class);
-            intent.putExtra(ScreenPositionActivity.EXTRA_CONFIG_DIR, configDir.getAbsolutePath());
-            startActivity(intent);
         }
     }
 
-    private void showColorPicker(EditText et, SeekBar alphaBar, TextView alphaLabel) {
-        // Build the AmbilWarnaDialog with supportsAlpha=true so the library
-        // exposes its internal HSV alpha controls and returns ARGB from
-        // getColor(). Initial color is (currentAlpha << 24) | currentRGB so
-        // re-opening the dialog preserves the user's last alpha choice.
-        int currentRgb;
-        try {
-            currentRgb = parseInt(et.getText().toString().trim(), 16) & 0xFFFFFF;
-        } catch (NumberFormatException ignored) {
-            currentRgb = 0;
-        }
-        int initialAlpha = alphaBar != null ? percentToAlpha(alphaBar.getProgress()) : 0xFF;
-        int initialColor = (initialAlpha << 24) | currentRgb;
-
+    private void showColorPicker(EditText et) {
         AmbilWarnaDialog.OnAmbilWarnaListener colorListener = new AmbilWarnaDialog.OnAmbilWarnaListener() {
             @Override
             public void onOk(AmbilWarnaDialog dialog, int color) {
-                int rgb = color & 0xFFFFFF;
-                int alpha = (color >>> 24) & 0xFF;
-                et.setText(String.format("%06X", rgb));
+                et.setText(String.format("%06X", color & 0xFFFFFF));
                 ColorDrawable drawable = (ColorDrawable) et.getCompoundDrawablesRelative()[2];
                 drawable.setColor(color);
-                if (alphaBar != null) {
-                    int percent = alphaToPercent(alpha);
-                    alphaBar.setProgress(percent);
-                    // alphaLabel is refreshed by the listener registered in
-                    // onViewCreated, but SeekBar.setProgress doesn't fire
-                    // listeners, so mirror the new value explicitly.
-                    if (alphaLabel != null) {
-                        alphaLabel.setText(getString(R.string.pref_opacity_percent, percent));
-                    }
-                }
             }
 
             @Override
             public void onCancel(AmbilWarnaDialog dialog) {
             }
         };
-
-        AmbilWarnaDialog dialog = new AmbilWarnaDialog(getContext(), initialColor, true, colorListener);
-
-        // Reach into the AlertDialog the library built and graft our alpha
-        // SeekBar under the (left arrow right) preview strip. This way the
-        // user gets RGB picking + alpha adjustment inside a single dialog,
-        // matching the layout they were used to before.
-        if (alphaBar != null) {
-            injectAlphaSeekBar(dialog, alphaBar);
-        }
-        dialog.show();
-    }
-
-    /**
-     * Adds a 0..100 percent alpha slider just below the preview strip of the
-     * given AmbilWarnaDialog. The slider drives the dialog's internal alpha
-     * channel via reflection (AmbilWarnaDialog.setAlpha is private in
-     * 2.0.1) so the alpha overlay swatch and the cursor stay in sync with
-     * what the user is picking.
-     */
-    private void injectAlphaSeekBar(AmbilWarnaDialog dialog, SeekBar sourceAlphaBar) {
-        // AmbilWarnaDialog.getDialog() returns android.app.AlertDialog, not
-        // the androidx flavor, so use the framework type here.
-        android.app.AlertDialog alertDialog = dialog.getDialog();
-        if (alertDialog == null) return;
-
-        // The library's id is private to its own R, and AGP 8.x's default
-        // nonTransitiveR keeps it out of the app R. Resolve it by name on
-        // the merged Resources instead.
-        int stateId = resolveAmbilWarnaId("ambilwarna_state");
-        if (stateId == 0) return;
-
-        View stateView = alertDialog.findViewById(stateId);
-        if (!(stateView instanceof ViewGroup)) return;
-        ViewGroup viewContainer = (ViewGroup) stateView.getParent();
-
-        SeekBar seek = new SeekBar(getContext());
-        seek.setMax(100);
-        seek.setProgress(sourceAlphaBar.getProgress());
-
-        // Wrap the slider in a horizontal LinearLayout together with a
-        // label and a live percent readout.
-        LinearLayout wrapper = new LinearLayout(getContext());
-        wrapper.setOrientation(LinearLayout.HORIZONTAL);
-        wrapper.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        int pad = (int) (8 * getResources().getDisplayMetrics().density);
-        wrapper.setPadding(pad, pad, pad, 0);
-
-        TextView label = new TextView(getContext());
-        label.setText(getString(R.string.pref_vk_alpha));
-        label.setTextColor(0xFFB2B2B2);
-        label.setTextSize(14f);
-
-        TextView value = new TextView(getContext());
-        value.setText(getString(R.string.pref_opacity_percent, sourceAlphaBar.getProgress()));
-        value.setTextColor(0xFFB2B2B2);
-        value.setTextSize(14f);
-        value.setMinWidth((int) (48 * getResources().getDisplayMetrics().density));
-        value.setGravity(android.view.Gravity.END);
-
-        LinearLayout.LayoutParams labelLp =
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        LinearLayout.LayoutParams seekLp =
-                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 3f);
-        LinearLayout.LayoutParams valueLp =
-                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-
-        wrapper.addView(label, labelLp);
-        wrapper.addView(seek, seekLp);
-        wrapper.addView(value, valueLp);
-
-        RelativeLayout.LayoutParams lp = new RelativeLayout.LayoutParams(
-                RelativeLayout.LayoutParams.MATCH_PARENT,
-                RelativeLayout.LayoutParams.WRAP_CONTENT);
-        // Below the state view; using the runtime id keeps us independent of
-        // the library R class.
-        lp.addRule(RelativeLayout.BELOW, stateView.getId());
-        lp.addRule(RelativeLayout.CENTER_HORIZONTAL);
-
-        viewContainer.addView(wrapper, lp);
-
-        // Cache the reflective setter so we don't pay the lookup cost on
-        // every progress change.
-        final Method setAlphaMethod = findAmbilWarnaMethod("setAlpha", int.class);
-
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
-                value.setText(getString(R.string.pref_opacity_percent, progress));
-                if (fromUser && setAlphaMethod != null) {
-                    // Push the new alpha into the AmbilWarnaDialog so its
-                    // overlay swatch and cursor stay in sync. setAlpha(int)
-                    // is package-private in 2.0.1, hence the reflection.
-                    try {
-                        setAlphaMethod.invoke(dialog, percentToAlpha(progress));
-                    } catch (ReflectiveOperationException ignored) {
-                        // If reflection ever fails (e.g. library update) the
-                        // worst case is the overlay doesn't preview alpha
-                        // live; the saved value is still correct on OK.
-                    }
-                }
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar sb) {}
-
-            @Override
-            public void onStopTrackingTouch(SeekBar sb) {}
-        });
-    }
-
-    /**
-     * Look up an id from the AmbilWarna library by name. The library ships
-     * its own R; AGP 8.x's default nonTransitiveR means those ids are not
-     * surfaced on the app's R class, so we resolve them by name instead.
-     * Returns 0 when the id cannot be found.
-     */
-    private int resolveAmbilWarnaId(String name) {
-        return getResources().getIdentifier(name, "id", "yuku.ambilwarna");
-    }
-
-    /**
-     * Reflectively find a method on AmbilWarnaDialog. Needed because the
-     * 2.0.1 jar declares several useful accessors ({@code setAlpha(int)},
-     * {@code getColor()}) as private, while the public API only exposes
-     * {@code getDialog()} and the OnAmbilWarnaListener callback.
-     */
-    private static Method findAmbilWarnaMethod(String name, Class<?>... paramTypes) {
-        try {
-            Method m = AmbilWarnaDialog.class.getDeclaredMethod(name, paramTypes);
-            m.setAccessible(true);
-            return m;
-        } catch (NoSuchMethodException e) {
-            return null;
-        }
+        int color = parseInt(et.getText().toString().trim(), 16);
+        new AmbilWarnaDialog(getContext(), color | 0xFF000000, colorListener).show();
     }
 
     private static class ColorTextWatcher implements TextWatcher {

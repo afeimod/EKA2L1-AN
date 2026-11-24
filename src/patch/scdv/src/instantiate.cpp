@@ -25,6 +25,7 @@
 
 #include "scdv/draw.h"
 #include "scdv/panic.h"
+#include "scdv/sv.h"
 
 #ifdef EKA2
 #include <hal.h>
@@ -70,6 +71,16 @@ CFbsDrawDevice *CFbsDrawDevice::NewBitmapDeviceL(const TSize &aSize, TDisplayMod
 
         break;
 
+    case EColor16MAPAlter:
+        newDevice = new (ELeave) CFbsTwentyfourBitAlphaDrawDevice;
+        CleanupStack::PushL(newDevice);
+        User::LeaveIfError(reinterpret_cast<CFbsTwentyfourBitAlphaDrawDevice *>(newDevice)->Construct(aSize, aDataStride));
+        reinterpret_cast<CFbsTwentyfourBitAlphaDrawDevice *>(newDevice)->SetPremultipliedAlphaMode();
+
+        LogOut(KScdvCat, _L("INFO:: A new 24 bit premultiplied alpha bitmap device has been instantiated!"));
+
+        break;
+
     case EColor16MUAlter:
         newDevice = new (ELeave) CFbsTwentyfourBitUnsignedByteDrawDevice;
         CleanupStack::PushL(newDevice);
@@ -92,9 +103,31 @@ CFbsDrawDevice *CFbsDrawDevice::NewBitmapDeviceL(TScreenInfo aInfo, TDisplayMode
     return NewBitmapDeviceL(aInfo.iScreenSize, aDispMode, aDataStride);
 }
 
+// Only 32-bit framebuffer rows are ever padded, and the narrower devices reject a stride
+// that is not a multiple of their pixel group, so leave those to work out their own.
+TInt ScreenDeviceDataStride(const TUint32 aScreenNo, const TDisplayMode aMode, const TSize &aSize) {
+    switch (aMode) {
+    case EColor16MUAlter:
+    case EColor16MAAlter:
+    case EColor16MAPAlter:
+        break;
+
+    default:
+        return -1;
+    }
+
+    const TInt rowBytes = GetScreenFramebufferRowBytes(6, aScreenNo, aMode);
+    if ((rowBytes < aSize.iWidth * 4) || (rowBytes % 4 != 0)) {
+        return -1;
+    }
+
+    return rowBytes;
+}
+
 static CFbsDrawDevice *InstantiateNewScreenDevice(const TUint32 aScreenNo, TAny *aAddress, const TSize aSize, const TDisplayMode aMode) {
     CFbsDrawDevice *device = NULL;
     const TUint16 wordModePaletteEntriesCount = 16;
+    const TInt dataStride = ScreenDeviceDataStride(aScreenNo, aMode, aSize);
 
     aAddress = reinterpret_cast<TUint8 *>(aAddress) + wordModePaletteEntriesCount * sizeof(TUint16);
 
@@ -120,7 +153,7 @@ static CFbsDrawDevice *InstantiateNewScreenDevice(const TUint32 aScreenNo, TAny 
     case EColor16MUAlter:
         device = new (ELeave) CFbsTwentyfourBitUnsignedByteScreenDrawDevice;
         CleanupStack::PushL(device);
-        User::LeaveIfError(reinterpret_cast<CFbsTwentyfourBitUnsignedByteScreenDrawDevice *>(device)->Construct(aScreenNo, aSize, -1));
+        User::LeaveIfError(reinterpret_cast<CFbsTwentyfourBitUnsignedByteScreenDrawDevice *>(device)->Construct(aScreenNo, aSize, dataStride));
 
         LogOut(KScdvCat, _L("INFO:: A new 24 bit unsigned byte screen device has been instantiated!"));
 
@@ -129,9 +162,19 @@ static CFbsDrawDevice *InstantiateNewScreenDevice(const TUint32 aScreenNo, TAny 
     case EColor16MAAlter:
         device = new (ELeave) CFbsTwentyfourBitAlphaScreenDrawDevice;
         CleanupStack::PushL(device);
-        User::LeaveIfError(reinterpret_cast<CFbsTwentyfourBitAlphaScreenDrawDevice *>(device)->Construct(aScreenNo, aSize, -1));
+        User::LeaveIfError(reinterpret_cast<CFbsTwentyfourBitAlphaScreenDrawDevice *>(device)->Construct(aScreenNo, aSize, dataStride));
 
         LogOut(KScdvCat, _L("INFO:: A new 24 bit alpha screen device has been instantiated!"));
+
+        break;
+
+    case EColor16MAPAlter:
+        device = new (ELeave) CFbsTwentyfourBitAlphaScreenDrawDevice;
+        CleanupStack::PushL(device);
+        User::LeaveIfError(reinterpret_cast<CFbsTwentyfourBitAlphaScreenDrawDevice *>(device)->Construct(aScreenNo, aSize, dataStride));
+        reinterpret_cast<CFbsTwentyfourBitAlphaScreenDrawDevice *>(device)->SetPremultipliedAlphaMode();
+
+        LogOut(KScdvCat, _L("INFO:: A new 24 bit premultiplied alpha screen device has been instantiated!"));
 
         break;
 

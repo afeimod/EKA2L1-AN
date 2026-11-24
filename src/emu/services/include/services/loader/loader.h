@@ -25,7 +25,12 @@
 #include <kernel/server.h>
 #include <utils/dll.h>
 
+#include <string>
+#include <vector>
+
 namespace eka2l1 {
+    std::vector<guest_path> get_library_search_paths(const std::u16string &search_list);
+
     const std::string get_loader_server_name_through_epocver(const epocver ver);
 
     class loader_server : public service::server {
@@ -58,6 +63,8 @@ namespace eka2l1 {
         void get_info(service::ipc_context &context);
 
         void load_logical_device(service::ipc_context &context);
+
+        void load_physical_device(service::ipc_context &context);
 
         void get_info_from_header(service::ipc_context &context);
 

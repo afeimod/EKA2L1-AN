@@ -57,7 +57,7 @@ namespace eka2l1::epoc {
     };
 
     dsa::~dsa() {
-        do_cancel();
+        do_cancel(true);
 
         if (sync_thread_) {
             sync_thread_->stop();
@@ -87,12 +87,13 @@ namespace eka2l1::epoc {
         std::uint32_t window_handle = 0;
 
         if (sync_thread_ && (cmd.header.cmd_len == 8)) {
-            // First integer looks like a sync status too. Probably for other side around.
-            // TODO: Use it.
+            // Early message-queue clients include a status word but complete it themselves.
             window_handle = *(reinterpret_cast<std::uint32_t *>(cmd.data_ptr) + 1);
 
-            dsa_must_stop_notify_.sts = *reinterpret_cast<address *>(cmd.data_ptr);
-            dsa_must_stop_notify_.requester = ctx.msg->own_thr;
+            if (client->protocol().legacy_dsa()) {
+                dsa_must_stop_notify_.sts = *reinterpret_cast<address *>(cmd.data_ptr);
+                dsa_must_stop_notify_.requester = ctx.msg->own_thr;
+            }
         } else {
             window_handle = *reinterpret_cast<std::uint32_t *>(cmd.data_ptr);
         }
@@ -157,7 +158,7 @@ namespace eka2l1::epoc {
 
         state_ = state_running;
 
-        if ((sync_thread_) && (client->client_version().build <= WS_OLDARCH_VER)) {
+        if (sync_thread_ && client->protocol().legacy_dsa_region()) {
             // Old DSA want 0
             ctx.complete(0);
         } else {
@@ -176,7 +177,7 @@ namespace eka2l1::epoc {
         }
     }
 
-    void dsa::do_cancel() {
+    void dsa::do_cancel(const bool complete_request) {
         state_ = state_completed;
 
         if (husband_) {
@@ -190,7 +191,13 @@ namespace eka2l1::epoc {
             sync_thread_->suspend();
         }
 
-        dsa_must_stop_notify_.complete(epoc::error_cancel);
+        if (complete_request) {
+            dsa_must_stop_notify_.complete(epoc::error_cancel);
+        } else {
+            // Newer ws32 clients complete their own cancellation; a second signal
+            // would wake CActiveScheduler without a ready active object.
+            dsa_must_stop_notify_.sts = 0;
+        }
     }
 
     void dsa::abort(const std::int32_t reason) {
@@ -203,7 +210,7 @@ namespace eka2l1::epoc {
             LOG_ERROR(SERVICE_WINDOW, "Unable to send abort message code {} to client", reason);
         }
 
-        do_cancel();
+        do_cancel(true);
     }
 
     void dsa::get_sync_info(service::ipc_context &ctx, ws_cmd &cmd) {
@@ -220,7 +227,8 @@ namespace eka2l1::epoc {
     }
 
     void dsa::cancel(eka2l1::service::ipc_context &ctx, eka2l1::ws_cmd &cmd) {
-        do_cancel();
+        // The old DSA protocol relies on the server to complete the pending request.
+        do_cancel(cmd.header.op == ws_dsa_old_cancel);
         ctx.complete(epoc::error_none);
     }
 
@@ -237,7 +245,7 @@ namespace eka2l1::epoc {
 
         kernel_system *kern = client->get_ws().get_kernel_system();
 
-        if (client->client_version().build <= WS_OLDARCH_VER || kern->get_epoc_version() <= epocver::epoc80) {
+        if (client->protocol().legacy_dsa()) {
             switch (op) {
             case ws_dsa_old_get_sync_thread:
                 get_sync_info(ctx, cmd);

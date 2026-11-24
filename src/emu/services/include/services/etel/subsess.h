@@ -50,6 +50,8 @@ namespace eka2l1 {
 
         etel_session *session_;
 
+        void dispatch_unhandled(service::ipc_context *ctx);
+
     public:
         explicit etel_subsession(etel_session *session, const etel_legacy_level lvl);
 
@@ -63,6 +65,8 @@ namespace eka2l1 {
         epoc::notify_info network_registration_status_change_nof_;
         epoc::notify_info signal_strength_change_nof_;
         epoc::notify_info current_network_change_nof_;
+        epoc::notify_info mode_change_nof_;
+        epoc::notify_info nitz_info_change_nof_;
         epoc::notify_info indicator_change_nof_;
         epoc::notify_info battery_info_change_nof_;
 
@@ -75,18 +79,28 @@ namespace eka2l1 {
         void get_indicator_caps(service::ipc_context *ctx);
         void get_indicator(service::ipc_context *ctx);
         void get_network_caps(service::ipc_context *ctx);
+        void get_current_mode(service::ipc_context *ctx);
+        void notify_mode_change(service::ipc_context *ctx);
+        void notify_mode_change_cancel(service::ipc_context *ctx);
         void get_network_registration_status(eka2l1::service::ipc_context *ctx);
         void get_home_network(eka2l1::service::ipc_context *ctx);
         void get_phone_id(eka2l1::service::ipc_context *ctx);
         void get_subscriber_id(eka2l1::service::ipc_context *ctx);
         void get_subscriber_id_old(eka2l1::service::ipc_context *ctx);
         void get_current_network(eka2l1::service::ipc_context *ctx);
+        void get_current_network_transition(eka2l1::service::ipc_context *ctx);
         void get_signal_strength(eka2l1::service::ipc_context *ctx);
         void get_battery_info(eka2l1::service::ipc_context *ctx);
         void notify_network_registration_status_change(eka2l1::service::ipc_context *ctx);
+        void notify_network_registration_status_change_cancel(eka2l1::service::ipc_context *ctx);
         void get_network_registration_status_cancel(eka2l1::service::ipc_context *ctx);
         void notify_signal_strength_change(eka2l1::service::ipc_context *ctx);
+        void notify_signal_strength_change_cancel(eka2l1::service::ipc_context *ctx);
         void notify_current_network_change(eka2l1::service::ipc_context *ctx);
+        void notify_current_network_change_cancel(eka2l1::service::ipc_context *ctx);
+        void get_nitz_info(eka2l1::service::ipc_context *ctx);
+        void notify_nitz_info_change(eka2l1::service::ipc_context *ctx);
+        void notify_nitz_info_change_cancel(eka2l1::service::ipc_context *ctx);
         void notify_indicator_change(eka2l1::service::ipc_context *ctx);
         void cancel_indicator_change(eka2l1::service::ipc_context *ctx);
         void get_current_network_cancel(eka2l1::service::ipc_context *ctx);

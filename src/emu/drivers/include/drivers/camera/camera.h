@@ -21,6 +21,7 @@
 
 #include <common/vecx.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 #include <functional>
@@ -43,6 +44,7 @@ namespace eka2l1::drivers::camera {
         FRAME_FORMAT_ARGB8888 = 0x08,
         FRAME_FORMAT_JPEG = 0x10,
         FRAME_FORMAT_EXIF = 0x20,
+        FRAME_FORMAT_FBSBMP_COLOR4K = 0x40,
         FRAME_FORMAT_FBSBMP_COLOR64K = 0x80,
         FRAME_FORMAT_FBSBMP_COLOR16M = 0x100,
         FRAME_FORMAT_YUV420_INTERLEAVED = 0x0400,
@@ -116,12 +118,18 @@ namespace eka2l1::drivers::camera {
         float max_digital_zoom_factor_ = 1.0f;
         std::int32_t num_image_sizes_supported_ = 0;
         std::uint32_t supported_image_formats_ = 0;
+        std::int32_t num_video_frame_sizes_supported_ = 0;
         std::int32_t num_video_frame_rates_supported_ = 0;
         std::uint32_t video_frame_format_supported_ = 0;
         std::int32_t max_frame_per_buffer_supported_ = 1;
         std::int32_t max_buffers_supported_ = 1;
     };
 #pragma pack(pop)
+
+    // The dispatcher copies this directly into the guest's TCameraInfo.
+    static_assert(sizeof(info) == 0x50);
+    static_assert(offsetof(info, num_video_frame_sizes_supported_) == 0x3C);
+    static_assert(offsetof(info, max_buffers_supported_) == 0x4C);
 
     class instance {
     public:

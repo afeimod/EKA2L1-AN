@@ -18,6 +18,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/path_types.h>
 #include <common/chunkyseri.h>
 #include <common/cvt.h>
 #include <common/fileutils.h>
@@ -33,6 +34,9 @@
 #include <package/sis_script_interpreter.h>
 #include <package/sis_v1_installer.h>
 #include <vfs/vfs.h>
+
+#include <algorithm>
+#include <cwctype>
 
 #include <fstream>
 #include <yaml-cpp/yaml.h>
@@ -51,36 +55,38 @@ namespace eka2l1 {
             , conf(conf) {
         }
 
-        static std::string get_bucket_stream_path(config::state *state, const uid package_uid) {
+        static host_path get_bucket_stream_path(config::state *state, const uid package_uid) {
             return add_path(state->storage, add_path(PACKAGE_FOLDER_PATH, common::to_string(package_uid, std::hex) + ".txt"));
         }
 
-        static std::u16string get_virtual_registry_parent_folder(const drive_number residing) {
-            return std::u16string(1, drive_to_char16(residing)) + u":" + package::REGISTRY_STORE_FOLDER;
+        static guest_path get_virtual_registry_parent_folder(const drive_number residing) {
+            return guest_path(std::u16string(1, drive_to_char16(residing)) + u":" + package::REGISTRY_STORE_FOLDER);
         }
 
-        static std::u16string get_virtual_registry_folder(const drive_number residing, const uid package_uid) {
+        static guest_path get_virtual_registry_folder(const drive_number residing, const uid package_uid) {
             std::u16string package_uid_folder = common::utf8_to_ucs2(fmt::format("{:08x}", package_uid)) + u"\\";
             return get_virtual_registry_parent_folder(residing) + package_uid_folder;
         }
 
-        static std::u16string get_virtual_registry_regfile(const drive_number residing, const uid package_uid, const std::uint32_t index) {
+        static guest_path get_virtual_registry_regfile(const drive_number residing, const uid package_uid, const std::uint32_t index) {
             return get_virtual_registry_folder(residing, package_uid) + fmt::format(package::REGISTRY_FILE_FORMAT, index);
         }
 
         void packages::install_sis_stubs() {
             static constexpr const char16_t *STUB_SIS_DIRECTORY = u"{}:\\system\\install\\";
 
-            for (drive_number drv = drive_z; drv >= drive_a; drv--) {
+            // Stepping one below drive_a would leave the enum's value range.
+            for (int drv_index = drive_z; drv_index >= drive_a; drv_index--) {
+                const drive_number drv = static_cast<drive_number>(drv_index);
                 if (sys->get_drive_entry(drv)) {
-                    const std::u16string stub_directory = fmt::format(STUB_SIS_DIRECTORY, drive_to_char16(drv));
+                    const guest_path stub_directory(fmt::format(STUB_SIS_DIRECTORY, drive_to_char16(drv)));
                     std::unique_ptr<directory> stub_dir_iterator = sys->open_dir(stub_directory, {}, io_attrib_include_file);
 
                     if (stub_dir_iterator) {
                         while (std::optional<entry_info> stub_file_info = stub_dir_iterator->get_next_entry()) {
-                            auto stub_file_real_path = sys->get_raw_path(common::utf8_to_ucs2(stub_file_info->full_path));
+                            auto stub_file_real_path = sys->get_raw_path(eka2l1::guest_path{common::utf8_to_ucs2(stub_file_info->full_path)});
                             if (stub_file_real_path.has_value()) {
-                                install_package(stub_file_real_path.value(), drv, nullptr, nullptr, true);
+                                install_package(eka2l1::host_path{stub_file_real_path.value()}, drv, nullptr, nullptr, true, true);
                             }
                         }
                     }
@@ -90,20 +96,22 @@ namespace eka2l1 {
 
         void packages::load_registries() {
             static constexpr const char16_t *STUB_CACHED_PATH_FORMAT = u"{}:\\stubcached";
-            const std::u16string stub_cached_path = fmt::format(STUB_CACHED_PATH_FORMAT, drive_to_char16(drive_z));
+            const guest_path stub_cached_path(fmt::format(STUB_CACHED_PATH_FORMAT, drive_to_char16(drive_z)));
 
-            std::unique_ptr<directory> registry_dir = sys->open_dir(get_virtual_registry_parent_folder(residing_), {}, io_attrib_include_dir);
+            objects_.clear();
+
+            std::unique_ptr<directory> registry_dir = sys->open_dir(eka2l1::guest_path{get_virtual_registry_parent_folder(residing_)}, {}, io_attrib_include_dir);
             if (!registry_dir) {
                 LOG_INFO(PACKAGE, "Registry folder is unavailable!");
             } else {
                 while (std::optional<entry_info> registry_folder_ent = registry_dir->get_next_entry()) {
                     if (registry_folder_ent->type == io_component_type::dir) {
-                        std::unique_ptr<directory> registry_package_dir = sys->open_dir(add_path(common::utf8_to_ucs2(registry_folder_ent->full_path), u"*.reg"), {},
+                        std::unique_ptr<directory> registry_package_dir = sys->open_dir(eka2l1::guest_path{add_path(common::utf8_to_ucs2(registry_folder_ent->full_path), u"*.reg")}, {},
                             io_attrib_include_file);
 
                         while (std::optional<entry_info> registry_package_ent = registry_package_dir->get_next_entry()) {
                             if (registry_package_ent->type == io_component_type::file) {
-                                const std::u16string final_reg_path = common::utf8_to_ucs2(registry_package_ent->full_path);
+                                const guest_path final_reg_path(common::utf8_to_ucs2(registry_package_ent->full_path));
                                 symfile registry_file = sys->open_file(final_reg_path, READ_MODE | BIN_MODE);
 
                                 if (registry_file) {
@@ -139,14 +147,14 @@ namespace eka2l1 {
                 // Life hacks sorry guys
                 auto stub_cached_real_path = sys->get_raw_path(stub_cached_path);
                 if (stub_cached_real_path.has_value()) {
-                    FILE *f = common::open_c_file(common::ucs2_to_utf8(stub_cached_real_path.value()), "wb+");
+                    FILE *f = common::open_c_file(eka2l1::host_path{common::ucs2_to_utf8(stub_cached_real_path.value())}, "wb+");
                     fclose(f);
                 }
             }
         }
 
         void packages::migrate_legacy_registries() {
-            const std::string app_registry_file_path = add_path(conf->storage, APP_REGISTRY_FILENAME);
+            const host_path app_registry_file_path = add_path(conf->storage, APP_REGISTRY_FILENAME);
             if (!common::exists(app_registry_file_path)) {
                 return;
             }
@@ -185,19 +193,19 @@ namespace eka2l1 {
                 obj.in_rom = false;
                 obj.supported_language_ids.push_back(static_cast<std::int32_t>(language::en));
 
-                const std::string bucket_path = get_bucket_stream_path(conf, obj.uid);
+                const host_path bucket_path = get_bucket_stream_path(conf, obj.uid);
                 if (common::exists(bucket_path)) {
-                    std::ifstream bucket_stream(bucket_path);
+                    std::ifstream bucket_stream(bucket_path.utf8());
                     std::string virtual_path;
 
                     while (std::getline(bucket_stream, virtual_path)) {
-                        std::optional<entry_info> finfo = sys->get_entry_info(common::utf8_to_ucs2(virtual_path));
+                        std::optional<entry_info> finfo = sys->get_entry_info(guest_path::from_utf8(virtual_path));
 
                         package::file_description desc;
                         desc.operation = static_cast<std::int32_t>(loader::ss_op::install);
                         desc.operation_options = 0;
                         desc.uncompressed_length = finfo->size;
-                        desc.target = common::utf8_to_ucs2(virtual_path);
+                        desc.target = guest_path::from_utf8(virtual_path);
                         desc.sid = 0;
                         desc.index = static_cast<std::int32_t>(obj.file_descriptions.size());
 
@@ -208,7 +216,7 @@ namespace eka2l1 {
                 add_package(obj, nullptr);
             }
 
-            common::delete_folder(add_path(conf->storage, std::string(PACKAGE_FOLDER_PATH) + get_separator()));
+            common::delete_folder(eka2l1::host_path{add_path(conf->storage, std::string(PACKAGE_FOLDER_PATH) + get_separator())});
             common::remove(app_registry_file_path);
         }
 
@@ -247,6 +255,20 @@ namespace eka2l1 {
             return results;
         }
 
+        package::object *packages::augmentation(const uid app_uid, const std::u16string &package_name,
+            const std::u16string &vendor_name) {
+            auto ite_range = objects_.equal_range(app_uid);
+            for (auto ite = ite_range.first; ite != ite_range.second; ite++) {
+                if ((ite->second.install_type == package::install_type_augmentations)
+                    && (common::compare_ignore_case(ite->second.package_name, package_name) == 0)
+                    && (common::compare_ignore_case(ite->second.vendor_name, vendor_name) == 0)) {
+                    return &(ite->second);
+                }
+            }
+
+            return nullptr;
+        }
+
         std::vector<package::object *> packages::dependents(const uid app_uid) {
             std::vector<package::object *> results;
 
@@ -272,7 +294,7 @@ namespace eka2l1 {
         bool packages::save_package(package::object &pkg) {
             bool result = true;
 
-            std::u16string residing_folder = get_virtual_registry_folder(residing_, pkg.uid);
+            guest_path residing_folder(get_virtual_registry_folder(residing_, pkg.uid));
             sys->create_directories(residing_folder);
 
             std::vector<std::uint8_t> serialized_object_buffer;
@@ -287,7 +309,7 @@ namespace eka2l1 {
 
             // Write this file out
             {
-                const std::u16string registry_path = add_path(residing_folder, fmt::format(package::REGISTRY_FILE_FORMAT, pkg.index));
+                const guest_path registry_path(add_path(residing_folder, fmt::format(package::REGISTRY_FILE_FORMAT, pkg.index)));
                 symfile registry_file = sys->open_file(registry_path, WRITE_MODE | BIN_MODE);
 
                 if (registry_file) {
@@ -353,27 +375,23 @@ namespace eka2l1 {
             }
             }
 
-            if (!pkg.controller_infos.empty() && no_new_package) {
-                // Find free index
+            if (no_new_package) {
+                // SisRegistry::GenerateCtlFile puts an upgrade's controller at
+                // NextSisControllerIndex(). The slot is looked for on disk because
+                // offsets older builds recorded were never initialised.
+                const guest_path folder(get_virtual_registry_folder(residing_, pkg.uid));
                 static constexpr std::int32_t MAX_INDEX = 100000;
-                for (std::size_t m = 0; m < pkg.controller_infos.size(); m++) {
-                    for (std::int32_t i = 0; i < MAX_INDEX; i++) {
-                        bool overlapped = false;
-                        for (const auto &controller_info : base_package->controller_infos) {
-                            if (controller_info.offset == i) {
-                                overlapped = true;
-                                break;
-                            }
-                        }
 
-                        if (!overlapped) {
-                            ctrl_offset = i;
-                            pkg.controller_infos[m].offset = i;
-
-                            break;
-                        }
+                for (std::int32_t i = 0; i < MAX_INDEX; i++) {
+                    if (!sys->exist(eka2l1::guest_path{add_path(folder, fmt::format(package::CONTROLLER_FILE_FORMAT, base_package->index, i))})) {
+                        ctrl_offset = i;
+                        break;
                     }
                 }
+            }
+
+            for (package::controller_info &info : pkg.controller_infos) {
+                info.offset = ctrl_offset;
             }
 
             if (no_new_package) {
@@ -410,8 +428,8 @@ namespace eka2l1 {
             }
 
             if (controller_info) {
-                const std::u16string residing_folder = get_virtual_registry_folder(residing_, pkg.uid);
-                const std::u16string controller_path = add_path(residing_folder, fmt::format(package::CONTROLLER_FILE_FORMAT, base_package->index, ctrl_offset));
+                const guest_path residing_folder(get_virtual_registry_folder(residing_, pkg.uid));
+                const guest_path controller_path(add_path(residing_folder, fmt::format(package::CONTROLLER_FILE_FORMAT, base_package->index, ctrl_offset)));
 
                 symfile controller_file = sys->open_file(controller_path, WRITE_MODE | BIN_MODE);
 
@@ -452,13 +470,18 @@ namespace eka2l1 {
                 return false;
             }
 
+            // pkg normally references the object held in objects_, which the erase
+            // below destroys. Copy what is still needed after that point.
+            const uid pkg_uid = pkg.uid;
+            const std::int32_t pkg_index = pkg.index;
+
             // Delete registry file
-            const std::u16string vpath = get_virtual_registry_regfile(residing_, pkg.uid, pkg.index);
+            sys->delete_entry(eka2l1::guest_path{get_virtual_registry_regfile(residing_, pkg_uid, pkg_index)});
 
             // Delete associated controllers
             for (std::size_t i = 0; i < pkg.controller_infos.size(); i++) {
-                const std::u16string ctrl_path = add_path(get_virtual_registry_folder(residing_, pkg.uid),
-                    fmt::format(package::CONTROLLER_FILE_FORMAT, pkg.index, pkg.controller_infos[i].offset));
+                const guest_path ctrl_path = add_path(get_virtual_registry_folder(residing_, pkg_uid),
+                    fmt::format(package::CONTROLLER_FILE_FORMAT, pkg_index, pkg.controller_infos[i].offset));
 
                 sys->delete_entry(ctrl_path);
             }
@@ -466,14 +489,47 @@ namespace eka2l1 {
             // Remove the object
             objects_.erase(pkg_ite);
 
-            if (objects_.find(pkg.uid) == objects_.end()) {
-                std::u16string the_reg_path = get_virtual_registry_folder(residing_, pkg.uid);
-                if (std::optional<std::u16string> real_reg_path = sys->get_raw_path(the_reg_path)) {
-                    common::delete_folder(common::ucs2_to_utf8(real_reg_path.value()));
+            if (objects_.find(pkg_uid) == objects_.end()) {
+                guest_path the_reg_path(get_virtual_registry_folder(residing_, pkg_uid));
+                if (std::optional<host_path> real_reg_path = sys->get_raw_path(the_reg_path)) {
+                    common::delete_folder(eka2l1::host_path{common::ucs2_to_utf8(real_reg_path.value())});
                 }
             }
 
             return true;
+        }
+
+        // Whether a file description names a file the package installed. FILENULL
+        // (null) names one the package only deletes when it is uninstalled, and a
+        // text prompt (text) names no file at all.
+        static bool describes_installed_file(const package::file_description &desc) {
+            return (desc.operation == static_cast<int>(loader::ss_op::install))
+                || (desc.operation == static_cast<int>(loader::ss_op::undefined));
+        }
+
+        // Whether the file belongs to the ROM, which no uninstall may touch.
+        static bool is_rom_target(const guest_path &target) {
+            return !target.empty() && (std::towlower(target[0]) == std::towlower(drive_to_char16(drive_z)));
+        }
+
+        // The data directory an executable with this secure ID owns on a given
+        // drive: "<drive>:\private\<sid>\".
+        static guest_path private_directory_of(const epoc::uid sid, const drive_number drive) {
+            return guest_path(std::u16string(1, drive_to_char16(drive)) + common::utf8_to_ucs2(fmt::format(":\\private\\{:08x}\\", sid)));
+        }
+
+        void packages::remove_private_directories(const epoc::uid sid) {
+            for (drive_number drv = drive_a; drv < drive_z; drv++) {
+                std::optional<drive> drive_entry = sys->get_drive_entry(drv);
+                if (!drive_entry || (drive_entry->attribute & io_attrib_write_protected)) {
+                    continue;
+                }
+
+                const guest_path private_path(private_directory_of(sid, drv));
+                if (std::optional<host_path> real_path = sys->get_raw_path(private_path)) {
+                    common::delete_folder(eka2l1::host_path{common::ucs2_to_utf8(real_path.value())});
+                }
+            }
         }
 
         bool packages::uninstall_package(package::object &pkg) {
@@ -493,14 +549,76 @@ namespace eka2l1 {
                 return false;
             }
 
-            // Delete files as requested by objects
-            for (const package::file_description &desc : pkg.file_descriptions) {
-                if ((desc.operation == static_cast<int>(loader::ss_op::install)) || (desc.operation == static_cast<int>(loader::ss_op::null))) {
-                    sys->delete_entry(desc.target);
+            // A package in ROM, or one that declares itself non-removable, is not ours
+            // to take apart: CPlanner::UninstallPackageL leaves with KErrNotSupported
+            // for both. Removing the registration alone would also just have the ROM
+            // stub register the package again on the next boot.
+            if (pkg.in_rom || !pkg.is_removable) {
+                LOG_ERROR(PACKAGE, "Refusing to uninstall package 0x{:X}: it is {}", pkg.uid,
+                    pkg.in_rom ? "in ROM" : "marked non-removable");
+                return false;
+            }
+
+            // Uninstalling a package uninstalls what it embedded, the way
+            // CPlanner::DoStateProcessEmbeddedL recurses into them. Note them down
+            // before touching the registry: removing an entry erases it from
+            // objects_, where pkg itself lives too.
+            std::vector<std::pair<uid, std::int32_t>> embedded;
+            for (const package::package &embed : pkg.embedded_packages) {
+                if (embed.uid != pkg.uid) {
+                    embedded.emplace_back(embed.uid, embed.index);
                 }
             }
 
-            return remove_registeration(pkg);
+            // Delete the files the package brought, plus the ones it declared only to
+            // delete now (FILENULL). Files in ROM are left alone.
+            std::vector<epoc::uid> sids_removed;
+
+            for (const package::file_description &desc : pkg.file_descriptions) {
+                if (!describes_installed_file(desc) && (desc.operation != static_cast<int>(loader::ss_op::null))) {
+                    continue;
+                }
+
+                if (is_rom_target(desc.target)) {
+                    continue;
+                }
+
+                if (!package::is_valid_target_path(desc.target.utf16())) {
+                    LOG_ERROR(PACKAGE, "Package 0x{:X} claims an invalid target, not removing: {}", pkg.uid,
+                        common::ucs2_to_utf8(desc.target));
+                    continue;
+                }
+
+                sys->delete_entry(eka2l1::guest_path{desc.target});
+
+                // An executable takes its private directory with it, unless it only
+                // eclipsed a ROM executable of the same name: that one is still there
+                // and still owns the directory. DoStateRemovePrivateDirectoriesL
+                // makes the same exception.
+                if (desc.sid) {
+                    guest_path rom_twin(desc.target);
+                    rom_twin.replace(0, 1, std::u16string(1, drive_to_char16(drive_z)));
+
+                    if (!sys->exist(rom_twin)
+                        && (std::find(sids_removed.begin(), sids_removed.end(), desc.sid) == sids_removed.end())) {
+                        sids_removed.push_back(desc.sid);
+                    }
+                }
+            }
+
+            for (const epoc::uid sid : sids_removed) {
+                remove_private_directories(sid);
+            }
+
+            const bool result = remove_registeration(pkg);
+
+            for (const auto &[embed_uid, embed_index] : embedded) {
+                if (package::object *embed_obj = package(embed_uid, embed_index)) {
+                    uninstall_package(*embed_obj);
+                }
+            }
+
+            return result;
         }
 
         bool packages::installed(uid app_uid) {
@@ -516,12 +634,52 @@ namespace eka2l1 {
             return false;
         }
 
+        void packages::remove_stale_files(package::object &installed, const package::object &replacement) {
+            for (const package::file_description &desc : installed.file_descriptions) {
+                if (!describes_installed_file(desc) || is_rom_target(desc.target)
+                    || !package::is_valid_target_path(desc.target.utf16())) {
+                    continue;
+                }
+
+                bool still_owned = false;
+                for (const package::file_description &new_desc : replacement.file_descriptions) {
+                    if (new_desc.target == desc.target) {
+                        still_owned = true;
+                        break;
+                    }
+                }
+
+                if (!still_owned) {
+                    sys->delete_entry(eka2l1::guest_path{desc.target});
+                }
+            }
+        }
+
         void packages::traverse_tree_and_add_packages(loader::sis_registry_tree &tree) {
-            // TODO: We should ask for user permission first! This is also not correct
-            // Just remove that registeration, not the files...
-            if (installed(tree.package_info.uid)) {
-                package::object *obj = package(tree.package_info.uid);
-                remove_registeration(*obj);
+            // TODO: We should ask for user permission first!
+            // Installer::UninstallPkg draws these lines; a partial upgrade displaces
+            // nothing at all.
+            package::object *displaced = nullptr;
+
+            switch (tree.package_info.install_type) {
+            case package::install_type_normal_install:
+                displaced = installed(tree.package_info.uid) ? package(tree.package_info.uid) : nullptr;
+                break;
+
+            case package::install_type_augmentations:
+                displaced = augmentation(tree.package_info.uid, tree.package_info.package_name,
+                    tree.package_info.vendor_name);
+                break;
+
+            default:
+                break;
+            }
+
+            if (displaced) {
+                // The new files are already on disk here, so dropping the old file list
+                // wholesale would take them with it.
+                remove_stale_files(*displaced, tree.package_info);
+                remove_registeration(*displaced);
             }
 
             add_package(tree.package_info, &tree.controller_binary);
@@ -530,16 +688,78 @@ namespace eka2l1 {
             }
         }
 
-        package::installation_result packages::install_package(const std::u16string &path, const drive_number drive, progress_changed_callback progress_cb, cancel_requested_callback cancel_cb, const bool silent) {
-            std::optional<loader::sis_type> sis_ver = loader::identify_sis_type(common::ucs2_to_utf8(path));
+package::object *packages::package_owning_executable(const uid secure_id) {
+            if (!secure_id) {
+                return nullptr;
+            }
+
+            for (auto &[pkg_uid, obj] : objects_) {
+                for (const package::file_description &desc : obj.file_descriptions) {
+                    if (desc.sid == secure_id) {
+                        return &obj;
+                    }
+                }
+            }
+
+            return nullptr;
+        }
+
+        package::object *packages::package_owning_file(const guest_path &file_path) {
+            if (file_path.empty()) {
+                return nullptr;
+            }
+
+            for (auto &[pkg_uid, obj] : objects_) {
+                for (const package::file_description &desc : obj.file_descriptions) {
+                    if (desc.target == file_path) {
+                        return &obj;
+                    }
+                }
+            }
+
+            // No exact hit. The directory a caller knows an app binary by does not
+            // have to be the one the package installed it to: applist rebuilds an
+            // app path from the registration as <drive>:\system\programs\<name>.exe
+            // (or <drive>:\<name>.exe), while the package holds the real
+            // <drive>:\sys\bin\<name>.exe. Fall back to the drive and file name,
+            // and only answer when exactly one package claims that name — sharing
+            // it means the file alone cannot say who owns the app.
+            const guest_path filename(eka2l1::filename(file_path));
+            if (filename.empty() || (file_path.length() < 2) || (file_path[1] != u':')) {
+                return nullptr;
+            }
+
+            package::object *only_match = nullptr;
+
+            for (auto &[pkg_uid, obj] : objects_) {
+                for (const package::file_description &desc : obj.file_descriptions) {
+                    if (desc.target.empty() || (std::towlower(desc.target[0]) != std::towlower(file_path[0]))
+                        || (guest_path(eka2l1::filename(desc.target)) != filename)) {
+                        continue;
+                    }
+
+                    if (only_match && (only_match != &obj)) {
+                        return nullptr;
+                    }
+
+                    only_match = &obj;
+                    break;
+                }
+            }
+
+            return only_match;
+        }
+
+        package::installation_result packages::install_package(const host_path &path, const drive_number drive, progress_changed_callback progress_cb, cancel_requested_callback cancel_cb, const bool silent, const bool as_stub) {
+            std::optional<loader::sis_type> sis_ver = loader::identify_sis_type(path);
 
             if (!sis_ver) {
                 return package::installation_result_invalid;
             }
 
             if (sis_ver.value() != loader::sis_type_old) {
-                loader::sis_contents res = loader::parse_sis(common::ucs2_to_utf8(path), sis_ver == loader::sis_type_new_stub);
-                common::ro_std_file_stream stream(common::ucs2_to_utf8(path), true);
+                loader::sis_contents res = loader::parse_sis(path, sis_ver == loader::sis_type_new_stub);
+                common::ro_std_file_stream stream(eka2l1::host_path{common::ucs2_to_utf8(path)}, true);
 
                 // Interpret the file
                 loader::ss_interpreter interpreter(reinterpret_cast<common::ro_stream *>(&stream), sys, this, &res.controller, &res.data, drive);
@@ -563,7 +783,7 @@ namespace eka2l1 {
                     traverse_tree_and_add_packages(*new_infos);
 
                     for (const auto &another_path : interpreter.extra_sis_files()) {
-                        install_package(another_path, drive, progress_cb, cancel_cb);
+                        install_package(eka2l1::host_path{another_path}, drive, progress_cb, cancel_cb);
                     }
                 } else {
                     return package::installation_result_aborted;
@@ -573,7 +793,7 @@ namespace eka2l1 {
                 final_obj.file_major_version = 5;
                 final_obj.file_minor_version = 4;
 
-                if (!loader::install_sis_old(path, sys, drive, final_obj, choose_lang, var_resolver, progress_cb, cancel_cb)) {
+                if (!loader::install_sis_old(path, sys, drive, final_obj, choose_lang, var_resolver, progress_cb, cancel_cb, as_stub)) {
                     return package::installation_result_invalid;
                 }
 
@@ -586,8 +806,8 @@ namespace eka2l1 {
 
         bool packages::controller(const uid app_uid, const std::uint32_t package_index, const std::uint32_t controller_offset,
             loader::sis_controller &controller_output) {
-            const std::u16string residing_folder = get_virtual_registry_folder(residing_, app_uid);
-            const std::u16string controller_path = add_path(residing_folder, fmt::format(package::CONTROLLER_FILE_FORMAT, package_index, controller_offset));
+            const guest_path residing_folder(get_virtual_registry_folder(residing_, app_uid));
+            const guest_path controller_path(add_path(residing_folder, fmt::format(package::CONTROLLER_FILE_FORMAT, package_index, controller_offset)));
 
             if (!sys->exist(controller_path)) {
                 return false;

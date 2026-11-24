@@ -19,6 +19,7 @@
  */
 #pragma once
 
+#include <common/path_types.h>
 #include <kernel/btrace.h>
 #include <kernel/change_notifier.h>
 #include <kernel/chunk.h>
@@ -266,6 +267,22 @@ namespace eka2l1 {
      */
     using guomen_process_run_callback = std::function<bool(kernel::process *)>;
 
+    /**
+     * @brief Callback invoked when a process has exited, no matter if it exited on its own,
+     *        was killed by the host, or panicked.
+     *
+     * HLE state that a process owns but that the kernel does not know about (dispatcher
+     * objects for example) is normally freed by the guest destructors. Those never run when
+     * the process is killed or panics, so this callback is the only chance to release it.
+     *
+     * @param process       Pointer to the process that has just exited.
+     *
+     * @remark Handlers may run with the kernel lock held (host-initiated kills take it), so
+     *         they must not block on anything that in turn needs the kernel lock. Defer that
+     *         work instead of doing it inline.
+     */
+    using process_exit_callback = std::function<void(kernel::process *)>;
+
     struct kernel_global_data {
         kernel::char_set char_set_;
 
@@ -322,6 +339,7 @@ namespace eka2l1 {
 
         mutable std::atomic<kernel::uid> uid_counter_;
         void *rom_map_;
+        std::size_t rom_map_size_;
 
         std::uint64_t base_time_;
         std::uint32_t cpu_hz_;
@@ -345,6 +363,7 @@ namespace eka2l1 {
         common::identity_container<ldd_factory_request_callback> ldd_factory_req_callback_funcs_;
         common::identity_container<uid_of_process_change_callback> uid_of_process_callback_funcs_;
         common::identity_container<guomen_process_run_callback> guomen_process_run_callback_funcs_;
+        common::identity_container<process_exit_callback> process_exit_callback_funcs_;
 
         std::unique_ptr<arm::arm_analyser> analyser_;
 
@@ -364,6 +383,9 @@ namespace eka2l1 {
         address exception_handler_guard_;
 
         bool wiping_;
+        std::vector<std::pair<guest_path, bool>> queued_boot_servers_;
+        kernel::uid starting_boot_server_ = 0;
+        std::vector<kernel::uid> processes_awaiting_boot_;
 
         config::panic_blacklist panic_blacklist_;
 
@@ -403,6 +425,7 @@ namespace eka2l1 {
         void run_codeseg_loaded_callback(const std::string &lib_name, kernel::process *attacher, codeseg_ptr target);
         void run_imb_range_callback(kernel::process *caller, address range_addr, const std::size_t range_size);
         void run_uid_of_process_change_callback(kernel::process *aff, kernel::process_uid_type type);
+        void call_process_exit_callbacks(kernel::process *pr);
         bool handle_guomen_process_run(kernel::process *guomen_process);
 
         std::size_t register_ipc_send_callback(ipc_send_callback callback);
@@ -415,6 +438,7 @@ namespace eka2l1 {
         std::size_t register_ldd_factory_request_callback(ldd_factory_request_callback callback);
         std::size_t register_uid_process_change_callback(uid_of_process_change_callback callback);
         std::size_t register_guomen_process_run_callback(guomen_process_run_callback callback);
+        std::size_t register_process_exit_callback(process_exit_callback callback);
 
         bool unregister_codeseg_loaded_callback(const std::size_t handle);
         bool unregister_ipc_send_callback(const std::size_t handle);
@@ -426,6 +450,7 @@ namespace eka2l1 {
         bool unregister_ldd_factory_request_callback(const std::size_t handle);
         bool unregister_uid_of_process_change_callback(const std::size_t handle);
         bool unregister_guomen_process_run_callback(const std::size_t handle);
+        bool unregister_process_exit_callback(const std::size_t handle);
 
         ldd::factory_instantiate_func suitable_ldd_instantiate_func(const char *name);
 
@@ -482,9 +507,16 @@ namespace eka2l1 {
         kernel::thread *crr_thread();
         kernel::process *crr_process();
 
-        process_ptr spawn_new_process(const std::u16string &path,
+        process_ptr spawn_new_process(const guest_path &path,
             const std::u16string &cmd_arg = u"", const kernel::uid promised_uid3 = 0,
-            const std::uint32_t stack_size = 0);
+            const std::uint32_t stack_size = 0, int *error = nullptr);
+
+        // Starts a server the device's own startup sequence launches before any application, after the previous one settles.
+        bool start_boot_server(const guest_path &path, const bool wait_for_start = true);
+
+        // Runs the process once every boot server has rendezvoused or died; at once when none is pending.
+        bool run_after_boot_servers(process_ptr pr);
+        void boot_server_settled(kernel::process *server_process);
 
         bool should_terminate();
         void do_state(common::chunkyseri &seri);
@@ -494,7 +526,11 @@ namespace eka2l1 {
 
         codeseg_ptr pull_codeseg_by_ep(const address ep);
 
-        bool map_rom(const mem::vm_address addr, const std::string &path);
+        bool map_rom(const mem::vm_address addr, const host_path &path);
+        void unmap_rom();
+
+        bool is_address_in_rom(const address addr) const;
+
         bool should_panic_be_blocked(kernel::thread *thr, const std::string &category, const std::int32_t code);
 
         epocver get_epoc_version() const {
@@ -588,6 +624,32 @@ namespace eka2l1 {
             return threads_;
         }
 
+        // True while wipeout() is tearing the whole kernel down. Completion/scheduling
+        // work should be skipped then: the scheduler and threads are being destroyed, so
+        // signalling or rescheduling a thread would touch state that is already gone.
+        bool is_wiping() const {
+            return wiping_;
+        }
+
+        // Whether the given raw thread pointer still refers to a live kernel thread.
+        // A destroyed thread is erased from threads_, so a stale pointer will not match.
+        // Used to guard completions (property subscriptions, audio callbacks, ...) against
+        // a requester thread that has already exited. Must be called on the HLE thread or
+        // otherwise under the kernel lock, since it walks the thread list.
+        bool is_thread_alive(kernel::thread *thr) {
+            if (!thr) {
+                return false;
+            }
+
+            for (const auto &candidate : threads_) {
+                if (candidate.get() == reinterpret_cast<kernel::kernel_obj *>(thr)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         std::vector<kernel_obj_unq_ptr> &get_codeseg_list() {
             return codesegs_;
         }
@@ -610,14 +672,16 @@ namespace eka2l1 {
         }
 
         template <typename T>
-        T *get_by_name_and_type(const std::string &name, const kernel::object_type obj_type) {
+        T *get_by_name_and_type(const std::string &name, const kernel::object_type obj_type, const bool ignore_case = false) {
             switch (obj_type) {
 #define OBJECT_SEARCH(obj_type, obj_map)                                               \
     case kernel::object_type::obj_type: {                                              \
         auto res = std::find_if(obj_map.begin(), obj_map.end(), [&](const auto &rhs) { \
             std::string the_full_name;                                                 \
             rhs->full_name(the_full_name);                                             \
-            return the_full_name == name;                                              \
+            return ignore_case                                                        \
+                ? common::compare_ignore_case(the_full_name.c_str(), name.c_str()) == 0  \
+                : the_full_name == name;                                               \
         });                                                                            \
         if (res == obj_map.end())                                                      \
             return nullptr;                                                            \
@@ -791,6 +855,12 @@ namespace eka2l1 {
         // Lock the kernel
         void lock() {
             kern_lock_.lock();
+        }
+
+        // Host callbacks that run on real-time threads must never block on
+        // the emulated kernel. Callers can retry their notification later.
+        bool try_lock() {
+            return kern_lock_.try_lock();
         }
 
         // Unlock the kernel

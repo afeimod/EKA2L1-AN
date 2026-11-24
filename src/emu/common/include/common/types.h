@@ -64,11 +64,13 @@ enum class epocver {
     eka1, ///< Mark for EKA1
     epocu6,
     epoc6,     ///< S60v1
-    epoc7,
+    epoc70,    ///< Symbian OS 7.0 (UIQ 2.x), before the 7.0s IPC transition
+    epoc7,     ///< Symbian OS 7.0s
     epoc80,
     epoc81a,
     eka2,      ///< Mark for EKA2
     epoc81b,
+    epoc91,    ///< S60v3 initial (Symbian OS 9.1)
     epoc93fp1, ///< S60v3 Feature pack 1
     epoc93fp2, ///< S60v3 Feature pack 2
     epoc94,    ///< S60v5
@@ -154,7 +156,8 @@ enum class arm_emulator_type {
     unicorn = 0,
     dynarmic = 1,
     r12l1 = 2,
-    dyncom = 3
+    dyncom = 3,
+    ekalynx = 5
 };
 
 typedef std::uint32_t vaddress;

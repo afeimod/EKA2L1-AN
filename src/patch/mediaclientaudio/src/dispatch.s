@@ -38,12 +38,17 @@
 .global EAudioPlayerSetRepeats
 .global EAudioPlayerDestroy
 .global EAudioPlayerGetDestinationSampleRate
+.global EAudioPlayerRecord
 .global EAudioPlayerSetDestinationSampleRate
 .global EAudioPlayerGetDestinationChannelCount
 .global EAudioPlayerSetDestinationChannelCount
 .global EAudioPlayerSetDestinationEncoding
 .global EAudioPlayerGetDestinationEncoding
 .global EAudioPlayerSetContainerFormat
+.global EAudioPlayerOpenRecordClip
+.global EAudioPlayerGetDestinationBitRate
+.global EAudioPlayerSetDestinationBitRate
+.global EAudioPlayerGetSupportedDestinationValues
 
 .global ETonePlayerNewInstance
 .global ETonePlayerNotifyAnyDone
@@ -61,6 +66,10 @@
 .global ETonePlayerGetBalance
 .global ETonePlayerGetFixedSequenceCount
 .global ETonePlayerGetFixedSequenceName
+.global ETonePlayerDestroy
+.global ETonePlayerSetDualTone
+.global ETonePlayerSetDTMFString
+.global ETonePlayerSetDTMFLengths
 
 EAudioPlayerNewInstance:
     CallHleDispatch 0x20
@@ -137,50 +146,77 @@ EAudioPlayerGetDestinationEncoding:
 EAudioPlayerSetContainerFormat:
     CallHleDispatch 0x38
 
+EAudioPlayerRecord:
+    CallHleDispatch 0x39
+
+EAudioPlayerOpenRecordClip:
+    CallHleDispatch 0x3A
+
+EAudioPlayerGetDestinationBitRate:
+    CallHleDispatch 0x3B
+
+EAudioPlayerSetDestinationBitRate:
+    CallHleDispatch 0x3C
+
+EAudioPlayerGetSupportedDestinationValues:
+    CallHleDispatch 0x3D
+
 ETonePlayerNewInstance:
-    CallHleDispatch 0xC0
+    CallHleDispatch 0xD0
 
 ETonePlayerNotifyAnyDone:
-    CallHleDispatch 0xC1
+    CallHleDispatch 0xD1
     
 ETonePlayerGetFixedSequenceCount:
-    CallHleDispatch 0xC2
+    CallHleDispatch 0xD2
 
 ETonePlayerSetVolume:
-    CallHleDispatch 0xC3
+    CallHleDispatch 0xD3
 
 ETonePlayerGetVolume:
-    CallHleDispatch 0xC4
+    CallHleDispatch 0xD4
 
 ETonePlayerMaxVolume:
-    CallHleDispatch 0xC5
+    CallHleDispatch 0xD5
 
 ETonePlayerSetRepeats:
-    CallHleDispatch 0xC6
+    CallHleDispatch 0xD6
 
 ETonePlayerSetBufferToneSequence:
-    CallHleDispatch 0xC7
+    CallHleDispatch 0xD7
 
 ETonePlayerSetFileToneSequence:
-    CallHleDispatch 0xC8
+    CallHleDispatch 0xD8
 
 ETonePlayerSetFixedToneSequence:
-    CallHleDispatch 0xC9
+    CallHleDispatch 0xD9
 
 ETonePlayerSetSingleTone:
-    CallHleDispatch 0xCA
+    CallHleDispatch 0xDA
 
 ETonePlayerPlay:
-    CallHleDispatch 0xCB
+    CallHleDispatch 0xDB
 
 ETonePlayerStop:
-    CallHleDispatch 0xCC
+    CallHleDispatch 0xDC
 
 ETonePlayerGetBalance:
-    CallHleDispatch 0xCD
+    CallHleDispatch 0xDD
 
 ETonePlayerSetBalance:
-    CallHleDispatch 0xCE
+    CallHleDispatch 0xDE
 
 ETonePlayerGetFixedSequenceName:
-    CallHleDispatch 0xCF
+    CallHleDispatch 0xDF
+
+ETonePlayerDestroy:
+    CallHleDispatch 0xE0
+
+ETonePlayerSetDualTone:
+    CallHleDispatch 0xE1
+
+ETonePlayerSetDTMFString:
+    CallHleDispatch 0xE2
+
+ETonePlayerSetDTMFLengths:
+    CallHleDispatch 0xE3

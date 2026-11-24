@@ -26,29 +26,43 @@
 #include "drawdvc16.h"
 #include "drawdvc32.h"
 
+// Returns -1 when the device should pack its rows itself.
+TInt ScreenDeviceDataStride(const TUint32 aScreenNo, const TDisplayMode aMode, const TSize &aSize);
+
+inline TBool IsFlippedOrientation(const TUint aDeviceOrientation) {
+    return (aDeviceOrientation & (2 | 8)) != 0;
+}
+
 #define SCRDVC_DECL()                                                     \
     TUint32 iScreenNumber;                                                \
+    TUint iDeviceOrientation;                                             \
+    TRegionFix<10> iUpdateRegion;                                          \
                                                                           \
 public:                                                                   \
     TInt Construct(TUint32 aScreenNumber, TSize aSize, TInt aDataStride); \
     virtual TInt InitScreen();                                            \
     virtual void Update();                                                \
     virtual void Update(const TRegion &aRegion);                          \
-    virtual void UpdateRegion(const TRect &aRect)
+    virtual void UpdateRegion(const TRect &aRect);                        \
+    virtual TInt GetInterface(TInt aInterfaceId, TAny *&aInterface);      \
+    virtual void GetSurface(Scdv::TSurfaceId &aSurface) const;            \
+    virtual TUint DeviceOrientationsAvailable() const;                    \
+    virtual TBool SetDeviceOrientation(TUint aOrientation);               \
+    virtual TUint DeviceOrientation() const
 
-class CFbsTwelveBitScreenDrawDevice : public CFbsTwelveBitDrawDevice {
+class CFbsTwelveBitScreenDrawDevice : public CFbsTwelveBitDrawDevice, public Scdv::MSurfaceId {
     SCRDVC_DECL();
 };
 
-class CFbsSixteenBitScreenDrawDevice : public CFbsSixteenBitDrawDevice {
+class CFbsSixteenBitScreenDrawDevice : public CFbsSixteenBitDrawDevice, public Scdv::MSurfaceId {
     SCRDVC_DECL();
 };
 
-class CFbsTwentyfourBitAlphaScreenDrawDevice : public CFbsTwentyfourBitAlphaDrawDevice {
+class CFbsTwentyfourBitAlphaScreenDrawDevice : public CFbsTwentyfourBitAlphaDrawDevice, public Scdv::MSurfaceId {
     SCRDVC_DECL();
 };
 
-class CFbsTwentyfourBitUnsignedByteScreenDrawDevice : public CFbsTwentyfourBitUnsignedByteDrawDevice {
+class CFbsTwentyfourBitUnsignedByteScreenDrawDevice : public CFbsTwentyfourBitUnsignedByteDrawDevice, public Scdv::MSurfaceId {
     SCRDVC_DECL();
 };
 

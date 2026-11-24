@@ -17,19 +17,23 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/path_types.h>
 #include <drivers/audio/audio.h>
-#include <drivers/audio/backend/cubeb/audio_cubeb.h>
 
 #include <common/platform.h>
+
+#if EKA2L1_PLATFORM(IOS)
+#include <drivers/audio/backend/audiounit_ios/audio_audiounit_ios.h>
+#else
+#include <drivers/audio/backend/cubeb/audio_cubeb.h>
+#endif
 
 #if EKA2L1_PLATFORM(WIN32)
 #include <drivers/audio/backend/wmf/wmf_loader.h>
 #endif
 
 #include <common/algorithm.h>
-#include <common/fileutils.h>
-#include <common/path.h>
-#include <cstdio>
+#include <common/buffer.h>
 #include <cstring>
 
 namespace eka2l1::drivers {
@@ -42,21 +46,23 @@ namespace eka2l1::drivers {
     }
 
     std::vector<player_type> audio_driver::get_suitable_player_types(const std::string &url) {
+        common::ro_std_file_stream stream(eka2l1::host_path{url}, true);
+        return get_suitable_player_types(stream);
+    }
+
+    std::vector<player_type> audio_driver::get_suitable_player_types(common::ro_stream &stream) {
         std::vector<player_type> res;
 
-        if (!url.empty()) {
-            FILE *target_file = common::open_c_file(url, "rb");
-    
-            if (target_file) {
-                char header_magic[MIDI_HEADER_MAGIC_LENGTH];
-                if ((fread(header_magic, 1, MIDI_HEADER_MAGIC_LENGTH, target_file) == MIDI_HEADER_MAGIC_LENGTH) &&
-                    (strncmp(header_magic, MIDI_HEADER_MAGIC, MIDI_HEADER_MAGIC_LENGTH) == 0)) {
-                    res.push_back(preferred_midi_backend_);
-                }
-
-                fclose(target_file);
+        const std::uint64_t position = stream.tell();
+        stream.seek(0, common::seek_where::beg);
+        if (stream.valid()) {
+            char header_magic[MIDI_HEADER_MAGIC_LENGTH];
+            if ((stream.read(header_magic, sizeof(header_magic)) == sizeof(header_magic)) &&
+                (std::memcmp(header_magic, MIDI_HEADER_MAGIC, sizeof(header_magic)) == 0)) {
+                res.push_back(preferred_midi_backend_);
             }
         }
+        stream.seek(position, common::seek_where::beg);
 
 #if EKA2L1_PLATFORM(WIN32)
         if (loader::init_mf()) {
@@ -78,7 +84,7 @@ namespace eka2l1::drivers {
         preferred_midi_backend_ = ttype;
     }
 
-    std::optional<std::string> audio_driver::get_bank_path(const midi_bank_type type) const {
+    std::optional<host_path> audio_driver::get_bank_path(const midi_bank_type type) const {
         if (type >= MIDI_BANK_TYPE_MAX) {
             return std::nullopt;
         }
@@ -86,7 +92,7 @@ namespace eka2l1::drivers {
         return midi_banks_[static_cast<int>(type)];
     }
 
-    void audio_driver::set_bank_path(const midi_bank_type type, const std::string &path) {
+    void audio_driver::set_bank_path(const midi_bank_type type, const host_path &path) {
         const std::lock_guard<std::mutex> guard(lock_);
 
         if (type >= MIDI_BANK_TYPE_MAX) {
@@ -139,7 +145,14 @@ namespace eka2l1::drivers {
         const player_type preferred_midi_backend) {
         switch (backend) {
         case audio_driver_backend::cubeb: {
+#if EKA2L1_PLATFORM(IOS)
+            // iOS has its own native AURemoteIO / AVAudioSession driver —
+            // cubeb on iOS would need invasive patches to the upstream
+            // CoreAudio HAL code path, see drivers/.../audiounit_ios/.
+            return std::make_unique<audiounit_ios_audio_driver>(initial_master_vol, preferred_midi_backend);
+#else
             return std::make_unique<cubeb_audio_driver>(initial_master_vol, preferred_midi_backend);
+#endif
         }
 
         default:

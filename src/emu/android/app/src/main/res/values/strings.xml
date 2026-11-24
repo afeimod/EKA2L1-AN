@@ -1,4 +1,11 @@
 <resources>
+    <string name="virtual_key_edit">Edit Key</string>
+    <string name="virtual_key_space">Space</string>
+    <string name="virtual_key_soft_left">Left soft key</string>
+    <string name="virtual_key_soft_right">Right soft key</string>
+    <string name="virtual_key_clear">Clear</string>
+    <string name="virtual_key_ok">OK</string>
+    <string name="letter_keys">Show letter keys</string>
     <string name="app_name" translatable="false">EKA2L1</string>
     <string name="error">Error</string>
     <string name="no_data">No data</string>
@@ -17,6 +24,8 @@
     <string name="no_devices_found">No devices found</string>
     <string name="exit">Exit</string>
     <string name="rename">Rename</string>
+    <string name="delete_device_title">Delete device?</string>
+    <string name="delete_device_message">This device\'s data will be deleted along with it. The app will restart to finish.</string>
     <string name="save_log">Save log</string>
     <string name="take_screenshot">Take screenshot</string>
     <string name="screenshot">Screenshot</string>
@@ -25,6 +34,7 @@
     <string name="opengl_required">The app requires OpenGL ES 3.0+.</string>
     <string name="warning">Warning</string>
     <string name="scoped_storage_warning">Your user data is stored in a location which <b>will be deleted</b> when you uninstall the app:\n</string>
+    <string name="scoped_storage_move_hint">\n\nTo keep it somewhere reachable, long press \"Working directory\" in the settings and choose a folder.</string>
     <string name="install_ng_game">Install N-Gage game</string>
     <string name="notify_dialog_title">Notification</string>
     <string name="grid_app_list_mode">Grid mode</string>
@@ -32,33 +42,6 @@
     <string name="mounted_mmc_ok_and_use_id_in_folder_name">Completed! Using MMC ID found in folder name.</string>
     <string name="ng1_menu_title">N-Gage</string>
     <string name="ng2_menu_title">N-Gage 2.0</string>
-
-    <!-- J2ME (Java ME / MIDlet) integration. The native side installs
-         JARs into the S60v1 KMID runner and we surface them through the
-         apps list and a dedicated JAR picker. -->
-    <string name="j2me_menu_title">J2ME (Java ME)</string>
-    <string name="j2me_install_jar">Install JAR/JAD…</string>
-    <string name="j2me_open_list">Installed MIDlets</string>
-    <string name="j2me_installing">Installing %1$s…</string>
-    <string name="j2me_install_done">Installed %1$s (v%2$s, by %3$s)</string>
-    <string name="j2me_install_failed_title">Install failed</string>
-    <string name="j2me_err_not_found">JAR file not found.</string>
-    <string name="j2me_err_invalid">Invalid JAR. Manifest missing or corrupt.</string>
-    <string name="j2me_err_midp2">This JAR requires MIDP 2.0, but the bundled KMID runner only supports MIDP 1.0. Install succeeded anyway — the game may launch on a newer ROM or fail at runtime.</string>
-    <string name="j2me_err_db">Couldn\'t write the J2ME apps database. Check storage permissions.</string>
-    <string name="j2me_err_platform">J2ME install failed for this device profile. The active Symbian device doesn\'t expose a Java runtime — try a different profile that ships KMID.</string>
-    <string name="j2me_err_unknown">Install failed (code %1$d).</string>
-    <string name="j2me_no_device_dialog">No compatible device is installed for running J2ME games.\n\nJ2ME games use the KMID Java runtime baked into Symbian ROMs. Please install a device whose ROM includes KMID (most S60 / S^3 devices do).</string>
-    <string name="j2me_uninstall_title">Uninstall MIDlet</string>
-    <string name="j2me_uninstall_confirm">Remove %1$s from this device? The JAR and its saved data will be deleted.</string>
-    <string name="j2me_uninstall_done">%1$s removed.</string>
-    <string name="j2me_list_empty">No MIDlets installed yet. Use \"Install JAR/JAD…\" to add one.</string>
-    <string name="j2me_dialog_title">J2ME apps</string>
-    <string name="j2me_author">By %1$s</string>
-    <string name="j2me_version">v%1$s</string>
-    <string name="j2me_action_run">Run</string>
-    <string name="j2me_action_uninstall">Uninstall</string>
-    <string name="j2me_copy_failed">Couldn\'t read the source JAR. If you picked it from a cloud provider, try downloading it locally first.</string>
     <string name="install_preconfigured_pack">Install preconfigured pack</string>
     <string name="delete_existing_data_title">Delete existing data</string>
     <string name="delete_existing_data">Do you want to delete existing emulator data (devices, apps, games,...)?</string>
@@ -100,6 +83,7 @@
     <string name="install_device_vpl_invalid_msg">The firmware description file (VPL) file is invalid!</string>
     <string name="install_device_rofs_corrupt_msg">ROFS file is corrupted!</string>
     <string name="install_device_rom_corrupt_msg">ROM file is corrupted!</string>
+    <string name="isolate_drives">Separate storage for this device (drives C, D and E are not shared with other devices)</string>
     <string name="install_device_fpsx_corrupt_msg">FPSX file is corrupted!</string>
 
     <string name="pref_general_title">General</string>
@@ -117,6 +101,13 @@
     <string name="pref_emulator_dir">Working directory</string>
     <string name="pref_launch_file_dir">Launch file directory</string>
     <string name="pref_emulator_dir_cant_change">The working directory can\'t be changed!</string>
+    <string name="pref_emulator_dir_hint">Tap to browse, long press to move it elsewhere</string>
+    <string name="pref_emulator_dir_needs_all_files_access">Moving the working directory outside of the app storage needs the \"All files access\" permission. Grant it in the system settings, then long press again.</string>
+    <string name="pref_emulator_dir_not_writable">This folder can\'t be written to.</string>
+    <string name="pref_emulator_dir_inside_current">Choose a folder outside of the current working directory.</string>
+    <string name="pref_emulator_dir_move_confirm">Move the content of the working directory to:\n\n%1$s\n\nThe app will restart afterwards.</string>
+    <string name="pref_emulator_dir_move_replaces">The chosen folder is not empty. Items with the same name will be replaced.</string>
+    <string name="pref_emulator_dir_move_failed">Failed to move the content of the working directory.</string>
     <string name="pref_general_utilities_nearest_neighbor_filtering_msg">Enable nearest neighbor filtering</string>
     <string name="pref_system_language_option_name">Language</string>
     <string name="pref_system_real_time_accuracy_str">Real-time accuracy</string>
@@ -175,13 +166,6 @@
     <string name="pref_vk_outline">Outline</string>
     <string name="pref_color_hint" translatable="false">RGB</string>
     <string name="pref_vk_alpha">Opacity: </string>
-    <string name="pref_vk_alpha_default">Default opacity (legacy): </string>
-    <string name="pref_vk_alpha_fore">Labels opacity:</string>
-    <string name="pref_vk_alpha_back">Buttons opacity:</string>
-    <string name="pref_vk_alpha_sel_fore">Labels (P) opacity:</string>
-    <string name="pref_vk_alpha_sel_back">Buttons (P) opacity:</string>
-    <string name="pref_vk_alpha_outline">Outline opacity:</string>
-    <string name="pref_opacity_percent">%d%%</string>
     <string name="pref_vk_hide_delay">Hide delay: </string>
     <string name="pref_unit_ms">ms</string>
     <string name="pref_vk_sel_fore">Labels (P)</string>
@@ -192,6 +176,10 @@
     <string name="pref_orientation_auto">Auto</string>
     <string name="pref_orientation_port">Portrait</string>
     <string name="pref_orientation_land">Landscape</string>
+    <string name="pref_guest_screen_mode">Guest screen mode</string>
+    <string name="pref_guest_screen_mode_app">Decided by app</string>
+    <string name="pref_guest_screen_mode_entry">Mode %1$d</string>
+    <string name="pref_guest_screen_mode_entry_size">Mode %1$d (%2$d×%3$d)</string>
     <string name="pref_vk_type">Keyboard type</string>
     <string name="pref_vk_type_custom">Custom</string>
     <string name="pref_vk_type_phone">Phone</string>
@@ -209,14 +197,6 @@
     <string name="pref_screen_gravity_left">Left</string>
     <string name="pref_screen_gravity_right">Right</string>
     <string name="pref_screen_gravity_top">Top</string>
-    <string name="pref_screen_custom_layout">Free-form layout</string>
-    <string name="pref_edit_screen_position">Edit screen position</string>
-    <string name="pref_edit_screen_position_finish">Finish editing</string>
-    <string name="pref_edit_screen_position_started">Drag the corners or the screen itself to reposition</string>
-    <string name="pref_screen_position_hint">Drag the four corners or the screen itself to reposition</string>
-    <string name="pref_screen_position_saved">Screen position saved</string>
-    <string name="pref_done">Done</string>
-    <string name="pref_reset">Reset</string>
     <string name="pref_screen_scale_type">Scale type</string>
     <string name="pref_screen_scale_type_fill">Fill window (ignore aspect ratio)</string>
     <string name="pref_screen_scale_type_fit">Fit to window</string>
@@ -268,14 +248,6 @@
     <string name="layout_edit_mode">Keylayout edit mode</string>
     <string name="layout_scale_mode">Keylayout resize mode</string>
     <string name="layout_switch">Switch keylayout</string>
-    <string name="add_joystick">Add joystick</string>
-    <string name="delete_joystick">Delete joystick</string>
-    <string name="joystick_added">Joystick added</string>
-    <string name="joystick_deleted">Joystick removed</string>
-    <string name="joystick_none">No joystick to delete</string>
-    <string name="joystick_n">Joystick %1$d</string>
-    <string name="joystick_outer_size">Joystick outer size</string>
-    <string name="joystick_inner_size">Joystick inner size</string>
     <string name="hide_buttons">Hide buttons</string>
     <string name="confirmation_required">Confirmation required</string>
     <string name="force_close_confirmation">Force-closing the application may result in data loss or even break it completely!\nProceed?</string>
@@ -305,4 +277,13 @@
     <string name="install_ng_game_more_than_one_game">There is more than one game in the given card game folder!</string>
     <string name="install_ng_game_no_game_info_file">The game information file does not exist in the card game folder!</string>
     <string name="install_ng_game_corrupted_game_info">The game information file has been corrupted. Please check your data\'s validity!</string>
+    <string name="hosts_title">Hosts</string>
+    <string name="hosts_hint">Redirect guest hostnames or wildcard suffixes to an IP address or another hostname, optionally with a port. Changes affect new connections; restart the game if it has cached an address.</string>
+    <string name="hosts_add">Add host mapping</string>
+    <string name="hosts_mapping">Host mapping</string>
+    <string name="hosts_hostname">Hostname or *.suffix</string>
+    <string name="hosts_target">Target and optional port</string>
+    <string name="hosts_invalid">Enter a valid hostname or *.suffix and an IP address or hostname with an optional port.</string>
+    <string name="hosts_duplicate">This hostname already has a mapping. Edit the existing entry.</string>
+    <string name="hosts_save_error">Could not save host mappings.</string>
 </resources>

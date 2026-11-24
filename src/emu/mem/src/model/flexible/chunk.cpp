@@ -33,16 +33,47 @@ namespace eka2l1::mem::flexible {
         , committed_(0)
         , flags_(0)
         , fixed_addr_(0)
-        , owner_(nullptr) {
+        , owner_(nullptr)
+        , is_addr_shared_(false) {
+    }
+
+    void flexible_mem_model_chunk::remove_attacher(flexible_mem_model_process *process) {
+        auto ite = std::find(attachers_.begin(), attachers_.end(), process);
+
+        if (ite != attachers_.end()) {
+            attachers_.erase(ite);
+        }
     }
 
     flexible_mem_model_chunk::~flexible_mem_model_chunk() {
+        // This struct can die while other processes still have it attached: the kernel object may
+        // be closed while another process holds a handle to a global chunk, or the creator may
+        // exit first. Their attach info points straight at this struct, so make them drop it now,
+        // while our mapping list and memory object are still alive. Otherwise the next teardown
+        // walks freed memory and dereferences a garbage mem_obj_.
+        // Every entry got here through attach_chunk(), which only records an attacher after it
+        // has stored the matching attach info, so detach_chunk() always finds it and calls
+        // remove_attacher(). The list therefore shrinks on every iteration.
+        while (!attachers_.empty()) {
+            attachers_.back()->detach_chunk(this);
+        }
+
         if (fixed_mapping_ && (flags_ & MEM_MODEL_CHUNK_REGION_USER_CODE)) {
             control_flexible *control_mm = reinterpret_cast<control_flexible *>(control_);
             for (auto &mmu : control_mm->mmus_) {
                 // Clear the instruction cache at that range, code may reuse it later
                 mmu->cpu_->imb_range(fixed_mapping_->base_, max_size_);
             }
+        }
+
+        // A shared chunk's fixed mapping is registered in the memory object's
+        // mapping list by do_create() (attach_mapping) but, unlike per-process
+        // mappings, is never detached. Members destruct in reverse declaration
+        // order, so fixed_mapping_ dies before mem_obj_; without this detach,
+        // ~memory_object -> decommit() would walk the already-freed mapping and
+        // dereference its dangling owner_. Remove it while it is still alive.
+        if (fixed_mapping_ && mem_obj_) {
+            mem_obj_->detach_mapping(fixed_mapping_.get());
         }
     }
 
@@ -112,6 +143,7 @@ namespace eka2l1::mem::flexible {
         const vm_address dropping_place_end = static_cast<vm_address>((offset + size + control_->page_size() - 1) >> control_->page_size_bits_);
 
         int total_page_to_decommit = static_cast<int>(dropping_place_end - dropping_place);
+        const int committed_in_range = page_bma_ ? page_bma_->allocated_count(dropping_place, dropping_place_end - 1) : total_page_to_decommit;
 
         // Change the protection of the correspond region in memory object.
         if (!mem_obj_->decommit(dropping_place, total_page_to_decommit)) {
@@ -124,7 +156,7 @@ namespace eka2l1::mem::flexible {
             page_bma_->deallocate(dropping_place, static_cast<int>(total_page_to_decommit));
         }
 
-        committed_ -= static_cast<std::uint32_t>(total_page_to_decommit << control_->page_size_bits_);
+        committed_ -= static_cast<std::uint32_t>(committed_in_range << control_->page_size_bits_);
     }
 
     std::int32_t flexible_mem_model_chunk::allocate(const std::size_t size) {
@@ -144,7 +176,13 @@ namespace eka2l1::mem::flexible {
         }
 
         std::uint32_t offset_to_commit_bytes = static_cast<std::uint32_t>(page_offset << control_->page_size_bits_);
-        commit(offset_to_commit_bytes, size);
+        if (commit(offset_to_commit_bytes, size) == 0) {
+            page_bma_->deallocate(page_offset, page_allocated);
+            return -2;
+        }
+
+        // commit() sees the run already marked by allocate_from and counts none of it.
+        committed_ += static_cast<std::uint32_t>(page_allocated << control_->page_size_bits_);
 
         return static_cast<std::int32_t>(offset_to_commit_bytes);
     }

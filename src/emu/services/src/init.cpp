@@ -18,7 +18,15 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/algorithm.h>
+#include <common/path.h>
 #include <common/platform.h>
+
+#include <initializer_list>
+#include <memory>
+#include <string_view>
+#include <vector>
+#include <unordered_map>
 
 #include <services/accessory/accessory.h>
 #include <services/alarm/alarm.h>
@@ -30,8 +38,10 @@
 #include <services/backup/backup.h>
 #include <services/bluetooth/bt.h>
 #include <services/bluetooth/btman.h>
+#include <services/camera/camera.h>
 #include <services/centralrepo/centralrepo.h>
 #include <services/comm/comm.h>
+#include <services/domain/domain.h>
 #include <services/drm/helper.h>
 #include <services/drm/notifier/notifier.h>
 #include <services/drm/rights/rights.h>
@@ -40,15 +50,21 @@
 #include <services/featmgr/featmgr.h>
 #include <services/fs/fs.h>
 #include <services/goommonitor/goommonitor.h>
+#include <services/hwrm/haptics/haptics.h>
 #include <services/hwrm/hwrm.h>
+#include <services/internet/accesspoints.h>
 #include <services/internet/connmonitor.h>
 #include <services/internet/nifman.h>
 #include <services/loader/loader.h>
 #include <services/msv/msv.h>
 #include <services/notifier/notifier.h>
+#include <services/posix/posix.h>
 #include <services/redir/redir.h>
 #include <services/remcon/remcon.h>
+#include <services/lbs/lbs.h>
 #include <services/sensor/sensor.h>
+#include <services/memorymanager/memorymanager.h>
+#include <services/linnea/linnea.h>
 #include <services/shutdown/shutdown.h>
 #include <services/sisregistry/sisregistry.h>
 #include <services/sms/settings.h>
@@ -56,6 +72,8 @@
 #include <services/sms/sendas/sendas.h>
 #include <services/socket/server.h>
 #include <services/sysagt/sysagt.h>
+#include <services/timezone/timezone.h>
+#include <services/ui/cap/coestorage.h>
 #include <services/ui/cap/oom_app.h>
 #include <services/ui/eikappui.h>
 #include <services/ui/icon/icon.h>
@@ -164,12 +182,25 @@ namespace eka2l1::epoc {
             }
         }
 
-        address am_pm_names_addr[] = {
-            kern->put_global_kernel_string("am"),
-            kern->put_global_kernel_string("pm"),
+        const auto put_names = [kern](std::initializer_list<std::u16string_view> names) {
+            std::vector<address> addresses;
+            for (const auto name : names) {
+                addresses.push_back(kern->put_global_kernel_binary(
+                    reinterpret_cast<const std::uint8_t *>(name.data()), (name.size() + 1) * sizeof(char16_t)));
+            }
+            return eka2l1::ptr<char>(kern->put_static_array(addresses.data(), addresses.size()));
         };
 
-        lang.am_pm_table = eka2l1::ptr<char>(kern->put_static_array(am_pm_names_addr, 2));
+        lang.day_table = put_names({ u"Monday", u"Tuesday", u"Wednesday", u"Thursday", u"Friday", u"Saturday", u"Sunday" });
+        lang.day_abb_table = put_names({ u"Mon", u"Tue", u"Wed", u"Thu", u"Fri", u"Sat", u"Sun" });
+        lang.month_table = put_names({ u"January", u"February", u"March", u"April", u"May", u"June",
+            u"July", u"August", u"September", u"October", u"November", u"December" });
+        lang.month_abb_table = put_names({ u"Jan", u"Feb", u"Mar", u"Apr", u"May", u"Jun",
+            u"Jul", u"Aug", u"Sep", u"Oct", u"Nov", u"Dec" });
+        lang.date_suffix_table = put_names({ u"st", u"nd", u"rd", u"th", u"th", u"th", u"th", u"th", u"th", u"th",
+            u"th", u"th", u"th", u"th", u"th", u"th", u"th", u"th", u"th", u"th",
+            u"st", u"nd", u"rd", u"th", u"th", u"th", u"th", u"th", u"th", u"th", u"st" });
+        lang.am_pm_table = put_names({ u"am", u"pm" });
 
         epoc::locale_locale_settings locale_settings;
         locale_settings.locale_extra_settings_dll_ptr = 0;
@@ -183,8 +214,21 @@ namespace eka2l1::epoc {
         DEFINE_INT_PROP(sys, epoc::SYS_CATEGORY, epoc::SOFTWARE_INSTALL_KEY, 0);
         DEFINE_INT_PROP(sys, epoc::SYS_CATEGORY, epoc::SOFTWARE_LASTEST_UID_INSTALLATION, 0);
 
+        // Published by the secure backup engine on a real device. Clients that watch the
+        // backup state (File manager's backup engine for one) read it while constructing and
+        // leave with KErrNotFound if it was never defined, taking the whole app down.
+        DEFINE_INT_PROP(sys, epoc::SYS_CATEGORY, epoc::BACKUP_RESTORE_KEY, epoc::BACKUP_RESTORE_NORMAL_STATE);
+
         // From Domain Server request
         DEFINE_INT_PROP(sys, 0x1020e406, 0x250, 0);
+
+        // Without these SysUtil's critical-disk-space check finds no threshold at all
+        // and leaves, so a caller that checks free space before writing -- Camera
+        // saving a photo, for one -- never gets to the write.
+        DEFINE_INT_PROP(sys, epoc::DISK_LEVEL_CATEGORY, epoc::RAM_DISK_CRITICAL_THRESHOLD_KEY,
+            epoc::RAM_DISK_CRITICAL_THRESHOLD);
+        DEFINE_INT_PROP(sys, epoc::DISK_LEVEL_CATEGORY, epoc::OTHER_DISK_CRITICAL_THRESHOLD_KEY,
+            epoc::OTHER_DISK_CRITICAL_THRESHOLD);
 
         DEFINE_BIN_PROP(sys, epoc::SYS_CATEGORY, epoc::LOCALE_LANG_KEY, sizeof(epoc::locale_language), lang);
         DEFINE_BIN_PROP(sys, epoc::SYS_CATEGORY, epoc::LOCALE_DATA_KEY, sizeof(epoc::locale), locale);
@@ -196,15 +240,75 @@ namespace eka2l1 {
     namespace service {
         // Mostly replace startup process of a normal EPOC startup
         void init_services(system *sys) {
+            if (sys->get_kernel_system()->is_eka1()) {
+                kernel_system *kern = sys->get_kernel_system();
+                auto posix_servers = std::make_shared<std::unordered_map<kernel::uid, posix_server *>>();
+
+                kern->register_codeseg_loaded_callback([sys, posix_servers](const std::string &, kernel::process *process,
+                                                           codeseg_ptr code_segment) {
+                    // Patch libraries are attached globally while the device boots and do not
+                    // belong to a guest process.
+                    if (!process) {
+                        return;
+                    }
+
+                    const auto existing_server = posix_servers->find(process->unique_id());
+                    if (existing_server != posix_servers->end()) {
+                        // EKA1 GUI applications run inside AppRun.exe. Once its .app image is
+                        // attached, that image determines the POSIX current drive rather than
+                        // AppRun's Z: drive.
+                        if (code_segment->get_full_path().has_extension(u".app")) {
+                            existing_server->second->update_executable_path(code_segment->get_full_path());
+                        }
+                        return;
+                    }
+
+                    if (code_segment != process->get_codeseg()) {
+                        return;
+                    }
+
+                    std::unique_ptr<posix_server> server = std::make_unique<posix_server>(sys, process, code_segment->get_full_path());
+                    (*posix_servers)[process->unique_id()] = server.get();
+                    std::unique_ptr<service::server> generic_server = std::move(server);
+                    sys->get_kernel_system()->add_custom_server(generic_server);
+                });
+
+                kern->register_process_exit_callback([posix_servers](kernel::process *process) {
+                    const auto server = posix_servers->find(process->unique_id());
+                    if (server == posix_servers->end()) {
+                        return;
+                    }
+
+                    // Process exit callbacks run before its session handles are released.
+                    // Removing the HLE server here would leave those sessions pointing at
+                    // freed memory. The server has a process-unique name, so only remove it
+                    // from the lookup map and let normal kernel teardown own its lifetime.
+                    posix_servers->erase(server);
+                });
+            }
+
             CREATE_SERVER_D(sys, fs_server);
             CREATE_SERVER(sys, loader_server);
             CREATE_SERVER(sys, shutdown_server);
+
+            if (sys->get_symbian_version_use() == epocver::epoc70) {
+                // Platform services UIQ applications block on; the ROM starts them at boot.
+                CREATE_SERVER(sys, memory_manager_server);
+                CREATE_SERVER(sys, linnea_server);
+            }
+
+            if (sys->get_kernel_system()->is_eka1()) {
+                CREATE_SERVER(sys, camera_server);
+            }
 
             config::state *cfg = sys->get_config();
 
             CREATE_SERVER(sys, fbs_server);
             CREATE_SERVER(sys, window_server);
-            CREATE_SERVER(sys, central_repo_server);
+            CREATE_SERVER(sys, central_repo_server, [sys](central_repo &repo) {
+                provide_host_access_point(repo, sys->get_symbian_version_use());
+                epoc::initialize_input_language(repo, static_cast<std::uint32_t>(sys->get_system_language()));
+            });
             CREATE_SERVER(sys, featmgr_server);
 
             if (cfg->enable_srv_rights)
@@ -220,6 +324,9 @@ namespace eka2l1 {
             CREATE_SERVER(sys, applist_server);
             CREATE_SERVER(sys, oom_ui_app_server);
             CREATE_SERVER(sys, hwrm_server);
+            if (!sys->get_kernel_system()->is_eka1()) {
+                CREATE_SERVER(sys, haptics_server);
+            }
             CREATE_SERVER(sys, view_server);
             CREATE_SERVER(sys, remcon_server);
             CREATE_SERVER(sys, etel_server);
@@ -227,6 +334,11 @@ namespace eka2l1 {
             CREATE_SERVER(sys, msv_server);
 
             CREATE_SERVER(sys, sensor_server);
+
+            if (!sys->get_kernel_system()->is_eka1()) {
+                CREATE_SERVER(sys, lbs_server);
+            }
+
             CREATE_SERVER(sys, connmonitor_server);
             CREATE_SERVER(sys, nifman_server);
             CREATE_SERVER(sys, drm_notifier_server);
@@ -243,11 +355,26 @@ namespace eka2l1 {
             CREATE_SERVER(sys, keysound_server);
 
             CREATE_SERVER(sys, eikappui_server);
-            //CREATE_SERVER(sys, akn_icon_server);
+            // The AknIconServer HLE renders icons itself (lunasvg / mbm) instead of the guest
+            // ROM server. It exists to work around N95-class S60v3 FP1 ROMs, whose guest icon
+            // server rasterises scalable NVG menu icons through software OpenVG -- the emulator
+            // has no GPU NVG, and that draw-device path only accepts 32bpp, so it leaves on the
+            // standard 64K icon and aborts the Options menu. The HLE is not a complete drop-in
+            // replacement, though: newer ROMs (e.g. Nokia 5320, FP2) render every icon fine via
+            // the guest server but use icon-server requests the HLE doesn't fully implement, so
+            // forcing them through it regresses their UI (blank Calculator). Only replace the
+            // guest server where it is actually broken; let every other ROM keep its own.
+            if (sys->get_symbian_version_use() == epocver::epoc93fp1) {
+                CREATE_SERVER(sys, akn_icon_server);
+            }
             CREATE_SERVER(sys, akn_skin_server);
 
             CREATE_SERVER(sys, system_agent_server);
             CREATE_SERVER(sys, unipertar_server);
+
+            if (sys->get_symbian_version_use() >= epocver::epoc95) {
+                CREATE_SERVER(sys, timezone_server);
+            }
 
             if (sys->get_symbian_version_use() <= epocver::eka2) {
                 CREATE_SERVER(sys, redir_server);
@@ -255,6 +382,7 @@ namespace eka2l1 {
             } else {
                 CREATE_SERVER(sys, goom_monitor_server);
                 CREATE_SERVER(sys, alf_streamer_server);
+                CREATE_SERVER(sys, dm_domain_server);
 
                 // MMF server family
                 {
@@ -272,8 +400,44 @@ namespace eka2l1 {
             init_symbian_app_launch_to_host_launch(sys);
         }
         
+        // Processes the UIQ 3 startup sequence launches before any application, in its order.
+        // Their clients only connect and never start them.
+        static void start_rom_boot_servers(system *sys) {
+            struct boot_process {
+                const char16_t *path;
+                bool wait_for_start;
+            };
+
+            static const boot_process BOOT_PROCESSES[] = {
+                // The shell owns the priority 0 window group the memory manager expects.
+                { u"z:\\sys\\bin\\thmsrv.exe", true },
+                { u"z:\\sys\\bin\\memorymanagerserver.exe", true },
+                { u"z:\\sys\\bin\\linshell.exe", false },
+                { u"z:\\sys\\bin\\tisrvs.exe", true }
+            };
+
+            if (!sys->is_uiq_3_device_active()) {
+                return;
+            }
+
+            kernel_system *kern = sys->get_kernel_system();
+            for (const boot_process &process : BOOT_PROCESSES) {
+                if (sys->get_io_system()->exist(eka2l1::guest_path{process.path})) {
+                    kern->start_boot_server(guest_path(process.path), process.wait_for_start);
+                }
+            }
+        }
+
         void init_services_post_bootup(system *sys) {
+            // ROM libraries only become loadable once the frontend has mounted drive Z.
+            if (auto fbss = reinterpret_cast<fbs_server *>(sys->get_kernel_system()->get_by_name<service::server>(
+                    epoc::get_fbs_server_name_by_epocver(sys->get_symbian_version_use())))) {
+                fbss->initialize_palette();
+            }
+
             epoc::sms::supply_sim_settings(sys);
+            supply_plpvariant_machine_id(sys);
+            start_rom_boot_servers(sys);
         }
     }
 }

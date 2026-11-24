@@ -25,6 +25,7 @@
 
 #include <services/context.h>
 #include <utils/des.h>
+#include <utils/err.h>
 #include <utils/sec.h>
 
 #include <config/config.h>
@@ -113,6 +114,12 @@ namespace eka2l1 {
             return std::nullopt;
         }
 
+    std::optional<guest_path> ipc_context::get_path_argument(const int idx) {
+        auto text = get_argument_value<std::u16string>(idx);
+        if (!text || text->find(u'\0') != std::u16string::npos) return std::nullopt;
+        return guest_path(std::move(*text));
+    }
+
         template <>
         std::optional<std::string> ipc_context::get_argument_value(const int idx) {
             if (idx >= 4) {
@@ -174,6 +181,10 @@ namespace eka2l1 {
             if (sys->get_kernel_system()->is_eka1() || ((int)arg_type & ((int)ipc_arg_type::flag_des | (int)ipc_arg_type::flag_16b))) {
                 eka2l1::epoc::desc16 *des = ptr<epoc::desc16>(msg->args.args[idx]).get(msg->own_thr->owning_process());
 
+                if (!des) {
+                    return false;
+                }
+
                 des->assign(msg->own_thr->owning_process(), data);
 
                 return true;
@@ -198,6 +209,17 @@ namespace eka2l1 {
                 if (!is_eka1 && ((int)arg_type & (int)ipc_arg_type::flag_16b)) {
                     eka2l1::epoc::desc16 *des = ptr<epoc::desc16>(msg->args.args[idx]).get(own_pr);
 
+                    // An argument the client left null, or pointed outside its own address
+                    // space, resolves to nothing. The rest of this file already answers that
+                    // with a failure rather than a dereference; these paths did not.
+                    if (!des) {
+                        if (err_code) {
+                            *err_code = epoc::error_bad_descriptor;
+                        }
+
+                        return false;
+                    }
+
                     // We can't handle odd length
                     assert(len % 2 == 0);
 
@@ -214,6 +236,14 @@ namespace eka2l1 {
                     des->assign(own_pr, data, write_size * 2);
                 } else {
                     eka2l1::epoc::des8 *des = ptr<epoc::des8>(msg->args.args[idx]).get(own_pr);
+
+                    if (!des) {
+                        if (err_code) {
+                            *err_code = epoc::error_bad_descriptor;
+                        }
+
+                        return false;
+                    }
 
                     std::uint32_t write_size = len;
                     const std::uint32_t des_to_write_size = des->get_max_length(own_pr);
@@ -261,8 +291,8 @@ namespace eka2l1 {
             const bool is_eka1 = sys->get_kernel_system()->is_eka1();
 
             if (!is_eka1) {
-                if ((static_cast<int>(arg_type) & static_cast<int>(ipc_arg_type::unspecified))
-                    || (static_cast<int>(arg_type) & static_cast<int>(ipc_arg_type::handle))) {
+                // Handle shares its bit with flag_16b, so only the descriptor flag tells the kinds apart.
+                if (!(static_cast<int>(arg_type) & static_cast<int>(ipc_arg_type::flag_des))) {
                     return 4;
                 }
             }
@@ -270,6 +300,10 @@ namespace eka2l1 {
             // Cast it to descriptor
             kernel::process *own_pr = msg->own_thr->owning_process();
             epoc::des8 *descriptor = ptr<epoc::des8>(msg->args.args[idx]).get(own_pr);
+
+            if (!descriptor) {
+                return 0;
+            }
 
             if (!is_eka1 && (static_cast<int>(arg_type) & static_cast<int>(ipc_arg_type::flag_16b))) {
                 return descriptor->get_max_length(own_pr) * 2;
@@ -287,8 +321,8 @@ namespace eka2l1 {
             const bool is_eka1 = sys->get_kernel_system()->is_eka1();
 
             if (!is_eka1) {
-                if ((static_cast<int>(arg_type) & static_cast<int>(ipc_arg_type::unspecified))
-                    || (static_cast<int>(arg_type) & static_cast<int>(ipc_arg_type::handle))) {
+                // Handle shares its bit with flag_16b, so only the descriptor flag tells the kinds apart.
+                if (!(static_cast<int>(arg_type) & static_cast<int>(ipc_arg_type::flag_des))) {
                     return 4;
                 }
             }
@@ -296,6 +330,10 @@ namespace eka2l1 {
             // Cast it to descriptor
             kernel::process *own_pr = msg->own_thr->owning_process();
             epoc::des8 *descriptor = ptr<epoc::des8>(msg->args.args[idx]).get(own_pr);
+
+            if (!descriptor) {
+                return 0;
+            }
 
             if (!is_eka1 && (static_cast<int>(arg_type) & static_cast<int>(ipc_arg_type::flag_16b))) {
                 return descriptor->get_length() * 2;
@@ -310,6 +348,10 @@ namespace eka2l1 {
             if (sys->get_kernel_system()->is_eka1() || ((int)arg_type & (int)ipc_arg_type::flag_des)) {
                 kernel::process *own_pr = msg->own_thr->owning_process();
                 eka2l1::epoc::des8 *des = ptr<epoc::des8>(msg->args.args[idx]).get(own_pr);
+
+                if (!des) {
+                    return false;
+                }
 
                 des->set_length(own_pr, len);
                 return true;
@@ -357,7 +399,20 @@ namespace eka2l1 {
                     return;
                 }
 
-                LOG_WARN(SERVICE_TRACK, "Unimplemented IPC call: 0x{:x} for server: {}", func, obj_name);
+                // Error level on purpose: the default log preset pins Service.Track at
+                // error, so a warning here is invisible in exactly the situation it
+                // exists for -- a guest wedged on an opcode nobody implemented.
+                LOG_ERROR(SERVICE_TRACK, "Unimplemented IPC call: 0x{:x} for server: {}", func, obj_name);
+
+                // A real server always completes the message. Dropping it wedges the
+                // client for good: a synchronous SendReceive never returns, and an
+                // asynchronous one keeps its active object armed forever.
+                ipc_context context;
+
+                context.sys = sys;
+                context.msg = process_msg;
+                context.complete(epoc::error_not_supported);
+
                 return;
             }
 

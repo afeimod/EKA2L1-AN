@@ -105,16 +105,19 @@ namespace eka2l1::drivers {
         graphics_driver_set_blend_colour,
         graphics_driver_read_framebuffer,
         graphics_driver_backup_state, // Backup all possible state to a struct
-        graphics_driver_restore_state // Restore previously backup data
+        graphics_driver_restore_state, // Restore previously backup data
+        graphics_driver_copy_framebuffer_to_texture
     };
 
     enum graphics_driver_extension {
         graphics_driver_extension_anisotrophy_filtering = 1 << 0,
-        graphics_driver_extension_float_precision_qualifier = 1 << 1
+        graphics_driver_extension_float_precision_qualifier = 1 << 1,
+        graphics_driver_extension_glsl_es_100 = 1 << 2
     };
 
     enum graphics_driver_extension_query {
-        graphics_driver_extension_query_max_texture_max_anisotrophy
+        graphics_driver_extension_query_max_texture_max_anisotrophy,
+        graphics_driver_extension_query_point_size_range
     };
 
     using display_hook = std::function<void()>;
@@ -138,6 +141,19 @@ namespace eka2l1::drivers {
 
         virtual bool is_stricted() const {
             return false;
+        }
+
+        /**
+         * \brief Largest 2D texture dimension the backend can allocate.
+         *
+         * Used to keep dynamically-grown textures (e.g. the font glyph atlas)
+         * within what the GPU accepts — exceeding it makes texture creation
+         * fail and the texture sample as opaque black. The conservative default
+         * matches the GLES 3.0 minimum guarantee; backends override with the
+         * real queried value.
+         */
+        virtual std::uint32_t max_texture_size() const {
+            return 2048;
         }
 
         /**

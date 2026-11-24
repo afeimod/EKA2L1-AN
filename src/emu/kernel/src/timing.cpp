@@ -54,11 +54,19 @@ namespace eka2l1 {
         pause_evt_.set();
 
         if (timer_thread_) {
-            timer_thread_->join();
+            if (timer_thread_->joinable()) {
+                timer_thread_->join();
+            }
+
+            timer_thread_.reset();
         }
 
         events_.clear();
         teletimer_->stop();
+    }
+
+    void ntimer::stop() {
+        wipeout();
     }
 
     void ntimer::reset() {
@@ -69,11 +77,15 @@ namespace eka2l1 {
         new_event_evt_.reset();
         pause_evt_.reset();
 
+        // Start the teletimer before the thread that reads it. The loop calls
+        // advance() -> microseconds() straight away, so starting it afterwards
+        // races the timestamp initialisation and can hand the loop a stale
+        // start_ from the previous run.
+        teletimer_->start();
+
         timer_thread_ = std::make_unique<std::thread>([this]() {
             loop();
         });
-
-        teletimer_->start();
     }
 
     void ntimer::set_realtime_level(const realtime_level lvl) {
@@ -151,11 +163,12 @@ namespace eka2l1 {
                 return lhs.event_time > rhs.event_time;
             });
 
+            // Copy under the lock: register_event may grow the vector meanwhile
+            timed_callback callback = event_types_[evt.event_type].callback;
             unq.unlock();
 
-            if (event_types_[evt.event_type].callback) {
-                event_types_[evt.event_type]
-                    .callback(evt.event_user_data, static_cast<int>(global_timer - evt.event_time));
+            if (callback) {
+                callback(evt.event_user_data, static_cast<int>(global_timer - evt.event_time));
             }
 
             unq.lock();
@@ -169,11 +182,15 @@ namespace eka2l1 {
     }
 
     void ntimer::schedule_event(int64_t us_into_future, int event_type, std::uint64_t userdata) {
+        schedule_event_at(teletimer_->microseconds() + us_into_future, event_type, userdata);
+    }
+
+    void ntimer::schedule_event_at(std::uint64_t deadline, int event_type, std::uint64_t userdata) {
         const std::lock_guard<std::mutex> guard(lock_);
 
         event evt;
 
-        evt.event_time = teletimer_->microseconds() + us_into_future;
+        evt.event_time = deadline;
         evt.event_type = event_type;
         evt.event_user_data = userdata;
 
@@ -247,6 +264,11 @@ namespace eka2l1 {
         }
 
         event_types_[event_type].callback = nullptr;
+
+        // The slot is reused by the next registration, so pending events must not outlive it
+        events_.erase(std::remove_if(events_.begin(), events_.end(),
+                          [event_type](const event &evt) { return evt.event_type == event_type; }),
+            events_.end());
     }
 
     int ntimer::get_register_event(const std::string &name) {

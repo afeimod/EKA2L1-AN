@@ -36,10 +36,11 @@ namespace eka2l1::config {
         std::uint32_t time_delay;
 
         int screen_rotation;
+        int screen_mode;
 
         float screen_upscale;
         std::uint32_t screen_upscale_method;
-        std::string filter_shader_path;
+        std::string filter_shader_name;
         bool child_inherit_setting;
 
         // Hack through game crashed around T9 log. Force *.dll and *.rsc global search to go through z:\system\t9ldb 

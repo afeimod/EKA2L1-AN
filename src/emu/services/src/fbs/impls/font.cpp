@@ -21,9 +21,13 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/path_types.h>
 #include <services/fbs/fbs.h>
+#include <services/fbs/linked_font_config.h>
 
+#include <common/buffer.h>
 #include <common/cvt.h>
+#include <common/fileutils.h>
 #include <common/log.h>
 #include <common/path.h>
 #include <common/vecx.h>
@@ -483,8 +487,11 @@ namespace eka2l1 {
             of->font_standard_descent = of->metrics.descent;
             of->font_captial_offset = 0;
 
-            // Get the line gap!! This is no stub
-            of->font_line_gap = static_cast<std::uint16_t>(info.adapter->line_gap(info.idx, info.metric_identifier));
+            // FontLineGap() is the full baseline-to-baseline distance, as computed by the native rasterizers.
+            const std::int32_t height = of->font_max_ascent + of->font_max_descent;
+            of->font_line_gap = info.adapter->vectorizable()
+                ? height + static_cast<std::int32_t>(info.adapter->line_gap(info.idx, info.metric_identifier))
+                : (height * 12 + 5) / 10;
         }
 
         // NOTE: Newer version (from S^3 onwards) uses offset. Older version just cast this directly to integer
@@ -581,23 +588,27 @@ namespace eka2l1 {
     }
 
     void fbscli::get_nearest_font(service::ipc_context *ctx) {
-        epoc::font_spec_v1 spec = *ctx->get_argument_data_from_descriptor<epoc::font_spec_v1>(0);
+        std::optional<epoc::font_spec_v1> spec_arg = ctx->get_argument_data_from_descriptor<epoc::font_spec_v1>(0);
+        if (!spec_arg) {
+            ctx->complete(epoc::error_argument);
+            return;
+        }
+        epoc::font_spec_v1 spec = *spec_arg;
 
         // 1 x int of Max height - 2 x int of device size
         std::optional<eka2l1::vec3> size_info = ctx->get_argument_data_from_descriptor<eka2l1::vec3>(2);
 
         fbs_server *serv = server<fbs_server>();
 
-        // NOTE: There's no consideration right now taken on nearest font in pixels vs in twips.
         const bool is_twips = is_opcode_ruler_twips(ctx->msg->function);
         const bool is_design_height = (serv->kern->is_eka1() || (!size_info.has_value()) || (ctx->msg->function == fbs_nearest_font_design_height_in_twips) || (ctx->msg->function == fbs_nearest_font_design_height_in_pixels));
 
-        // For eka1, it's always in twips for spec height.
-        // I don't know why when I tested with eka2, this height starts to be in pixels for pixel opcode.
-        // TODO: Find out if spec height is always in twips for eka2.
-        if (serv->kern->is_eka1() || is_twips) {
+        if (is_twips) {
             spec.height = static_cast<std::int32_t>(static_cast<float>(spec.height) / epoc::get_approximate_pixel_to_twips_mul(serv->kern->get_epoc_version()));
-            size_info->x = static_cast<std::int32_t>(static_cast<float>(size_info->x) / epoc::get_approximate_pixel_to_twips_mul(serv->kern->get_epoc_version()));
+            // EKA1 font requests do not carry the max-height/device-size descriptor in slot 2.
+            if (size_info) {
+                size_info->x = static_cast<std::int32_t>(static_cast<float>(size_info->x) / epoc::get_approximate_pixel_to_twips_mul(serv->kern->get_epoc_version()));
+            }
         }
 
         // Observing font plugin on real phone, it seems to clamp the height between 2 to 256.
@@ -1069,7 +1080,7 @@ namespace eka2l1 {
     }
 
     void fbscli::add_font_file_store(service::ipc_context *ctx) {
-        std::optional<std::u16string> filename = ctx->get_argument_value<std::u16string>(0);
+        std::optional<guest_path> filename = ctx->get_path_argument(0);
         if (!filename.has_value()) {
             ctx->complete(epoc::error_argument);
             return;
@@ -1120,44 +1131,131 @@ namespace eka2l1 {
 
     void fbs_server::load_fonts_from_directory(eka2l1::io_system *io, eka2l1::directory *folder) {
         while (auto entry = folder->get_next_entry()) {
-            add_single_font(io, common::utf8_to_ucs2(entry->full_path));
+            add_single_font(io, entry->full_path);
         }
     }
 
-    bool fbs_server::add_single_font(eka2l1::io_system *io, const std::u16string &path) {
+    // The name only picks the adapter, so it can be a guest or a host path.
+    bool fbs_server::add_font(common::ro_stream &stream, const std::string &name, const bool user_font) {
+        std::vector<std::uint8_t> buf(static_cast<std::size_t>(stream.size()));
+
+        if (buf.empty() || (stream.read(buf.data(), buf.size()) != buf.size())) {
+            LOG_ERROR(SERVICE_FBS, "Unable to read font file {}", name);
+            return false;
+        }
+
+        const auto extension = common::lowercase_string(eka2l1::path_extension(name));
+
+        if (extension == ".ttf") {
+            return persistent_font_store.add_fonts(buf, epoc::adapter::font_file_adapter_kind::freetype, user_font);
+        }
+
+        if (extension == ".gdr") {
+            return persistent_font_store.add_fonts(buf, epoc::adapter::font_file_adapter_kind::gdr, user_font);
+        }
+
+        // CFontStore::AddFileL tries every rasterizer; extensions are only hints
+        // and do not establish that the font's tables use a supported format.
+        for (const auto kind : { epoc::adapter::font_file_adapter_kind::freetype,
+                 epoc::adapter::font_file_adapter_kind::gdr }) {
+            if (persistent_font_store.add_fonts(buf, kind, user_font)) {
+                LOG_TRACE(SERVICE_FBS, "Loaded font file {} by content", name);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool fbs_server::add_single_font(eka2l1::io_system *io, const guest_path &path) {
         symfile f = io->open_file(path, READ_MODE | BIN_MODE);
-        const std::uint64_t fsize = f->size();
 
-        std::vector<std::uint8_t> buf;
+        if (!f) {
+            return false;
+        }
 
-        buf.resize(fsize);
-        f->read_file(&buf[0], 1, static_cast<std::uint32_t>(buf.size()));
+        ro_file_stream stream(f.get());
+        add_font(stream, common::ucs2_to_utf8(path));
+
+        // A file we have no adapter for is not a failure: add_font_file_store
+        // reports this back to the guest, and it used to accept anything that
+        // existed.
+        return true;
+    }
+
+    // Fonts the user imported through a frontend. They live in <storage>/fonts,
+    // outside the guest drives, so one import serves every installed device and
+    // survives a device being reinstalled (which rewrites its Z drive).
+    void fbs_server::load_custom_fonts(const host_path &storage) {
+        const host_path fonts_folder_path = eka2l1::add_path(storage, "fonts");
+        auto folder = common::make_directory_iterator(eka2l1::host_path{fonts_folder_path}, "");
+
+        if (!folder || !folder->is_valid()) {
+            return;
+        }
+
+        common::dir_entry entry;
+
+        while (folder->next_entry(entry) >= 0) {
+            if ((entry.name == ".") || (entry.name == "..")) {
+                continue;
+            }
+
+            const host_path font_path = eka2l1::add_path(fonts_folder_path, entry.name);
+            common::ro_std_file_stream stream(font_path, true);
+
+            if (stream.valid() && add_font(stream, entry.name.utf8(), true)) {
+                LOG_TRACE(SERVICE_FBS, "Loaded custom font {}", font_path);
+            }
+        }
+    }
+
+    // Linked typefaces are assembled once every font is in the store: their
+    // components can sit on a different drive than the link.ini naming them.
+    void fbs_server::load_linked_fonts(eka2l1::io_system *io) {
+        // Stepping one below drive_a would leave the enum's value range.
+        for (int drv_index = drive_z; drv_index >= drive_a; drv_index--) {
+            const drive_number drv = static_cast<drive_number>(drv_index);
+            if (io->get_drive_entry(drv)) {
+                load_linked_fonts_from_directory(io, guest_path(std::u16string{ drive_to_char16(drv) } + (kern->is_eka1() ? u":\\System\\Fonts\\" : u":\\Resource\\Fonts\\")));
+            }
+        }
+    }
+
+    void fbs_server::load_linked_fonts_from_directory(eka2l1::io_system *io, const guest_path &fonts_folder_path) {
+        const guest_path link_path(fonts_folder_path + u"link.ini");
+        symfile f = io->open_file(link_path, READ_MODE | BIN_MODE);
+
+        if (!f) {
+            return;
+        }
+
+        std::vector<std::uint8_t> buf(static_cast<std::size_t>(f->size()));
+        const bool read_ok = !buf.empty()
+            && (f->read_file(buf.data(), 1, static_cast<std::uint32_t>(buf.size())) == buf.size());
 
         f->close();
 
-        // Add fonts
-        const auto extension = common::lowercase_string(eka2l1::path_extension(common::ucs2_to_utf8(path)));
-        epoc::adapter::font_file_adapter_kind adapter_kind = epoc::adapter::font_file_adapter_kind::none;
-
-        if (extension == ".ttf") {
-            adapter_kind = epoc::adapter::font_file_adapter_kind::freetype;
-        } else if (extension == ".gdr") {
-            adapter_kind = epoc::adapter::font_file_adapter_kind::gdr;
+        if (!read_ok) {
+            return;
         }
 
-        if (adapter_kind != epoc::adapter::font_file_adapter_kind::none) {
-            persistent_font_store.add_fonts(buf, adapter_kind);
+        for (const auto &spec : epoc::parse_linked_font_config(epoc::decode_linked_font_config(buf.data(), buf.size()))) {
+            if (persistent_font_store.add_linked_font(spec.name, spec.component_names, spec.canonical)) {
+                LOG_TRACE(SERVICE_FBS, "Registered linked typeface {} from {}", common::ucs2_to_utf8(spec.name),
+                    common::ucs2_to_utf8(link_path));
+            }
         }
-
-        return true;
     }
 
     void fbs_server::load_fonts(eka2l1::io_system *io) {
         // Search all drives
-        for (drive_number drv = drive_z; drv >= drive_a; drv = static_cast<drive_number>(static_cast<int>(drv) - 1)) {
+        // Stepping one below drive_a would leave the enum's value range.
+        for (int drv_index = drive_z; drv_index >= drive_a; drv_index--) {
+            const drive_number drv = static_cast<drive_number>(drv_index);
             if (io->get_drive_entry(drv)) {
-                const std::u16string fonts_folder_path = std::u16string{ drive_to_char16(drv) } + (kern->is_eka1() ? u":\\System\\Fonts\\" : u":\\Resource\\Fonts\\");
-                auto folder = io->open_dir(fonts_folder_path, {}, io_attrib_include_file);
+                const guest_path fonts_folder_path(std::u16string{ drive_to_char16(drv) } + (kern->is_eka1() ? u":\\System\\Fonts\\" : u":\\Resource\\Fonts\\"));
+                auto folder = io->open_dir(eka2l1::guest_path{fonts_folder_path}, {}, io_attrib_include_file);
 
                 if (folder) {
                     LOG_TRACE(SERVICE_FBS, "Found font folder: {}", common::ucs2_to_utf8(fonts_folder_path));

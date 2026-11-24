@@ -28,12 +28,14 @@ namespace eka2l1::epoc::apa {
         , parent_window_group_id_(0)
         , debug_mem_fail_(0)
         , app_startup_instrumentation_event_id_base_(0)
-        , parent_process_id_(0) {
+        , parent_process_id_(-1) {
     }
 
     void command_line::do_it_newarch(common::chunkyseri &seri) {
         epoc::absorb_des_string(document_name_, seri, true);
-        epoc::absorb_des_string(executable_path_, seri, true);
+        auto executable = executable_path_.utf16();
+        epoc::absorb_des_string(executable, seri, true);
+        if (seri.get_seri_mode() == common::SERI_MODE_READ) executable_path_ = guest_path(std::move(executable));
         epoc::absorb_des_string(opaque_data_, seri, false);
         epoc::absorb_des_string(tail_end_, seri, false);
 
@@ -73,6 +75,21 @@ namespace eka2l1::epoc::apa {
         return 'R';
     }
 
+    std::string command_line::to_buffer() {
+        common::chunkyseri seri(nullptr, 0, common::chunkyseri_mode::SERI_MODE_MEASURE);
+        do_it_newarch(seri);
+
+        std::string data;
+        data.resize(seri.size());
+
+        seri = common::chunkyseri(reinterpret_cast<std::uint8_t *>(data.data()), data.length(),
+            common::chunkyseri_mode::SERI_MODE_WRITE);
+
+        do_it_newarch(seri);
+
+        return data;
+    }
+
     std::u16string command_line::to_string(const bool oldarch) {
         if (oldarch) {
             // From RE. The order: .app path -> command (O, C, R, B, V, W) -> document name -> tail end
@@ -82,7 +99,7 @@ namespace eka2l1::epoc::apa {
 
             // Add executable path
             result += '"';
-            result += executable_path_;
+            result += executable_path_.utf16();
             result += u"\" ";
 
             // Add command

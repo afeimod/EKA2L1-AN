@@ -21,11 +21,41 @@
 #include <common/log.h>
 
 #include <services/fbs/adapter/freetype_font_adapter.h>
+#include <algorithm>
+#include <cstring>
 #include <memory>
 
 #include <freetype/tttables.h>
 
 namespace eka2l1::epoc::adapter {
+    static bool has_truetype_glyph_tables(FT_Face face) {
+        FT_ULong length = 0;
+        if (FT_Load_Sfnt_Table(face, FT_MAKE_TAG('g', 'l', 'y', 'f'), 0, nullptr, &length)) {
+            return true;
+        }
+
+        const auto *head = static_cast<TT_Header *>(FT_Get_Sfnt_Table(face, FT_SFNT_HEAD));
+        const auto *maxp = static_cast<TT_MaxProfile *>(FT_Get_Sfnt_Table(face, FT_SFNT_MAXP));
+        const auto *hhea = static_cast<TT_HoriHeader *>(FT_Get_Sfnt_Table(face, FT_SFNT_HHEA));
+        if (!head || !maxp || !hhea || (hhea->number_Of_HMetrics > maxp->numGlyphs)) {
+            return false;
+        }
+
+        // Compact ROM fonts retain SFNT headers but compress these tables in a
+        // format FreeType does not decode. Accepting them exposes empty glyphs.
+        const FT_ULong loca_size = (static_cast<FT_ULong>(maxp->numGlyphs) + 1)
+            * (head->Index_To_Loc_Format == 0 ? 2 : 4);
+        length = 0;
+        if (FT_Load_Sfnt_Table(face, FT_MAKE_TAG('l', 'o', 'c', 'a'), 0, nullptr, &length) || (length < loca_size)) {
+            return false;
+        }
+
+        const FT_ULong hmtx_size = static_cast<FT_ULong>(hhea->number_Of_HMetrics) * 4
+            + static_cast<FT_ULong>(maxp->numGlyphs - hhea->number_Of_HMetrics) * 2;
+        length = 0;
+        return !FT_Load_Sfnt_Table(face, FT_MAKE_TAG('h', 'm', 't', 'x'), 0, nullptr, &length) && (length >= hmtx_size);
+    }
+
     struct freetype_lib_raii {
         FT_Library lib_{};
 
@@ -64,7 +94,11 @@ namespace eka2l1::epoc::adapter {
             currentMaxHeightInFontUnit = FT_MulFix(
                 boundingBoxHeightInFontUnit, aFace->size->metrics.y_scale );
         }
-        while ( currentMaxHeightInFontUnit > maxHeightInFontUnit )
+        // The lower bound is ours, not Symbian's: FT_Set_Pixel_Sizes fails at
+        // zero, which leaves currentMaxHeightInFontUnit unchanged and spins
+        // this loop forever. A caller asking for an unusably small height is
+        // enough to reach that.
+        while ( ( currentMaxHeightInFontUnit > maxHeightInFontUnit ) && ( designHeightInPixels > 1 ) )
         {
             designHeightInPixels--;
             FT_Set_Pixel_Sizes( aFace, designHeightInPixels, designHeightInPixels );
@@ -110,6 +144,10 @@ namespace eka2l1::epoc::adapter {
             err = FT_New_Memory_Face(get_ft_lib(), data_.data(), static_cast<FT_Long>(data_.size()), i, &face);
             if (err) {
                 LOG_ERROR(SERVICE_FBS, "FreeType failed to read face from memory, error: {}", FT_Error_String(err));
+                continue;
+            }
+            if (!has_truetype_glyph_tables(face)) {
+                FT_Done_Face(face);
                 continue;
             }
             faces_.push_back(face);
@@ -159,7 +197,18 @@ namespace eka2l1::epoc::adapter {
             return 0;
         }
 
-        return faces_[idx]->size->metrics.height - faces_[idx]->size->metrics.ascender + faces_[idx]->size->metrics.descender;
+        FT_Face face = faces_[idx];
+        FT_Pos gap = face->size->metrics.height - face->size->metrics.ascender + face->size->metrics.descender;
+
+        if (FT_IS_SFNT(face)) {
+            if (const TT_OS2 *os2 = reinterpret_cast<const TT_OS2 *>(FT_Get_Sfnt_Table(face, FT_SFNT_OS2))) {
+                if (os2->version != 0xFFFF) {
+                    gap = FT_MulFix(os2->sTypoLineGap, face->size->metrics.y_scale);
+                }
+            }
+        }
+
+        return static_cast<std::uint32_t>(std::max<short>(0, ft_convention_to_int_pixel(gap)));
     }
 
     bool freetype_font_adapter::get_face_attrib(const std::size_t idx, open_font_face_attrib &face_attrib) {
@@ -232,7 +281,12 @@ namespace eka2l1::epoc::adapter {
             return nullptr;
         }
 
-        auto err = FT_Load_Glyph(face, glyph_index, FT_LOAD_RENDER);
+        // A caller backing a monochrome face asks for that format; FreeType's
+        // own monochrome rasteriser, hinted, is far kinder to small CJK glyphs
+        // than thresholding a grey one would be.
+        const bool want_monochrome = bmp_type && (*bmp_type == glyph_bitmap_type::monochrome_glyph_bitmap);
+
+        auto err = FT_Load_Glyph(face, glyph_index, FT_LOAD_RENDER | (want_monochrome ? FT_LOAD_TARGET_MONO : 0));
         if (err) {
             LOG_ERROR(SERVICE_FBS, "Failed to load glyph for face to get glyph bitmap, error: {}", FT_Error_String(err));
             return nullptr;
@@ -249,10 +303,14 @@ namespace eka2l1::epoc::adapter {
             *rasterized_height = static_cast<int>(bitmap.rows);
         }
 
+        const glyph_bitmap_type produced = (bitmap.pixel_mode == FT_PIXEL_MODE_MONO)
+            ? glyph_bitmap_type::monochrome_glyph_bitmap
+            : glyph_bitmap_type::antialised_glyph_bitmap;
+
         total_size = bitmap.width * bitmap.rows;
 
         if (bmp_type) {
-            *bmp_type = glyph_bitmap_type::antialised_glyph_bitmap;
+            *bmp_type = produced;
         }
 
         character_metric.width = ft_convention_to_int_pixel(glyph->metrics.width);
@@ -263,130 +321,171 @@ namespace eka2l1::epoc::adapter {
         character_metric.vertical_bearing_x = ft_convention_to_int_pixel(glyph->metrics.vertBearingX);
         character_metric.vertical_bearing_y = ft_convention_to_int_pixel(glyph->metrics.vertBearingY);
         character_metric.vertical_advance = ft_convention_to_int_pixel(glyph->metrics.vertAdvance);
-        character_metric.bitmap_type = glyph_bitmap_type::antialised_glyph_bitmap;
+        character_metric.bitmap_type = produced;
 
-        return bitmap.buffer;
+        const std::int32_t width = static_cast<std::int32_t>(bitmap.width);
+        const std::int32_t height = static_cast<std::int32_t>(bitmap.rows);
+
+        // Clients read the glyph data using these metrics, so report the grid-fitted
+        // bitmap rather than the outline, as Symbian's FreeType rasteriser does.
+        character_metric.width = static_cast<std::int16_t>(width);
+        character_metric.height = static_cast<std::int16_t>(height);
+        character_metric.horizontal_bearing_x = static_cast<std::int16_t>(glyph->bitmap_left);
+        character_metric.horizontal_bearing_y = static_cast<std::int16_t>(glyph->bitmap_top);
+
+        if (produced != glyph_bitmap_type::monochrome_glyph_bitmap) {
+            // Antialiased glyph data is read as tightly packed rows.
+            if (bitmap.pitch > width) {
+                for (std::int32_t y = 1; y < height; y++) {
+                    std::memmove(bitmap.buffer + static_cast<std::ptrdiff_t>(y) * width,
+                        bitmap.buffer + static_cast<std::ptrdiff_t>(y) * bitmap.pitch, width);
+                }
+            }
+            return bitmap.buffer;
+        }
+
+        // FreeType packs a monochrome row most significant bit first and pads
+        // it to whole bytes; a Symbian glyph is one run of bits, least
+        // significant first, run-length encoded from there.
+
+        std::vector<std::uint32_t> bits((static_cast<std::size_t>(width) * height + 31) >> 5, 0);
+
+        for (std::int32_t y = 0; y < height; y++) {
+            const std::uint8_t *row = bitmap.buffer + static_cast<std::ptrdiff_t>(y) * bitmap.pitch;
+
+            for (std::int32_t x = 0; x < width; x++) {
+                if (row[x >> 3] & (0x80 >> (x & 7))) {
+                    const std::int32_t index = y * width + x;
+                    bits[index >> 5] |= (1u << (index & 31));
+                }
+            }
+        }
+
+        const std::size_t word_count = monochrome_glyph_word_count(width, height);
+        std::uint32_t *compressed = new std::uint32_t[word_count];
+        std::fill(compressed, compressed + word_count, 0);
+
+        total_size = ((compress_monochrome_glyph(bits.data(), width, height, compressed) + 31) >> 5) * 4;
+
+        std::uint8_t *result = reinterpret_cast<std::uint8_t *>(compressed);
+        owned_monochrome_bitmaps_.push_back(result);
+
+        return result;
     }
 
     void freetype_font_adapter::free_glyph_bitmap(std::uint8_t *data) {
+        // Antialiased glyphs live in FreeType's own slot and are replaced by
+        // the next load; only the monochrome ones are ours to release.
+        auto owned = std::find(owned_monochrome_bitmaps_.begin(), owned_monochrome_bitmaps_.end(), data);
+
+        if (owned != owned_monochrome_bitmaps_.end()) {
+            owned_monochrome_bitmaps_.erase(owned);
+            delete[] reinterpret_cast<std::uint32_t *>(data);
+        }
     }
 
-    std::int32_t freetype_font_adapter::begin_get_atlas(std::uint8_t *atlas_ptr, const eka2l1::vec2 atlas_size) {
-        auto pack_state = std::make_unique<atlas_pack_state>();
-
-        pack_state->atlas_base_ = atlas_ptr;
-        pack_state->atlas_size_ = atlas_size;
-
-        pack_state->atlas_node_.resize(atlas_size.x);
-
-        stbrp_init_target(&pack_state->atlas_context_, atlas_size.x, atlas_size.y, pack_state->atlas_node_.data(),
-            static_cast<int>(pack_state->atlas_node_.size()));
-        std::memset(pack_state->atlas_base_, 0, atlas_size.x * atlas_size.y);
-
-        return static_cast<std::int32_t>(pack_states_.add(pack_state));
-    }
-
-    bool freetype_font_adapter::get_glyph_atlas(const std::int32_t handle, const std::size_t idx, const char16_t start_code, int *unicode_point, const char16_t num_code, const std::uint32_t metric_identifier, character_info *info) {
-        auto pack_state = pack_states_.get(handle);
-
-        if (!pack_state) {
+    bool freetype_font_adapter::measure_atlas_glyphs(const std::size_t idx, const int *codes, const std::size_t count,
+        const std::uint32_t metric_identifier, eka2l1::vec2 *sizes) {
+        if (idx >= faces_.size()) {
             return false;
         }
 
-        auto pack_state_ptr = pack_state->get();
         auto face = faces_[idx];
-
-        if (!face) {
-            return false;
-        }
 
         if (!set_font_size(idx, metric_identifier)) {
             return false;
         }
 
-        std::vector<stbrp_rect> pack_rects(num_code);
-
-        for (auto i = 0; i < num_code; i++) {
-            const char16_t char_code = unicode_point ? unicode_point[i] : static_cast<char16_t>(start_code + i);
-            auto err = FT_Load_Char(face, char_code, FT_LOAD_BITMAP_METRICS_ONLY);
+        for (std::size_t i = 0; i < count; i++) {
+            auto err = FT_Load_Char(face, static_cast<FT_ULong>(codes[i]), FT_LOAD_BITMAP_METRICS_ONLY);
 
             if (err) {
-                LOG_WARN(SERVICE_FBS, "Failed to load character code 0x{:X} for face to get glyph atlas, error: {}",
-                    static_cast<int>(char_code), FT_Error_String(err));
+                LOG_WARN(SERVICE_FBS, "Failed to load character code 0x{:X} for face to measure glyph atlas, error: {}",
+                    codes[i], FT_Error_String(err));
+
+                sizes[i] = eka2l1::vec2(0, 0);
+                continue;
             }
 
-            pack_rects[i].x = 0;
-            pack_rects[i].y = 0;
-            pack_rects[i].w = face->glyph->bitmap.width + 10;
-            pack_rects[i].h = face->glyph->bitmap.rows + 10;
+            // Metrics-only loading reports the plain (non-LCD) bitmap, while
+            // rendering goes through the LCD filter and is averaged back down
+            // by three. The two agree to within the filter's couple of pixels,
+            // which the caller's padding absorbs.
+            sizes[i] = eka2l1::vec2(static_cast<int>(face->glyph->bitmap.width),
+                static_cast<int>(face->glyph->bitmap.rows));
         }
 
-        if (!stbrp_pack_rects(&pack_state_ptr->atlas_context_, pack_rects.data(), static_cast<int>(pack_rects.size()))) {
-            LOG_ERROR(SERVICE_FBS, "Failed to pack rects for glyph atlas");
+        return true;
+    }
+
+    bool freetype_font_adapter::render_atlas_glyphs(const std::size_t idx, const int *codes, const std::size_t count,
+        const std::uint32_t metric_identifier, std::uint8_t *atlas, const eka2l1::vec2 atlas_size,
+        const eka2l1::vec2 *positions, character_info *info) {
+        if (idx >= faces_.size()) {
             return false;
         }
 
-        // Render and put bitmap to atlas
-        for (auto i = 0; i < num_code; i++) {
-            const char16_t char_code = unicode_point ? unicode_point[i] : static_cast<char16_t>(start_code + i);
-            auto err = FT_Load_Char(face, char_code, FT_LOAD_DEFAULT);
+        auto face = faces_[idx];
 
-            if (err) {
-                LOG_WARN(SERVICE_FBS, "Failed to load character code 0x{:X} for face to get glyph atlas, error: {}",
-                    static_cast<int>(char_code), FT_Error_String(err));
+        if (!set_font_size(idx, metric_identifier)) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < count; i++) {
+            auto err = FT_Load_Char(face, static_cast<FT_ULong>(codes[i]), FT_LOAD_DEFAULT);
+
+            if (!err) {
+                err = FT_Render_Glyph(face->glyph, FT_RENDER_MODE_LCD);
             }
 
-            err = FT_Render_Glyph(face->glyph, FT_RENDER_MODE_LCD);
             if (err) {
                 LOG_WARN(SERVICE_FBS, "Failed to render character code 0x{:X} for face to get glyph atlas, error: {}",
-                static_cast<int>(char_code), FT_Error_String(err));
+                    codes[i], FT_Error_String(err));
+
+                info[i] = character_info{};
+                continue;
             }
 
             auto glyph = face->glyph;
             auto bitmap = glyph->bitmap;
 
-            auto &rect = pack_rects[i];
-            auto dest = pack_state_ptr->atlas_base_ + (rect.x + 5) * 4 + (rect.y + 5) * pack_state_ptr->atlas_size_.x * 4;
+            std::uint8_t *dest = atlas + positions[i].x * 4 + positions[i].y * atlas_size.x * 4;
 
-            for (auto y = 0; y < bitmap.rows; y++) {
-                for (auto x = 0; x < bitmap.width / 3; x++) {
+            for (std::uint32_t y = 0; y < bitmap.rows; y++) {
+                for (std::uint32_t x = 0; x < bitmap.width / 3; x++) {
                     auto average = static_cast<float>(bitmap.buffer[x * 3 + y * bitmap.pitch] +
                         bitmap.buffer[x * 3 + y * bitmap.pitch + 1] +
                         bitmap.buffer[x * 3 + y * bitmap.pitch + 2]) / 3.0f;
 
                     eka2l1::vec4 color(bitmap.buffer[x * 3 + y * bitmap.pitch], bitmap.buffer[x * 3 + y * bitmap.pitch + 1],
-                       bitmap.buffer[x * 3 + y * bitmap.pitch +2], static_cast<std::uint8_t>(average));
+                       bitmap.buffer[x * 3 + y * bitmap.pitch + 2], static_cast<std::uint8_t>(average));
 
                     float max = (static_cast<float>(std::max({ color.x, color.y, color.z })) / 255.0f);
                     int min = std::min({ color.x, color.y, color.z });
 
                     color = color * max + eka2l1::vec4(color.x, color.y, color.z, min) * (1.0f - max);
 
-                    dest[x * 4 + y * pack_state_ptr->atlas_size_.x * 4 + 0] = color.x;
-                    dest[x * 4 + y * pack_state_ptr->atlas_size_.x * 4 + 1] = color.y;
-                    dest[x * 4 + y * pack_state_ptr->atlas_size_.x * 4 + 2] = color.z;
-                    dest[x * 4 + y * pack_state_ptr->atlas_size_.x * 4 + 3] = color.w;
-
+                    dest[x * 4 + y * atlas_size.x * 4 + 0] = color.x;
+                    dest[x * 4 + y * atlas_size.x * 4 + 1] = color.y;
+                    dest[x * 4 + y * atlas_size.x * 4 + 2] = color.z;
+                    dest[x * 4 + y * atlas_size.x * 4 + 3] = color.w;
                 }
             }
 
-            info[i].x0 = rect.x + 5;
-            info[i].y0 = rect.y + 5;
-            info[i].x1 = rect.x + 5 + bitmap.width / 3;
-            info[i].y1 = rect.y + 5 + bitmap.rows;
+            info[i].x0 = static_cast<std::uint16_t>(positions[i].x);
+            info[i].y0 = static_cast<std::uint16_t>(positions[i].y);
+            info[i].x1 = static_cast<std::uint16_t>(positions[i].x + bitmap.width / 3);
+            info[i].y1 = static_cast<std::uint16_t>(positions[i].y + bitmap.rows);
             info[i].xadv = ft_convention_to_float(glyph->metrics.horiAdvance);
             info[i].xoff = static_cast<float>(glyph->bitmap_left);
             info[i].yoff = static_cast<float>(-glyph->bitmap_top);
-            info[i].xoff2 = info[i].xoff + info[i].xadv;
+            info[i].xoff2 = info[i].xoff + static_cast<float>(bitmap.width / 3);
             info[i].yoff2 = info[i].yoff + static_cast<float>(bitmap.rows);
         }
 
         return true;
     }
 
-    void freetype_font_adapter::end_get_atlas(const std::int32_t handle) {
-        pack_states_.remove(handle);
-    }
 
     bool freetype_font_adapter::does_glyph_exist(std::size_t idx, std::uint32_t code, const std::uint32_t metric_identifier) {
         if (idx >= faces_.size()) {
@@ -452,7 +551,8 @@ namespace eka2l1::epoc::adapter {
         // TODO: Filling max depth?
         open_font_metrics metrics{};
         metrics.ascent = ft_convention_to_int_pixel(face->size->metrics.ascender);
-        metrics.descent = ft_convention_to_int_pixel(face->size->metrics.descender);
+        // FreeType's descender is negative; Symbian metrics store the descent as a positive distance.
+        metrics.descent = ft_convention_to_int_pixel(-face->size->metrics.descender);
         metrics.max_height = ft_convention_to_int_pixel(face->size->metrics.height);
         metrics.max_width = ft_convention_to_int_pixel(face->size->metrics.max_advance);
         metrics.max_depth = 0;

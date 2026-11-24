@@ -22,6 +22,8 @@
 #include <services/internet/protocols/common.h>
 #include <services/internet/protocols/inet.h>
 
+#include <services/bluetooth/protocols/mdns.h>
+
 #include <common/random.h>
 #include <common/log.h>
 #include <common/algorithm.h>
@@ -40,7 +42,6 @@ namespace eka2l1::epoc::bt {
         , port_offset_(conf.btnet_port_offset)
         , enable_upnp_(conf.enable_upnp)
         , friend_info_cached_(false)
-        , lan_discovery_call_listener_socket_(nullptr)
         , bluetooth_queries_server_socket_(nullptr)
         , matching_server_socket_(nullptr)
         , hearing_timeout_timer_(nullptr)
@@ -49,17 +50,20 @@ namespace eka2l1::epoc::bt {
         , device_addr_asker_(this)
         , current_active_observer_(nullptr)
         , password_(conf.btnet_password)
+        , central_server_url_(conf.bt_central_server_url)
         , discovery_mode_(static_cast<discovery_mode>(conf.btnet_discovery_mode))
+        , suspended_(false)
         , asker_counter_(0) {
+        // Local state the guest still reaches with discovery off.
+        std::fill(port_refs_.begin(), port_refs_.end(), 0);
+        std::fill(port_upnp_mapped_.begin(), port_upnp_mapped_.end(), false);
+        for (std::uint32_t i = 0; i < 6; i++) {
+            random_device_addr_.addr_[i] = static_cast<std::uint8_t>(random_range(0, 0xFF));
+        }
+
         if (discovery_mode_ == DISCOVERY_MODE_OFF) {
             return;
         }
-
-        if (discovery_mode_ != DISCOVERY_MODE_DIRECT_IP) {
-            port_ = HARBOUR_PORT;
-        }
-
-        std::fill(port_refs_.begin(), port_refs_.end(), 0);
 
         std::vector<std::uint64_t> errs;
         update_friend_list(conf.friend_addresses, errs);
@@ -73,55 +77,107 @@ namespace eka2l1::epoc::bt {
             }
         }
 
-        for (std::uint32_t i = 0; i < 6; i++) {
-            random_device_addr_.addr_[i] = static_cast<std::uint8_t>(random_range(0, 0xFF));
-        }
+        start_discovery(true);
+    }
 
+    void midman_inet::start_discovery(const bool first_start) {
         auto looper = libuv::default_looper;
-        std::string bt_server_url = conf.bt_central_server_url;
 
         if (!looper->started()) {
             looper->set_loop_thread_prepare_callback([]() { common::set_thread_priority(common::thread_priority_very_high); });
             looper->start();
         }
 
-        looper->one_shot([this, bt_server_url]() {
-            auto loop = uvw::loop::get_default();
+        looper->one_shot([this, first_start]() {
+            setup_discovery_sockets(first_start);
+        });
+    }
 
-            bluetooth_queries_server_socket_ = loop->resource<uvw::udp_handle>();
+    void midman_inet::setup_discovery_sockets(const bool first_start) {
+        auto loop = uvw::loop::get_default();
+
+        bluetooth_queries_server_socket_ = loop->resource<uvw::udp_handle>();
+
+        // Not a socket, so it survives a suspension and keeps a pending stranger
+        // search's timeout running across one.
+        if (!hearing_timeout_timer_) {
             hearing_timeout_timer_ = loop->resource<uvw::timer_handle>();
+        }
 
-            if (discovery_mode_ == DISCOVERY_MODE_LAN) {
-                setup_lan_discovery();
-            } else if (discovery_mode_ == DISCOVERY_MODE_PROXY_SERVER) {
-                setup_proxy_server_discovery(bt_server_url);
+        if (discovery_mode_ == DISCOVERY_MODE_LAN) {
+            setup_lan_discovery();
+        } else if (discovery_mode_ == DISCOVERY_MODE_PROXY_SERVER) {
+            setup_proxy_server_discovery(central_server_url_);
+        }
+
+        sockaddr_in6 addr_bind;
+        std::memset(&addr_bind, 0, sizeof(sockaddr_in6));
+        addr_bind.sin6_family = (discovery_mode_ == DISCOVERY_MODE_LAN) ? AF_INET : AF_INET6;
+        addr_bind.sin6_port = htons(static_cast<std::uint16_t>(port_));
+
+        // Nothing else reports on this socket, so an unchecked failure here
+        // leaves the whole discovery side dead with nothing in the log.
+        if (const int bind_err = bluetooth_queries_server_socket_->bind(*reinterpret_cast<sockaddr*>(&addr_bind)); bind_err < 0) {
+            LOG_ERROR(SERVICE_BLUETOOTH, "Can't bind the Bluetooth queries socket to port {}! Libuv error code={}", port_, bind_err);
+        }
+
+        // A resume rebuilds the socket behind the same port, which the router kept
+        // mapped while we were away.
+        if (first_start && should_upnp_apply_to_port()) {
+            UPnP::TryPortmapping(static_cast<std::uint16_t>(port_), true);
+        }
+
+        bluetooth_queries_server_socket_->on<uvw::udp_data_event>([this](const uvw::udp_data_event &event, uvw::udp_handle &handle) {
+            std::optional<sockaddr_in6> sender_ced = libuv::from_ip_string(event.sender.ip.data(), event.sender.port);
+            if (!sender_ced.has_value()) {
+                LOG_ERROR(SERVICE_BLUETOOTH, "Invalid sender address passed to callback!");
+                return;
             }
+            handle_queries_request(reinterpret_cast<sockaddr*>(&sender_ced.value()), event.data.get(), event.length);
+        });
 
-            sockaddr_in6 addr_bind;
-            std::memset(&addr_bind, 0, sizeof(sockaddr_in6));
-            addr_bind.sin6_family = (discovery_mode_ == DISCOVERY_MODE_LAN) ? AF_INET : AF_INET6;
-            addr_bind.sin6_port = htons(static_cast<std::uint16_t>(port_));
+        bluetooth_queries_server_socket_->on<uvw::error_event>([](const uvw::error_event &event, uvw::udp_handle &handle) {
+            LOG_ERROR(SERVICE_BLUETOOTH, "Error on the Bluetooth queries socket! Libuv error code={}", event.code());
 
-            bluetooth_queries_server_socket_->bind(*reinterpret_cast<sockaddr*>(&addr_bind));
-
-            if (should_upnp_apply_to_port()) {
-                UPnP::TryPortmapping(static_cast<std::uint16_t>(port_), true);
+            if (is_socket_dead_error(event.code())) {
+                handle.stop();
             }
+        });
 
-            bluetooth_queries_server_socket_->on<uvw::udp_data_event>([this](const uvw::udp_data_event &event, uvw::udp_handle &handle) {
-                std::optional<sockaddr_in6> sender_ced = libuv::from_ip_string(event.sender.ip.data(), event.sender.port);
-                if (!sender_ced.has_value()) {
-                    LOG_ERROR(SERVICE_BLUETOOTH, "Invalid sender address passed to callback!");
-                    return;
-                }
-                handle_queries_request(reinterpret_cast<sockaddr*>(&sender_ced.value()), event.data.get(), event.length);
-            });
+        bluetooth_queries_server_socket_->recv();
+    }
 
-            bluetooth_queries_server_socket_->on<uvw::error_event>([this](const uvw::error_event &event, uvw::udp_handle &handle) {
-                handle_queries_request(nullptr, nullptr, event.code());
-            });
+    // The asker is left out on purpose: closing it would strand a synchronous
+    // requester waiting on a completion that can no longer arrive.
+    void midman_inet::shutdown_discovery_sockets() {
+        mdns_.reset();
+        shutdown_uv_handle(bluetooth_queries_server_socket_);
+        shutdown_uv_handle(matching_server_socket_);
+        matching_server_receive_buffer_.clear();
+    }
 
-            bluetooth_queries_server_socket_->recv();
+    // Keep the transition and all handle changes together on the loop thread.
+    void midman_inet::suspend() {
+        if ((discovery_mode_ == DISCOVERY_MODE_OFF) || !libuv::default_looper->started()) {
+            return;
+        }
+
+        libuv::default_looper->one_shot([this]() {
+            if (suspended_) return;
+            suspended_ = true;
+            shutdown_discovery_sockets();
+        });
+    }
+
+    void midman_inet::resume() {
+        if ((discovery_mode_ == DISCOVERY_MODE_OFF) || !libuv::default_looper->started()) {
+            return;
+        }
+
+        libuv::default_looper->one_shot([this]() {
+            if (!suspended_) return;
+            suspended_ = false;
+            setup_discovery_sockets(false);
         });
     }
 
@@ -133,21 +189,36 @@ namespace eka2l1::epoc::bt {
         if (should_upnp_apply_to_port()) {
             UPnP::StopPortmapping(static_cast<std::uint16_t>(port_), true);
 
-            for (std::size_t i = 0; i < port_refs_.size(); i++) {
-                if (port_refs_[i] != 0) {
+            for (std::size_t i = 0; i < port_upnp_mapped_.size(); i++) {
+                if (port_upnp_mapped_[i]) {
                     UPnP::StopPortmapping(static_cast<std::uint16_t>(port_offset_ + i), false);
                 }
             }
         }
 
-        send_logout(true);
+        if (!libuv::default_looper->started()) {
+            return;
+        }
 
-        auto lan_discovery_call_listener_socket_copy = lan_discovery_call_listener_socket_;
-        auto bluetooth_queries_server_socket_copy = bluetooth_queries_server_socket_;
-        auto hearing_timeout_timer_copy = hearing_timeout_timer_;
+        // Every handle below dispatches into a listener that captured this, and stays
+        // alive on its own until closed, so this object may not go away until the loop
+        // thread has torn them all down. Blocking is safe: the default looper is started
+        // once and never stopped, so the task is always picked up.
+        common::event teardown_done;
 
-        libuv::default_looper->one_shot([lan_discovery_call_listener_socket_copy, bluetooth_queries_server_socket_copy, hearing_timeout_timer_copy]() {
+        libuv::default_looper->one_shot([this, &teardown_done]() {
+            send_logout();
+            // The asker goes first: its retry timer completes requests through a callback
+            // that reaches back into this object, which is already half torn down.
+            device_addr_asker_.shutdown_handles();
+
+            shutdown_discovery_sockets();
+            shutdown_uv_handle(hearing_timeout_timer_);
+
+            teardown_done.set();
         });
+
+        teardown_done.wait();
     }
 
     void midman_inet::on_timeout_friend_search() {
@@ -177,6 +248,10 @@ namespace eka2l1::epoc::bt {
     void midman_inet::reset_friend_timeout_timer() {
         if (!reset_timeout_timer_task_) {
             reset_timeout_timer_task_ = libuv::create_task([this]() {
+                if (!hearing_timeout_timer_) {
+                    return;
+                }
+
                 const std::uint32_t duration = (discovery_mode_ == DISCOVERY_MODE_LAN) ? TIMEOUT_HEARING_STRANGER_LAN_MS : TIMEOUT_HEARING_STRANGER_MS;
                 const auto duration_chrono = std::chrono::milliseconds(duration);
 
@@ -194,9 +269,44 @@ namespace eka2l1::epoc::bt {
     }
 
     void midman_inet::handle_queries_request(const sockaddr *sender, const char *buf, std::int64_t nread) {
-        const std::uint32_t asker_id = *reinterpret_cast<const std::uint32_t*>(buf);
+        // The datagram comes from the network, so it may be truncated or hostile. Every
+        // opcode below needs the asker ID plus the opcode byte before anything else.
+        static constexpr std::int64_t QUERY_HEADER_SIZE = 5;
+
+        if (!sender || !buf || (nread < QUERY_HEADER_SIZE)) {
+            return;
+        }
+
+        std::uint32_t asker_id = 0;
+        std::memcpy(&asker_id, buf, sizeof(asker_id));
+
         query_opcode opcode = static_cast<query_opcode>(buf[4]);
         char opcode_result_signature = QUERY_OPCODE_RESULT_START + opcode;
+
+        std::int64_t payload_size_needed = 0;
+
+        switch (opcode) {
+        case QUERY_OPCODE_GET_NAME:
+        case QUERY_OPCODE_GET_VIRTUAL_BLUETOOTH_ADDRESS:
+            break;
+
+        case QUERY_OPCODE_IS_REAL_PORT_MAPPED_TO_VIRTUAL_PORT:
+            payload_size_needed = 4;
+            break;
+
+        case QUERY_OPCODE_GET_REAL_PORT_FROM_VIRTUAL_PORT:
+            payload_size_needed = 2;
+            break;
+
+        default:
+            LOG_ERROR(SERVICE_BLUETOOTH, "Unhandeled query opcode: {}", static_cast<int>(opcode));
+            return;
+        }
+
+        if (nread < QUERY_HEADER_SIZE + payload_size_needed) {
+            LOG_ERROR(SERVICE_BLUETOOTH, "Query request with opcode {} is truncated (got {} bytes)", static_cast<int>(opcode), nread);
+            return;
+        }
 
         switch (opcode) {
         case QUERY_OPCODE_GET_NAME: {
@@ -205,7 +315,7 @@ namespace eka2l1::epoc::bt {
             name_utf8.insert(name_utf8.begin(), opcode_result_signature);
             name_utf8.insert(name_utf8.begin(), reinterpret_cast<const char*>(&asker_id), reinterpret_cast<const char*>(&asker_id + 1));
 
-            bluetooth_queries_server_socket_->send(*sender, name_utf8.data(), static_cast<std::uint32_t>(name_utf8.size()));
+            bluetooth_queries_server_socket_->send(*sender, copy_control_packet(name_utf8.data(), name_utf8.size()), static_cast<std::uint32_t>(name_utf8.size()));
             break;
         }
 
@@ -227,7 +337,7 @@ namespace eka2l1::epoc::bt {
 
             check_result.push_back(final_result);
 
-            bluetooth_queries_server_socket_->send(*sender, check_result.data(), static_cast<std::uint32_t>(check_result.size()));
+            bluetooth_queries_server_socket_->send(*sender, copy_control_packet(check_result.data(), check_result.size()), static_cast<std::uint32_t>(check_result.size()));
             break;
         }
 
@@ -240,7 +350,7 @@ namespace eka2l1::epoc::bt {
             buf_result.push_back(opcode_result_signature);
             buf_result.insert(buf_result.end(), reinterpret_cast<char *>(&temp_uint), reinterpret_cast<char *>(&temp_uint + 1));
 
-            bluetooth_queries_server_socket_->send(*sender, buf_result.data(), static_cast<std::uint32_t>(buf_result.size()));
+            bluetooth_queries_server_socket_->send(*sender, copy_control_packet(buf_result.data(), buf_result.size()), static_cast<std::uint32_t>(buf_result.size()));
             break;
         }
 
@@ -250,12 +360,11 @@ namespace eka2l1::epoc::bt {
             buf_result.push_back(opcode_result_signature);
             buf_result.insert(buf_result.end(), reinterpret_cast<char *>(&random_device_addr_), reinterpret_cast<char *>(&random_device_addr_ + 1));
 
-            bluetooth_queries_server_socket_->send(*sender, buf_result.data(), static_cast<std::uint32_t>(buf_result.size()));
+            bluetooth_queries_server_socket_->send(*sender, copy_control_packet(buf_result.data(), buf_result.size()), static_cast<std::uint32_t>(buf_result.size()));
             break;
         }
 
         default:
-            LOG_ERROR(SERVICE_BLUETOOTH, "Unhandeled query opcode: {}", static_cast<int>(opcode));
             break;
         }
     }
@@ -272,7 +381,8 @@ namespace eka2l1::epoc::bt {
 
             std::uint32_t *addr_value_ptr = converted_addr.address_32x4();
 
-            std::memcpy(addr_value_ptr + 3, info.real_addr_.user_data_, 4);
+            // The v6 payload is network-ordered bytes, the v4 one a host-order word.
+            addr_value_ptr[3] = htonl(*reinterpret_cast<const std::uint32_t *>(info.real_addr_.user_data_));
             addr_value_ptr[2] = 0xFFFF0000;
 
             info.real_addr_ = converted_addr;
@@ -294,23 +404,55 @@ namespace eka2l1::epoc::bt {
         current_active_observer_->on_stranger_call(info.real_addr_, static_cast<std::uint32_t>(friends_.size() - 1));
     }
 
-    void midman_inet::read_and_add_friend(const char *buf, char &buf_pointer) {
+    void midman_inet::read_and_add_friend(const char *buf, std::int64_t nread, std::int64_t &buf_pointer) {
         epoc::bt::friend_info info;
+        std::memset(&info.real_addr_, 0, sizeof(epoc::socket::saddress));
         info.dvc_addr_.padding_ = 0;
 
-        char is_ipv4 = buf[buf_pointer++];
+        if (buf_pointer >= nread) {
+            LOG_ERROR(SERVICE_BLUETOOTH, "Player list from the matching server is truncated (got {} bytes)", nread);
+
+            buf_pointer = nread;
+            return;
+        }
+
+        const std::uint8_t address_type = static_cast<std::uint8_t>(buf[buf_pointer++]);
+        if (address_type > 3) {
+            LOG_ERROR(SERVICE_BLUETOOTH, "Player list from the matching server has invalid address type {}", address_type);
+            buf_pointer = nread;
+            return;
+        }
+        const bool has_port = (address_type == 2) || (address_type == 3);
+        const bool is_ipv4 = (address_type == 1) || (address_type == 2);
+        const std::int64_t address_size = is_ipv4 ? 4 : 16;
+
+        if (buf_pointer + address_size + (has_port ? 2 : 0) > nread) {
+            LOG_ERROR(SERVICE_BLUETOOTH, "Player list from the matching server is truncated (got {} bytes)", nread);
+
+            buf_pointer = nread;
+            return;
+        }
+
         if (is_ipv4) {
             info.real_addr_.family_ = epoc::internet::INET_ADDRESS_FAMILY;
 
-            *static_cast<epoc::internet::sinet_address &>(info.real_addr_).addr_long() = *reinterpret_cast<const std::uint32_t *>(buf);
-            buf_pointer += sizeof(std::uint32_t);
-        } else {info.real_addr_.family_ = epoc::internet::INET6_ADDRESS_FAMILY;
-
-            std::memcpy(static_cast<epoc::internet::sinet6_address &>(info.real_addr_).address_32x4(), buf, sizeof(std::uint32_t) * 4);
-            buf_pointer += sizeof(std::uint32_t) * 4;
+            // The wire is network-ordered; saddress keeps IPv4 host-ordered.
+            std::uint32_t addr_raw = 0;
+            std::memcpy(&addr_raw, buf + buf_pointer, address_size);
+            *static_cast<epoc::internet::sinet_address &>(info.real_addr_).addr_long() = ntohl(addr_raw);
+        } else {
+            info.real_addr_.family_ = epoc::internet::INET6_ADDRESS_FAMILY;
+            std::memcpy(static_cast<epoc::internet::sinet6_address &>(info.real_addr_).address_32x4(), buf + buf_pointer, address_size);
         }
 
+        buf_pointer += address_size;
+
         info.real_addr_.port_ = HARBOUR_PORT;
+        if (has_port) {
+            info.real_addr_.port_ = (static_cast<std::uint16_t>(static_cast<std::uint8_t>(buf[buf_pointer])) << 8)
+                | static_cast<std::uint8_t>(buf[buf_pointer + 1]);
+            buf_pointer += 2;
+        }
         add_friend(info);
     }
 
@@ -329,7 +471,7 @@ lookup:
             }
         }
 
-        if (!friend_info_cached_) {
+        if (!friend_info_cached_ && !uses_mdns_discovery()) {
             // Try to refresh the local cache. It's not really ideal, but anyway resolver always redo
             // a full rescan...
             refresh_friend_infos();
@@ -363,7 +505,7 @@ lookup:
             return;
         }
 
-        if (!friend_info_cached_) {
+        if (!friend_info_cached_ && !uses_mdns_discovery()) {
             // Try to refresh the local cache. It's not really ideal, but anyway resolver always redo
             // a full rescan...
             refresh_friend_infos_async([this, check_for_friend_and_run_cb]() {
@@ -377,7 +519,7 @@ lookup:
             return false;
         }
         const std::lock_guard<std::mutex> guard(friends_lock_);
-        if ((index >= friends_.size()) && (friends_[index].real_addr_.family_ == 0)) {
+        if ((index >= friends_.size()) || (friends_[index].real_addr_.family_ == 0)) {
             return false;
         }
 
@@ -403,6 +545,10 @@ lookup:
             return;
         }
 
+        if (uses_mdns_discovery()) {
+            friend_info_cached_ = true;
+            return;
+        }
         if (friend_info_cached_) {
             return;
         }
@@ -439,18 +585,20 @@ lookup:
             } else {
                 friends_[start_pos].dvc_addr_ = *result;
                 friend_device_address_mapping_.emplace(friends_[start_pos].dvc_addr_, start_pos);
-
-                refresh_friend_info_async_impl(start_pos + 1, callback);
             }
+
+            refresh_friend_info_async_impl(start_pos + 1, callback);
         });
     }
 
     void midman_inet::refresh_friend_infos_async(std::function<void()> callback) {
         if (discovery_mode_ == DISCOVERY_MODE_OFF) {
+            callback();
             return;
         }
 
         if (friend_info_cached_ || (friends_.size() == 0)) {
+            callback();
             return;
         }
 
@@ -474,17 +622,14 @@ lookup:
     }
 
     void midman_inet::ref_and_public_port(const std::uint16_t virtual_port) {
-        if (discovery_mode_ == DISCOVERY_MODE_OFF) {
-            return;
-        }
-
         if ((virtual_port > MAX_PORT) || (virtual_port == 0)) {
             LOG_ERROR(SERVICE_BLUETOOTH, "Port {} is out of allowed range!", virtual_port);
             return;
         }
 
         if (should_upnp_apply_to_port()) {
-            UPnP::TryPortmapping(virtual_port - 1 + port_offset_, false);
+            UPnP::TryPortmapping(static_cast<std::uint16_t>(port_offset_ + virtual_port - 1), false);
+            port_upnp_mapped_[virtual_port - 1] = true;
         }
 
         allocated_ports_.force_fill(virtual_port - 1, 1);
@@ -492,10 +637,6 @@ lookup:
     }
     
     std::uint16_t midman_inet::get_free_port() {
-        if (discovery_mode_ == DISCOVERY_MODE_OFF) {
-            return 0;
-        }
-
         // Reserve first 20 ports for system
         int size = 1;
         const int offset = allocated_ports_.allocate_from(20, size, false);
@@ -507,9 +648,6 @@ lookup:
     }
 
     void midman_inet::ref_port(const std::uint16_t virtual_port) {
-        if (discovery_mode_ == DISCOVERY_MODE_OFF) {
-            return;
-        }
         if ((virtual_port > MAX_PORT) || (virtual_port == 0)) {
             LOG_ERROR(SERVICE_BLUETOOTH, "Port {} is out of allowed range!", virtual_port);
             return;
@@ -519,10 +657,6 @@ lookup:
     }
 
     void midman_inet::close_port(const std::uint16_t virtual_port) {
-        if (discovery_mode_ == DISCOVERY_MODE_OFF) {
-            return;
-        }
-
         if ((virtual_port > MAX_PORT) || (virtual_port == 0)) {
             LOG_ERROR(SERVICE_BLUETOOTH, "Port {} is out of allowed range!", virtual_port);
             return;
@@ -531,8 +665,12 @@ lookup:
         if (allocated_ports_.is_allocated(virtual_port - 1)) {
             std::uint32_t ref_count = --port_refs_[virtual_port - 1];
             if (ref_count == 0) {
-                if (should_upnp_apply_to_port()) {
-                    UPnP::StopPortmapping(virtual_port, false);
+                if (port_upnp_mapped_[virtual_port - 1]) {
+                    // The mapped port is the host one, not the virtual port:
+                    // passing the latter deleted whatever mapping happened to
+                    // sit on port 1..60 of the router.
+                    UPnP::StopPortmapping(static_cast<std::uint16_t>(port_offset_ + virtual_port - 1), false);
+                    port_upnp_mapped_[virtual_port - 1] = false;
                 }
                 allocated_ports_.deallocate(virtual_port - 1, 1);
             }
@@ -602,12 +740,19 @@ lookup:
         return indicies;
     }
 
+    bool midman_inet::get_first_friend_device_address(device_address &result) {
+        for (std::uint32_t i = 0; i < friends_.size(); ++i) {
+            if (friends_[i].real_addr_.family_ != 0 && get_friend_device_address(i, result)) return true;
+        }
+        return false;
+    }
+
     bool midman_inet::get_friend_device_address(const std::uint32_t index, device_address &result) {
         if (index >= friends_.size()) {
             return false;
         }
 
-        if (!friend_info_cached_) {
+        if (!friend_info_cached_ && !uses_mdns_discovery()) {
             // Try to refresh the local cache. It's not really ideal, but anyway resolver always redo
             // a full rescan...
             refresh_friend_infos();
@@ -641,37 +786,20 @@ lookup:
     void midman_inet::send_call_for_strangers() {
         if (!send_strangers_call_task_) {
             send_strangers_call_task_ = libuv::create_task([this]() {
-                sockaddr *server_addr_sock_ptr = nullptr;
-                GUEST_TO_BSD_ADDR(server_addr_, server_addr_sock_ptr);
-
                 char request_friends = QUERY_OPCODE_GET_PLAYERS;
 
-                if (discovery_mode_ == DISCOVERY_MODE_LAN) {
-                    sockaddr_in6 server_addr_modded;
-
-                    // A bit of overflow would be ok, I guess))
-                    std::memcpy(&server_addr_modded, server_addr_sock_ptr, sizeof(sockaddr_in6));
-                    server_addr_modded.sin6_port = htons(LAN_DISCOVERY_PORT);
-
-                    std::vector<char> broadcast_buf;
-                    broadcast_buf.push_back(request_friends);
-                    broadcast_buf.push_back(static_cast<char>(password_.length()));
-                    broadcast_buf.insert(broadcast_buf.end(), password_.begin(), password_.end());
-
-                    lan_discovery_call_listener_socket_->on<uvw::error_event>([](const uvw::error_event &event, uvw::udp_handle &handle) {
-                        if (event.code() < 0) {
-                            LOG_ERROR(SERVICE_BLUETOOTH, "Fail to send broadcast message to find nearby playable devices! Libuv error code={}", event.code());
-                        }
-                    });
-
-                    lan_discovery_call_listener_socket_->on<uvw::send_event>([](const uvw::send_event &event, uvw::udp_handle &handle) {
-                        LOG_TRACE(SERVICE_BLUETOOTH, "Sent lan discovery call!");
-                    });
-
-                    lan_discovery_call_listener_socket_->broadcast(true);
-                    lan_discovery_call_listener_socket_->send(*reinterpret_cast<sockaddr*>(&server_addr_modded), broadcast_buf.data(), static_cast<std::uint32_t>(broadcast_buf.size()));
-                } else {
-                    matching_server_socket_->write(&request_friends, 1);
+                // Direct IP has no network-wide search: its peers come from the
+                // config list. Discovery can also be null when its setup
+                // failed. Only the timeout below must happen unconditionally --
+                // an observer that never gets on_no_more_strangers() leaves its
+                // guest request outstanding forever.
+                if (uses_mdns_discovery()) {
+                    if (mdns_) {
+                        if (retried_lan_discovery_times_ == 0) mdns_->refresh();
+                        sync_lan_friends();
+                    }
+                } else if ((discovery_mode_ == DISCOVERY_MODE_PROXY_SERVER) && matching_server_socket_) {
+                    matching_server_socket_->write(copy_control_packet(&request_friends, 1), 1);
                 }
 
                 if ((discovery_mode_ != DISCOVERY_MODE_LAN) || (retried_lan_discovery_times_ == 0)) {
@@ -684,6 +812,11 @@ lookup:
     }
 
     void midman_inet::begin_hearing_stranger_call(inet_stranger_call_observer *observer) {
+        // No discovery means no handle to search with; callers complete on their own.
+        if (discovery_mode_ == DISCOVERY_MODE_OFF) {
+            return;
+        }
+
         const std::lock_guard<std::mutex> guard(friends_lock_);
 
         for (std::size_t i = 0; i < friends_.size(); i++) {
@@ -701,9 +834,19 @@ lookup:
     }
 
     void midman_inet::unregister_stranger_call_observer(inet_stranger_call_observer *observer) {
+        if (discovery_mode_ == DISCOVERY_MODE_OFF) {
+            return;
+        }
+
         const std::lock_guard<std::mutex> guard(friends_lock_);
         if (observer == current_active_observer_) {
             current_active_observer_ = nullptr;
+
+            if (!pending_observers_.empty()) {
+                current_active_observer_ = pending_observers_.front();
+                pending_observers_.erase(pending_observers_.begin());
+                send_call_for_strangers();
+            }
             return;
         }
 

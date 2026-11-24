@@ -17,6 +17,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/path_types.h>
 #include <services/fbs/fbs.h>
 #include <services/ui/skin/common.h>
 #include <services/ui/skin/ops.h>
@@ -197,7 +198,7 @@ namespace eka2l1 {
             }
         }
 
-        std::optional<std::u16string> skin_path = epoc::find_skin_file(io, skin_pid);
+        std::optional<guest_path> skin_path = epoc::find_skin_file(io, skin_pid);
         if (!skin_path.has_value()) {
             skin_pid = DEFAULT_ALWAYS_EXIST_SKIN_PID;
             skin_path = epoc::find_skin_file(io, skin_pid);
@@ -209,14 +210,30 @@ namespace eka2l1 {
             }
         }
 
-        std::optional<std::u16string> resource_path = epoc::get_resource_path_of_skin(io, skin_pid);
+        // Like AknsSrv, lay the S60 default skin down first so items a theme leaves out still resolve.
+        if (skin_pid != DEFAULT_ALWAYS_EXIST_SKIN_PID) {
+            std::optional<guest_path> default_skin_path = epoc::find_skin_file(io, DEFAULT_ALWAYS_EXIST_SKIN_PID);
+            if (default_skin_path.has_value()) {
+                import_skin(io, DEFAULT_ALWAYS_EXIST_SKIN_PID, default_skin_path.value());
+            }
+        }
 
-        symfile skin_file_obj = io->open_file(skin_path.value(), READ_MODE | BIN_MODE);
+        import_skin(io, skin_pid, skin_path.value());
+    }
+
+    void akn_skin_server::import_skin(eka2l1::io_system *io, const epoc::pid skin_pid, const guest_path &skin_path) {
+        std::optional<guest_path> resource_path = epoc::get_resource_path_of_skin(io, skin_pid);
+
+        symfile skin_file_obj = io->open_file(skin_path, READ_MODE | BIN_MODE);
+        if (!skin_file_obj) {
+            LOG_ERROR(SERVICE_UI, "Unable to open skin file {}", common::ucs2_to_utf8(skin_path));
+            return;
+        }
+
         eka2l1::ro_file_stream skin_file_stream(skin_file_obj.get());
-
         epoc::skn_file skin_parser(reinterpret_cast<common::ro_stream *>(&skin_file_stream));
 
-        chunk_maintainer_->import(skin_parser, resource_path.value_or(u""));
+        chunk_maintainer_->import(skin_parser, resource_path.value_or(guest_path{}));
     }
 
     void akn_skin_server::do_initialisation() {
@@ -257,7 +274,7 @@ namespace eka2l1 {
         } else if (sys->get_symbian_version_use() == epocver::epoc94) {
             // Some Symbian version changes some binary struct.
             // It should be the new one if ... it is not in rom
-            const std::u16string dll_path = u"z:\\sys\\bin\\aknskinsrv.dll";
+            const guest_path dll_path(u"z:\\sys\\bin\\aknskinsrv.dll");
 
             symfile dll_file = sys->get_io_system()->open_file(dll_path, READ_MODE | BIN_MODE | PREFER_PHYSICAL);
             if (dll_file) {

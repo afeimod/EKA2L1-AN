@@ -34,6 +34,22 @@ namespace eka2l1::epoc {
     const std::uint32_t PHONE_POWER_KEY = 0x100052C5;
     const std::uint32_t SOFTWARE_INSTALL_KEY = 0x102047B7;
     const std::uint32_t SOFTWARE_LASTEST_UID_INSTALLATION = 0x10272C8E;
+    const std::uint32_t BACKUP_RESTORE_KEY = 0x10202792;
+
+    // Value of the backup and restore property is a bitwise OR of a part type and an
+    // increment type (conn::TBURPartType / conn::TBackupIncType in sbdefs.h). The emulator
+    // never backs up or restores, so it stays in EBURNormal | ENoBackup.
+    const std::int32_t BACKUP_RESTORE_NORMAL_STATE = 0x00000001;
+
+    // KPSUidDiskLevel and its two keys, which the system state manager publishes at
+    // boot. SysUtil looks for a critical free-space threshold in patched sysutil data,
+    // then in these properties, then in central repository, and leaves if none answers.
+    // The values are Symbian's own patch defaults from sysutil.iby.
+    const std::uint32_t DISK_LEVEL_CATEGORY = 0x10205065;
+    const std::uint32_t RAM_DISK_CRITICAL_THRESHOLD_KEY = 0x00000001;
+    const std::uint32_t OTHER_DISK_CRITICAL_THRESHOLD_KEY = 0x00000002;
+    const std::int32_t RAM_DISK_CRITICAL_THRESHOLD = 65536;
+    const std::int32_t OTHER_DISK_CRITICAL_THRESHOLD = 262144;
 
     enum system_agent_state {
         system_agent_state_off = 0,

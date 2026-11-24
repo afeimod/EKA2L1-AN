@@ -45,8 +45,10 @@ namespace eka2l1 {
         feature_id_thai = 1081,
         feature_id_chinese = 1096,
         feature_id_flash_lite_viewer = 1145,
+        feature_id_flash_lite_browser_plugin = 1146,
         feature_id_pen_calibration = 1658,
-        feature_id_tactile_feedback = 1718
+        feature_id_tactile_feedback = 1718,
+        feature_id_help = 1012
     };
 
     void featmgr_server::do_feature_scanning(system *sys) {
@@ -61,8 +63,20 @@ namespace eka2l1 {
         enable_features.push_back(feature_id_vibra);
         enable_features.push_back(feature_id_pen_calibration);
 
+        // Every S60 device ships the help application, and AVKON adjusts a menu pane
+        // depending on whether it is there. A ROM's featreg.cfg is usually near-empty
+        // here, so anything not listed reads as unsupported: the Calculator's Options
+        // menu then panics with EIKCOCTL 8 instead of opening.
+        enable_features.push_back(feature_id_help);
+
+        // Browser-hosted Flash Lite is a separate feature from the standalone viewer
+        // below, so report it only when the ROM carries the browser plug-in itself.
+        if (sys->get_io_system()->exist(eka2l1::guest_path{u"z:\\sys\\bin\\npflashlite.dll"})) {
+            enable_features.push_back(feature_id_flash_lite_browser_plugin);
+        }
+
         // 2. Are we welcoming SVG? Check for OpenVG, cause it should be there if this feature is available
-        if (sys->get_io_system()->exist(u"z:\\sys\\bin\\libopenvg.dll")) {
+        if (sys->get_io_system()->exist(eka2l1::guest_path{u"z:\\sys\\bin\\libopenvg.dll"})) {
             enable_features.push_back(feature_id_svgt);
         }
 
@@ -97,7 +111,7 @@ namespace eka2l1 {
     }
 
     bool featmgr_server::load_featmgr_configs(io_system *io) {
-        symfile cfg_file = io->open_file(u"Z:\\private\\102744CA\\featreg.cfg", READ_MODE | BIN_MODE);
+        symfile cfg_file = io->open_file(eka2l1::guest_path{u"Z:\\private\\102744CA\\featreg.cfg"}, READ_MODE | BIN_MODE);
 
         if (!cfg_file) {
             LOG_WARN(SERVICE_FEATMGR, "Feature registration config file not present!");
@@ -134,6 +148,31 @@ namespace eka2l1 {
         }
 
         return true;
+    }
+
+    bool featmgr_server::is_feature_supported(system *sys, const epoc::uid feature_id) {
+        if (!config_loaded) {
+            if (!load_featmgr_configs(sys->get_io_system())) {
+                LOG_ERROR(SERVICE_FEATMGR, "Error loading feature manager server config!");
+            }
+
+            do_feature_scanning(sys);
+            std::sort(enable_features.begin(), enable_features.end());
+
+            config_loaded = true;
+        }
+
+        if (std::binary_search(enable_features.begin(), enable_features.end(), feature_id)) {
+            return true;
+        }
+
+        for (const auto &feature_range : enable_feature_ranges) {
+            if ((feature_range.low_uid <= feature_id) && (feature_id <= feature_range.high_uid)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     void featmgr_server::feature_supported(service::ipc_context &ctx) {

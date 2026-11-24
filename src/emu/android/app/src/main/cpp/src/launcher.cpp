@@ -17,34 +17,30 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/path_types.h>
 #include <android/bitmap.h>
 #include <android/launcher.h>
 #include <android/state.h>
 
-#include <algorithm>
+#include <drivers/camera/camera_collection.h>
 
 #include <package/manager.h>
 #include <system/devices.h>
 
 #include <common/fileutils.h>
+#include <common/algorithm.h>
 #include <common/android/jniutils.h>
-#include <j2me/interface.h>
-#include <j2me/applist.h>
 #include <common/language.h>
 #include <common/path.h>
-#include <common/pystr.h>
 #include <common/fileutils.h>
-#include <loader/mif.h>
-#include <loader/svgb.h>
-#include <loader/nvg.h>
 #include <services/fbs/fbs.h>
 #include <system/installation/firmware.h>
 #include <system/installation/rpkg.h>
 #include <utils/locale.h>
 #include <utils/system.h>
 
-#include <lunasvg.h>
 #include <jni.h>
+#include <cstring>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
@@ -60,7 +56,6 @@ namespace eka2l1::android {
         , kern(sys->get_kernel_system())
         , alserv(nullptr)
         , input_complete_callback_(nullptr)
-        , yes_no_complete_callback_(nullptr)
         , is_s80(false)
         , background_img_(0)
         , background_img_opacity_(0.0f)
@@ -86,6 +81,7 @@ namespace eka2l1::android {
     }
 
     std::vector<std::string> launcher::get_apps() {
+        if (!alserv) return {};
         std::vector<apa_app_registry> &registerations = alserv->get_registerations();
         std::vector<std::string> info;
         for (auto &reg : registerations) {
@@ -119,201 +115,34 @@ namespace eka2l1::android {
         return newBitmap;
     }
 
-    jobjectArray launcher::get_app_icon(JNIEnv *env, std::uint32_t uid) {
-        apa_app_registry *reg = alserv->get_registration(uid);
-        if (!reg) {
+    jobject launcher::get_app_icon(JNIEnv *env, std::uint32_t uid) {
+        auto *reg = alserv->get_registration(uid);
+        if (!reg) return nullptr;
+        auto icon = alserv->get_host_icon(*reg, conf ? add_path(conf->storage, "cache/icons") : eka2l1::host_path{});
+        if (!icon) return nullptr;
+        jobject bitmap = make_new_bitmap(env, icon->size.x, icon->size.y);
+        if (!bitmap) return nullptr;
+        AndroidBitmapInfo info{};
+        void *pixels = nullptr;
+        if (AndroidBitmap_getInfo(env, bitmap, &info) < 0
+            || info.format != ANDROID_BITMAP_FORMAT_RGBA_8888
+            || AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0) {
+            env->DeleteLocalRef(bitmap);
             return nullptr;
         }
-
-        jobjectArray jicons = env->NewObjectArray(2,
-            env->FindClass("android/graphics/Bitmap"),
-            nullptr);
-
-        std::string app_name = common::ucs2_to_utf8(reg->mandatory_info.long_caption.to_std_string(nullptr));
-        io_system *io = sys->get_io_system();
-
-        const std::u16string path_ext = eka2l1::common::lowercase_ucs2_string(eka2l1::path_extension(reg->icon_file_path));
-
-        if (path_ext == u".mif") {
-            eka2l1::symfile file_route = io->open_file(reg->icon_file_path, READ_MODE | BIN_MODE);
-            eka2l1::common::create_directories("cache");
-
-            if (file_route) {
-                const std::uint64_t mif_last_modified = file_route->last_modify_since_0ad();
-                const std::string cached_path = fmt::format("cache/debinarized_{}.svg",
-                    common::pystr(app_name).strip_reserverd().strip().std_str());
-
-                std::unique_ptr<lunasvg::Document> document;
-
-                if (eka2l1::common::exists(cached_path)) {
-                    if (eka2l1::common::get_last_modifiy_since_ad(eka2l1::common::utf8_to_ucs2(cached_path)) >= mif_last_modified) {
-                        document = lunasvg::Document::loadFromFile(cached_path.c_str());
-                    }
-                }
-                
-                eka2l1::ro_file_stream file_route_stream(file_route.get());
-                eka2l1::loader::mif_file file_mif_parser(reinterpret_cast<eka2l1::common::ro_stream *>(&file_route_stream));
-
-                if (!document && file_mif_parser.do_parse()) {
-                    std::vector<std::uint8_t> data;
-                    int dest_size = 0;
-                    if (file_mif_parser.read_mif_entry(0, nullptr, dest_size)) {
-                        if (dest_size != 0) {
-                            data.resize(dest_size);
-                            file_mif_parser.read_mif_entry(0, data.data(), dest_size);
-
-                            eka2l1::common::ro_buf_stream inside_stream(data.data(), data.size());
-                            std::unique_ptr<eka2l1::common::wo_std_file_stream> outfile_stream =
-                                    std::make_unique<eka2l1::common::wo_std_file_stream>(cached_path, true);
-
-                            eka2l1::loader::mif_icon_header header;
-                            inside_stream.read(&header, sizeof(eka2l1::loader::mif_icon_header));
-
-                            std::vector<eka2l1::loader::svgb_convert_error_description> errors;
-                            std::vector<eka2l1::loader::nvg_convert_error_description> errors_nvg;
-
-                            if (header.type == eka2l1::loader::mif_icon_type_svg) {
-                                if (!eka2l1::loader::convert_svgb_to_svg(inside_stream, *outfile_stream, errors)) {
-                                    if (errors[0].reason_ == eka2l1::loader::svgb_convert_error_invalid_file) {
-                                        outfile_stream->write(reinterpret_cast<const char *>(data.data()) + sizeof(eka2l1::loader::mif_icon_header), data.size() - sizeof(eka2l1::loader::mif_icon_header));
-                                    }
-                                }
-
-                                outfile_stream.reset();
-                                document = lunasvg::Document::loadFromFile(cached_path.c_str());
-                            } else {
-                                inside_stream = eka2l1::common::ro_buf_stream(data.data() + sizeof(eka2l1::loader::mif_icon_header),
-                                                                              data.size() - sizeof(eka2l1::loader::mif_icon_header));
-
-                                if (eka2l1::loader::convert_nvg_to_svg(inside_stream, *outfile_stream, errors_nvg)) {
-                                    outfile_stream.reset();
-                                    document = lunasvg::Document::loadFromFile(cached_path.c_str());
-                                } else  {
-                                    LOG_ERROR(eka2l1::FRONTEND_UI, "Icon for app {} can't be decoded!", header.type, app_name);
-                                    outfile_stream.reset();
-
-                                    eka2l1::common::remove(cached_path);
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                if (document) {
-                    std::uint32_t width = document->width();
-                    std::uint32_t height = document->height();
-                    jobject source_bitmap = make_new_bitmap(env, width, height);
-                    void *data_to_write = nullptr;
-                    int result = AndroidBitmap_lockPixels(env, source_bitmap, &data_to_write);
-                    if (result < 0) {
-                        env->DeleteLocalRef(source_bitmap);
-                        env->DeleteLocalRef(jicons);
-                        return nullptr;
-                    }
-
-                    auto bitmap = lunasvg::Bitmap(reinterpret_cast<std::uint8_t *>(data_to_write),
-                                                  width, height, width * 4);
-                    lunasvg::Matrix matrix{ 1, 0, 0, 1, 0, 0 };
-                    document->render(bitmap, matrix);
-                    bitmap.convertToRGBA();
-
-                    AndroidBitmap_unlockPixels(env, source_bitmap);
-
-                    env->SetObjectArrayElement(jicons, 0, source_bitmap);
-                    return jicons;
-                }
-            }
-        } else if (path_ext == u".mbm") {
-            eka2l1::symfile file_route = io->open_file(reg->icon_file_path, READ_MODE | BIN_MODE);
-            if (file_route) {
-                eka2l1::ro_file_stream file_route_stream(file_route.get());
-                eka2l1::loader::mbm_file file_mbm_parser(reinterpret_cast<eka2l1::common::ro_stream *>(&file_route_stream));
-
-                if (file_mbm_parser.do_read_headers() && !file_mbm_parser.sbm_headers.empty()) {
-                    eka2l1::loader::sbm_header *icon_header = &file_mbm_parser.sbm_headers[0];
-
-                    jobject source_bitmap = make_new_bitmap(env, icon_header->size_pixels.x,
-                        icon_header->size_pixels.y);
-                    void *data_to_write = nullptr;
-                    int result = AndroidBitmap_lockPixels(env, source_bitmap, &data_to_write);
-                    if (result < 0) {
-                        env->DeleteLocalRef(source_bitmap);
-                        env->DeleteLocalRef(jicons);
-                        return nullptr;
-                    }
-
-                    eka2l1::common::wo_buf_stream converted_write_stream(reinterpret_cast<std::uint8_t *>(data_to_write),
-                        icon_header->size_pixels.x * icon_header->size_pixels.y * 4);
-
-                    if (!eka2l1::epoc::convert_to_rgba8888(fbsserv, file_mbm_parser, 0, converted_write_stream)) {
-                        env->DeleteLocalRef(source_bitmap);
-                    } else {
-                        AndroidBitmap_unlockPixels(env, source_bitmap);
-
-                        env->SetObjectArrayElement(jicons, 0, source_bitmap);
-                        return jicons;
-                    }
-                }
-            }
-        } else {
-            std::optional<eka2l1::apa_app_masked_icon_bitmap> icon_pair = alserv->get_icon(*reg, 0);
-
-            if (icon_pair.has_value()) {
-                eka2l1::epoc::bitwise_bitmap *main_bitmap = icon_pair->first;
-                jobject source_bitmap = make_new_bitmap(env, main_bitmap->header_.size_pixels.x,
-                    main_bitmap->header_.size_pixels.y);
-                void *data_to_write = nullptr;
-                int result = AndroidBitmap_lockPixels(env, source_bitmap, &data_to_write);
-                if (result < 0) {
-                    env->DeleteLocalRef(source_bitmap);
-                    env->DeleteLocalRef(jicons);
-                    return nullptr;
-                }
-
-                eka2l1::common::wo_buf_stream main_bitmap_buf(reinterpret_cast<std::uint8_t *>(data_to_write),
-                    main_bitmap->header_.size_pixels.x * main_bitmap->header_.size_pixels.y * 4);
-
-                if (!eka2l1::epoc::convert_to_rgba8888(fbsserv, main_bitmap, main_bitmap_buf)) {
-                    LOG_ERROR(eka2l1::FRONTEND_UI, "Unable to load main icon of app {}", app_name);
-                    env->DeleteLocalRef(source_bitmap);
-                } else {
-                    AndroidBitmap_unlockPixels(env, source_bitmap);
-                    env->SetObjectArrayElement(jicons, 0, source_bitmap);
-                    if (icon_pair->second) {
-                        eka2l1::epoc::bitwise_bitmap *second_bitmap = icon_pair->second;
-
-                        jobject mask_bitmap = make_new_bitmap(env, main_bitmap->header_.size_pixels.x,
-                            main_bitmap->header_.size_pixels.y);
-                        result = AndroidBitmap_lockPixels(env, mask_bitmap, &data_to_write);
-                        if (result < 0) {
-                            env->DeleteLocalRef(mask_bitmap);
-                            return jicons;
-                        }
-
-                        eka2l1::common::wo_buf_stream second_bitmap_buf(reinterpret_cast<std::uint8_t *>(data_to_write),
-                            second_bitmap->header_.size_pixels.x * second_bitmap->header_.size_pixels.y * 4);
-
-                        if (!eka2l1::epoc::convert_to_rgba8888(fbsserv, second_bitmap, second_bitmap_buf, true)) {
-                            LOG_ERROR(eka2l1::FRONTEND_UI, "Unable to load mask bitmap icon of app {}", app_name);
-                            env->DeleteLocalRef(mask_bitmap);
-                        } else {
-                            AndroidBitmap_unlockPixels(env, mask_bitmap);
-                            env->SetObjectArrayElement(jicons, 1, mask_bitmap);
-                        }
-                    }
-                    return jicons;
-                }
-            }
+        const std::size_t row_bytes = static_cast<std::size_t>(icon->size.x) * 4;
+        for (std::int32_t y = 0; y < icon->size.y; ++y) {
+            std::memcpy(static_cast<std::uint8_t *>(pixels) + y * info.stride,
+                icon->pixels.data() + y * row_bytes, row_bytes);
         }
-        env->DeleteLocalRef(jicons);
-        return nullptr;
+        AndroidBitmap_unlockPixels(env, bitmap);
+        return bitmap;
     }
 
     void launcher::launch_app(std::uint32_t uid) {
         apa_app_registry *reg = alserv->get_registration(uid);
 
         epoc::apa::command_line cmdline;
-        cmdline.launch_cmd_ = epoc::apa::command_create;
 
         kern->lock();
         alserv->launch_app(*reg, cmdline, nullptr, [&](kernel::process *pr) {
@@ -327,15 +156,9 @@ namespace eka2l1::android {
         kern->unlock();
     }
 
-    package::installation_result launcher::install_app(std::string &path) {
-        std::u16string upath = common::utf8_to_ucs2(path);
-        drive_number install_drive = drive_number::drive_e;
-
-        if (sys->is_s80_device_active()) {
-            install_drive = drive_number::drive_d;
-        }
-
-        return static_cast<package::installation_result>(sys->install_package(upath, install_drive));
+    package::installation_result launcher::install_app(const eka2l1::host_path &path) {
+        const auto &upath = path;
+        return static_cast<package::installation_result>(sys->install_package(eka2l1::host_path{upath}, sys->get_default_install_drive()));
     }
 
     std::vector<std::string> launcher::get_devices() {
@@ -415,6 +238,22 @@ namespace eka2l1::android {
         }
     }
 
+    bool launcher::delete_device(std::uint32_t id) {
+        device_manager *dvc_mngr = sys->get_device_manager();
+        auto &dvcs = dvc_mngr->get_devices();
+
+        // The running device cannot be torn down here; the caller restarts the app, and
+        // the deletion happens while the device list loads again.
+        if ((id >= dvcs.size()) || !dvc_mngr->mark_for_deletion(dvcs[id].firmware_code)) {
+            return false;
+        }
+
+        conf->device = (id > 0) ? (id - 1) : 0;
+        conf->serialize();
+
+        return true;
+    }
+
     void launcher::rescan_devices() {
         sys->rescan_devices(drive_z);
     }
@@ -423,19 +262,27 @@ namespace eka2l1::android {
         return conf->device;
     }
 
-    bool launcher::does_rom_need_rpkg(const std::string &rom_path) {
+    bool launcher::is_touch_screen_device(const std::string &firmware_code) {
+        device_manager *dvc_mngr = sys->get_device_manager();
+        for (auto &device : dvc_mngr->get_devices()) {
+            if (common::compare_ignore_case(device.firmware_code.c_str(), firmware_code.c_str()) == 0) {
+                return device.ver >= epocver::epoc94;
+            }
+        }
+        return sys->get_symbian_version_use() >= epocver::epoc94;
+    }
+
+    bool launcher::does_rom_need_rpkg(const eka2l1::host_path &rom_path) {
         return loader::should_install_requires_additional_rpkg(rom_path);
     }
 
-    device_installation_error launcher::install_device(std::string &rpkg_path, std::string &rom_path, bool install_rpkg) {
+    device_installation_error launcher::install_device(const eka2l1::host_path &rpkg_path, const eka2l1::host_path &rom_path, bool install_rpkg, bool isolate_drives) {
         std::string firmware_code;
         device_manager *dvc_mngr = sys->get_device_manager();
         device_installation_error result;
 
-        std::string root_c_path = add_path(conf->storage, "drives/c/");
-        std::string root_e_path = add_path(conf->storage, "drives/e/");
-        std::string root_z_path = add_path(conf->storage, "drives/z/");
-        std::string rom_resident_path = add_path(conf->storage, "roms/");
+        eka2l1::host_path root_z_path(add_path(conf->storage, "drives/z/"));
+        eka2l1::host_path rom_resident_path(add_path(conf->storage, "roms/"));
 
         eka2l1::common::create_directories(rom_resident_path);
 
@@ -443,14 +290,14 @@ namespace eka2l1::android {
 
         if (install_rpkg) {
             if (eka2l1::loader::should_install_requires_additional_rpkg(rom_path)) {
-                result = eka2l1::loader::install_rpkg(dvc_mngr, rpkg_path, root_z_path, firmware_code, nullptr, nullptr);
+                result = eka2l1::loader::install_rpkg(dvc_mngr, rpkg_path, root_z_path, firmware_code, isolate_drives, nullptr, nullptr);
                 need_add_rpkg = true;
             } else {
-                result = eka2l1::loader::install_rom(dvc_mngr, rom_path, rom_resident_path, root_z_path, nullptr, nullptr);
+                result = eka2l1::loader::install_rom(dvc_mngr, rom_path, rom_resident_path, root_z_path, isolate_drives, nullptr, nullptr);
             }
         } else {
             result = eka2l1::install_firmware(
-                dvc_mngr, rom_path, root_c_path, root_e_path, root_z_path, rom_resident_path,
+                dvc_mngr, rom_path, conf->storage, rom_resident_path, isolate_drives,
                 [](const std::vector<std::string> &variants) -> int { return 0; }, nullptr, nullptr);
         }
 
@@ -461,10 +308,10 @@ namespace eka2l1::android {
         dvc_mngr->save_devices();
 
         if (need_add_rpkg) {
-            const std::string rom_directory = add_path(conf->storage, add_path("roms", firmware_code + "\\"));
+            const eka2l1::host_path rom_directory(add_path(conf->storage, add_path("roms", firmware_code + "\\")));
 
             eka2l1::common::create_directories(rom_directory);
-            common::copy_file(rom_path, add_path(rom_directory, "SYM.ROM"), true);
+            common::copy_file(rom_path, eka2l1::host_path{add_path(rom_directory, "SYM.ROM")}, true);
         }
 
         return device_installation_none;
@@ -495,13 +342,13 @@ namespace eka2l1::android {
             manager->uninstall_package(*obj);
     }
 
-    void launcher::mount_sd_card(std::string &path) {
-        std::u16string upath = common::utf8_to_ucs2(path);
+    void launcher::mount_sd_card(const eka2l1::host_path &path) {
+        const auto &upath = path;
 
         io_system *io = sys->get_io_system();
         io->unmount(drive_e);
         io->mount_physical_path(drive_e, drive_media::physical,
-            io_attrib_removeable | io_attrib_write_protected, upath);
+            io_attrib_removeable | io_attrib_write_protected, eka2l1::host_path{upath});
     }
 
     void launcher::load_config() {
@@ -518,6 +365,17 @@ namespace eka2l1::android {
 
     void launcher::update_app_setting(std::uint32_t uid) {
         kern->get_app_settings()->update_setting(uid);
+    }
+
+    std::vector<vec2> launcher::get_screen_mode_sizes() {
+        std::vector<vec2> sizes;
+        epoc::screen *scr = winserv ? winserv->get_screens() : nullptr;
+        if (scr) {
+            for (int mode = 0; mode < scr->total_screen_mode(); mode++) {
+                sizes.push_back(scr->mode_info(mode)->size);
+            }
+        }
+        return sizes;
     }
 
     void launcher::draw(drivers::graphics_command_builder &builder, epoc::screen *scr,
@@ -549,7 +407,7 @@ namespace eka2l1::android {
         if (!background_img_ && !background_img_path_.empty()) {
             int x, y, comp = 0;
 
-            FILE *f = eka2l1::common::open_c_file(background_img_path_, "rb");
+            FILE *f = eka2l1::common::open_c_file(eka2l1::host_path{background_img_path_}, "rb");
             if (!f) {
                 LOG_ERROR(eka2l1::FRONTEND_UI, "Unable to load background texture!");
             } else {
@@ -608,6 +466,15 @@ namespace eka2l1::android {
         if (scr) {
             auto &crr_mode = scr->current_mode();
 
+            // A camera is bolted to the device body, so a guest needs its frames
+            // rotated into the picture it composes for. Only the guest term is
+            // known here; the host interface's own rotation is added by the
+            // backend, which reads the display rotation directly (see
+            // EmulatorCamera.receiveViewfinderFeed).
+            const eka2l1::epoc::config::screen_mode *natural_mode = scr->mode_info(0);
+            drivers::camera::set_frame_rotation(crr_mode.rotation
+                - (natural_mode ? natural_mode->rotation : 0));
+
             eka2l1::vec2 size = crr_mode.size;
             src.size = size;
 
@@ -645,70 +512,27 @@ namespace eka2l1::android {
             width = width * scale_ratio_ / 100;
             height = height * scale_ratio_ / 100;
 
-            if (custom_layout_) {
-                // Free-form layout: corners and scale override both gravity
-                // and the global scale ratio. Coordinates are 0..1 in window
-                // space. If the user collapsed the rect, fall back to the
-                // gravity-based placement rather than drawing a zero-size
-                // texture.
-                const float win_w = static_cast<float>(swapchain_size.x);
-                const float win_h = static_cast<float>(swapchain_size.y);
-                float lx1 = custom_x1_;
-                float ly1 = custom_y1_;
-                float lx2 = custom_x2_;
-                float ly2 = custom_y2_;
-
-                // Keep coordinates ordered and inside the window.
-                if (lx2 < lx1) std::swap(lx1, lx2);
-                if (ly2 < ly1) std::swap(ly1, ly2);
-                lx1 = std::max(0.0f, std::min(1.0f, lx1));
-                ly1 = std::max(0.0f, std::min(1.0f, ly1));
-                lx2 = std::max(0.0f, std::min(1.0f, lx2));
-                ly2 = std::max(0.0f, std::min(1.0f, ly2));
-
-                const float rect_w = lx2 - lx1;
-                const float rect_h = ly2 - ly1;
-                if (rect_w > 0.01f && rect_h > 0.01f) {
-                    const float ratio = std::max(0.0f, custom_scale_ratio_) / 100.0f;
-                    x = static_cast<std::uint32_t>(lx1 * win_w);
-                    y = static_cast<std::uint32_t>(ly1 * win_h);
-                    width = rect_w * win_w * ratio;
-                    height = rect_h * win_h * ratio;
-                    // Centre the scaled rect inside the chosen window rect.
-                    if (width < rect_w * win_w) {
-                        x += static_cast<std::uint32_t>((rect_w * win_w - width) / 2.0f);
-                    }
-                    if (height < rect_h * win_h) {
-                        y += static_cast<std::uint32_t>((rect_h * win_h - height) / 2.0f);
-                    }
-                } else {
-                    // Degenerate rect: behave as if the user had picked center.
+            switch (gravity_) {
+                case 0: // left
+                    x = 0;
+                    y = (swapchain_size.y - height) / 2;
+                    break;
+                case 1: // top
+                    x = (swapchain_size.x - width) / 2;
+                    y = 0;
+                    break;
+                case 2: // center
                     x = (swapchain_size.x - width) / 2;
                     y = (swapchain_size.y - height) / 2;
-                }
-            } else {
-                switch (gravity_) {
-                    case 0: // left
-                        x = 0;
-                        y = (swapchain_size.y - height) / 2;
-                        break;
-                    case 1: // top
-                        x = (swapchain_size.x - width) / 2;
-                        y = 0;
-                        break;
-                    case 2: // center
-                        x = (swapchain_size.x - width) / 2;
-                        y = (swapchain_size.y - height) / 2;
-                        break;
-                    case 3: // right
-                        x = swapchain_size.x - width;
-                        y = (swapchain_size.y - height) / 2;
-                        break;
-                    case 4: // bottom
-                        x = (swapchain_size.x - width) / 2;
-                        y = swapchain_size.y - height;
-                        break;
-                }
+                    break;
+                case 3: // right
+                    x = swapchain_size.x - width;
+                    y = (swapchain_size.y - height) / 2;
+                    break;
+                case 4: // bottom
+                    x = (swapchain_size.x - width) / 2;
+                    y = swapchain_size.y - height;
+                    break;
             }
 
             const float scale_x = width / static_cast<float>(size.x);
@@ -776,7 +600,7 @@ namespace eka2l1::android {
 
     void launcher::set_screen_params(std::uint32_t background_color, std::uint32_t scale_ratio,
                                      std::uint32_t scale_type, std::uint32_t gravity,
-                                     const std::string &bg_img_path,
+                                     const eka2l1::host_path &bg_img_path,
                                      float bg_img_opacity, bool bg_keep_aspect_ratio) {
         background_color_[0] = (background_color >> 16) & 0xFF;
         background_color_[1] = (background_color >> 8) & 0xFF;
@@ -784,30 +608,6 @@ namespace eka2l1::android {
         scale_ratio_ = scale_ratio;
         scale_type_ = scale_type;
         gravity_ = gravity;
-        custom_layout_ = false;
-        background_img_path_ = bg_img_path;
-        background_img_opacity_ = bg_img_opacity;
-        keep_bg_aspect_ = bg_keep_aspect_ratio;
-    }
-
-    void launcher::set_screen_params_ex(std::uint32_t background_color, std::uint32_t scale_ratio,
-                                        std::uint32_t scale_type, std::uint32_t gravity,
-                                        bool custom_layout, float cx1, float cy1, float cx2, float cy2,
-                                        float custom_scale_ratio,
-                                        const std::string &bg_img_path,
-                                        float bg_img_opacity, bool bg_keep_aspect_ratio) {
-        background_color_[0] = (background_color >> 16) & 0xFF;
-        background_color_[1] = (background_color >> 8) & 0xFF;
-        background_color_[2] = background_color & 0xFF;
-        scale_ratio_ = scale_ratio;
-        scale_type_ = scale_type;
-        gravity_ = gravity;
-        custom_layout_ = custom_layout;
-        custom_x1_ = cx1;
-        custom_y1_ = cy1;
-        custom_x2_ = cx2;
-        custom_y2_ = cy2;
-        custom_scale_ratio_ = custom_scale_ratio;
         background_img_path_ = bg_img_path;
         background_img_opacity_ = bg_img_opacity;
         keep_bg_aspect_ = bg_keep_aspect_ratio;
@@ -837,18 +637,24 @@ namespace eka2l1::android {
         env->CallStaticVoidMethod(clazz, input_method);
     }
 
-    bool launcher::open_question_dialog(const std::u16string &text, const std::u16string &button1_text,
+    drivers::ui::dialog_cancel_callback launcher::open_question_dialog(const std::u16string &text, const std::u16string &button1_text,
                               const std::u16string &button2_text,
                               drivers::ui::yes_no_dialog_complete_callback complete_callback) {
-        if (yes_no_complete_callback_) {
-            return false;
+        static std::atomic<std::uint64_t> next_id{0};
+        const auto pending = std::make_shared<question_dialog_request>();
+        pending->id = ++next_id;
+        pending->complete = std::move(complete_callback);
+        {
+            const std::lock_guard<std::mutex> guard(question_dialog_mutex_);
+            if (question_dialog_ && !question_dialog_->finished) {
+                return {};
+            }
+            question_dialog_ = pending;
         }
-
-        yes_no_complete_callback_ = complete_callback;
 
         JNIEnv *env = common::jni::environment();
         jclass clazz = common::jni::find_class("com/github/eka2l1/emu/Emulator");
-        jmethodID open_method = env->GetStaticMethodID(clazz, "showQuestionDialog", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+        jmethodID open_method = env->GetStaticMethodID(clazz, "showQuestionDialog", "(JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
         std::string question_text_utf8 = common::ucs2_to_utf8(text);
         std::string yes_text_utf8 = common::ucs2_to_utf8(button1_text);
         std::string no_text_utf8 = common::ucs2_to_utf8(button2_text);
@@ -857,8 +663,18 @@ namespace eka2l1::android {
         jstring jtext_yes = env->NewStringUTF(yes_text_utf8.c_str());
         jstring jtext_no = env->NewStringUTF(no_text_utf8.c_str());
 
-        env->CallStaticVoidMethod(clazz, open_method, jtext_question, jtext_yes, jtext_no);
-        return true;
+        env->CallStaticVoidMethod(clazz, open_method, static_cast<jlong>(pending->id), jtext_question, jtext_yes, jtext_no);
+        env->DeleteLocalRef(jtext_question);
+        env->DeleteLocalRef(jtext_yes);
+        env->DeleteLocalRef(jtext_no);
+        return [pending]() {
+            if (!pending->finished.exchange(true)) {
+                JNIEnv *env = common::jni::environment();
+                jclass clazz = common::jni::find_class("com/github/eka2l1/emu/Emulator");
+                jmethodID close_method = env->GetStaticMethodID(clazz, "closeQuestionDialog", "(J)V");
+                env->CallStaticVoidMethod(clazz, close_method, static_cast<jlong>(pending->id));
+            }
+        };
     }
 
     void launcher::on_finished_text_input(const std::string &text, const bool force_close) {
@@ -868,108 +684,27 @@ namespace eka2l1::android {
         }
     }
 
-    void launcher::on_question_dialog_finished(const int result) {
-        if (yes_no_complete_callback_) {
-            yes_no_complete_callback_(result);
-            yes_no_complete_callback_ = nullptr;
+    void launcher::on_question_dialog_finished(std::uint64_t id, int result) {
+        std::shared_ptr<question_dialog_request> pending;
+        {
+            const std::lock_guard<std::mutex> guard(question_dialog_mutex_);
+            if (!question_dialog_ || question_dialog_->id != id) {
+                return;
+            }
+            pending = std::move(question_dialog_);
+        }
+        if (!pending->finished.exchange(true) && pending->complete) {
+            pending->complete(result);
         }
     }
 
-    int launcher::install_ngage_game(const std::string &path) {
+    int launcher::install_ngage_game(const eka2l1::host_path &path) {
         return static_cast<int>(sys->install_ngage_game_card(path,
                                                              nullptr, nullptr));
     }
 
     bool launcher::install_ng2_game_licenses(const std::string &content) {
         return rightsserv->import_ng2l(content, success_license_games, failed_license_games);
-    }
-
-    int launcher::install_j2me_app(const std::string &path, std::uint32_t &out_app_id,
-            std::string &out_name, std::string &out_version, std::string &out_author) {
-        out_app_id = 0;
-        if (!sys) {
-            return static_cast<int>(eka2l1::j2me::INSTALL_ERROR_NOT_SUPPORTED_FOR_PLAT);
-        }
-
-        // Make sure the j2me applist has been constructed against the
-        // current config. system_impl lazily creates it during
-        // initialization, but if a caller hits us before that (e.g. via
-        // a VIEW intent fired before the user finishes bootstrap), we
-        // look it up explicitly here.
-        eka2l1::j2me::app_list *applist = sys->get_j2me_applist();
-        if (!applist) {
-            return static_cast<int>(eka2l1::j2me::INSTALL_ERROR_NOT_SUPPORTED_FOR_PLAT);
-        }
-
-        eka2l1::j2me::app_entry entry_info;
-        const eka2l1::j2me::install_error err = eka2l1::j2me::install(sys, path, entry_info);
-
-        if (err == eka2l1::j2me::INSTALL_ERROR_JAR_SUCCESS) {
-            // Persist the new entry so a subsequent get_j2me_apps() sees it.
-            applist->flush();
-            out_app_id = entry_info.id_;
-            out_name = entry_info.original_title_.empty() ? entry_info.title_ : entry_info.original_title_;
-            out_version = entry_info.version_;
-            out_author = entry_info.author_;
-        }
-
-        return static_cast<int>(err);
-    }
-
-    bool launcher::launch_j2me_app(const std::uint32_t app_id) {
-        if (!sys) {
-            return false;
-        }
-
-        return eka2l1::j2me::launch(sys, app_id, [](eka2l1::kernel::process *pr) {
-            // When the KMID-driven process exits, dispatch back to Java
-            // so the UI can tear down the running screen if needed. The
-            // Symbian process exit path mirrors install_ngage_game's
-            // callback hook.
-            JNIEnv *env = eka2l1::common::jni::environment();
-            if (env == nullptr) {
-                return;
-            }
-            jclass clazz = eka2l1::common::jni::find_class("com/github/eka2l1/emu/Emulator");
-            if (clazz == nullptr) {
-                return;
-            }
-            jmethodID exit_method = env->GetStaticMethodID(clazz, "exitInstance", "()V");
-            if (exit_method == nullptr) {
-                env->ExceptionClear();
-                return;
-            }
-            env->CallStaticVoidMethod(clazz, exit_method);
-        });
-    }
-
-    bool launcher::uninstall_j2me_app(const std::uint32_t app_id) {
-        if (!sys) {
-            return false;
-        }
-        return eka2l1::j2me::uninstall(sys, app_id);
-    }
-
-    std::vector<std::string> launcher::get_j2me_apps() {
-        std::vector<std::string> out;
-        if (!sys) {
-            return out;
-        }
-        eka2l1::j2me::app_list *applist = sys->get_j2me_applist();
-        if (!applist) {
-            return out;
-        }
-        const auto entries = applist->get_entries();
-        out.reserve(entries.size());
-        for (const auto &e : entries) {
-            // id|name|author|version|iconPath
-            // '|' is safe because descriptors in J2ME cannot contain it
-            // (the KMID parser would have rejected them anyway).
-            const std::string title_disp = e.original_title_.empty() ? e.title_ : e.original_title_;
-            out.push_back(std::to_string(e.id_) + "|" + title_disp + "|" + e.author_ +
-                "|" + e.version_ + "|" + e.icon_path_);
-        }
-        return out;
     }
 
     std::vector<std::string> launcher::get_success_installed_license_games() {
@@ -984,7 +719,7 @@ namespace eka2l1::android {
         conf->current_mmc_id = new_mmc_id;
     }
 
-    bool launcher::save_screenshot_to(const std::string &path) {
+    bool launcher::save_screenshot_to(const eka2l1::host_path &path) {
         if (!winserv) {
             return false;
         }
@@ -1009,9 +744,9 @@ namespace eka2l1::android {
 
         struct write_png_context {
             FILE *dest_file_;
-            std::string path_;
+            eka2l1::host_path path_;
 
-            explicit write_png_context(const std::string &path)
+            explicit write_png_context(const eka2l1::host_path &path)
                 : path_(path) {
                  dest_file_ = common::open_c_file(path, "wb");
             }

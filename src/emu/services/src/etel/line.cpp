@@ -63,7 +63,7 @@ namespace eka2l1 {
                 break;
 
             default:
-                LOG_ERROR(SERVICE_ETEL, "Unimplemented etel line opcode {}", ctx->msg->function);
+                dispatch_unhandled(ctx);
                 break;
             }
         } else {
@@ -81,16 +81,18 @@ namespace eka2l1 {
                 cancel_notify_incoming_call(ctx);
                 break;
 
+            case epoc::etel_line_notify_status_change:
             case epoc::etel_mobile_line_notify_status_change:
                 notify_status_change(ctx);
                 break;
 
+            case epoc::etel_line_notify_status_change_cancel:
             case epoc::etel_mobile_line_cancel_notify_status_change:
                 cancel_notify_status_change(ctx);
                 break;
 
             default:
-                LOG_ERROR(SERVICE_ETEL, "Unimplemented etel line opcode {}", ctx->msg->function);
+                dispatch_unhandled(ctx);
                 break;
             }
         }

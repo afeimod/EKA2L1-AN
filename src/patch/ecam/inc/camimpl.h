@@ -23,6 +23,23 @@
 #include <ecam.h>
 #include <e32base.h>
 #include <e32std.h>
+#include <fbs.h>
+
+inline void BeginCameraBitmapAccess(CFbsBitmap &aBitmap) {
+#ifdef EKA2
+    aBitmap.BeginDataAccess();
+#else
+    aBitmap.LockHeap();
+#endif
+}
+
+inline void EndCameraBitmapAccess(CFbsBitmap &aBitmap) {
+#ifdef EKA2
+    aBitmap.EndDataAccess();
+#else
+    aBitmap.UnlockHeap();
+#endif
+}
 
 enum TCameraParameter {
     EOpticalZoom,       // Morden API on phone like Android doesn't seems to include thing like this...
@@ -34,10 +51,19 @@ enum TCameraParameter {
     EWhiteBalance
 };
 
-class CCameraImageBufferImpl: public MCameraBuffer {
+class CCameraImageBufferImpl
+#ifdef EKA2
+    : public MCameraBuffer
+#endif
+{
 private:
 	HBufC8 *iDataBuffer;
 	CFbsBitmap *iDataBitmap;
+
+	// DataL() must hand out a descriptor that outlives the call. HBufC8::Des()
+	// returns a TPtr8 by value, so returning its address gives the caller a
+	// pointer into a dead stack frame.
+	TPtr8 iDataDes;
 
 public:
 	CCameraImageBufferImpl();
@@ -51,6 +77,10 @@ public:
 
 	TUint8 *DataPtr();
 	void EndDataAccess();
+
+	// Publish how many bytes were actually filled in. Without it the buffer
+	// stays zero-length and FrameSize()/DataL() report no image at all.
+	void SetDataLength(TInt aLength);
 
 	TBool IsFree() {
 		return (!iDataBuffer && !iDataBitmap);
@@ -107,7 +137,13 @@ public:
     virtual void Release();
 };
 
-class CCameraVideoBuffer2Impl: public MCameraBuffer, public CCameraVideoChunkBufferBase  {
+class CCameraVideoBuffer2Impl
+#ifdef EKA2
+    : public MCameraBuffer, public CCameraVideoChunkBufferBase
+#else
+    : public CCameraVideoChunkBufferBase
+#endif
+{
 public:
     virtual TInt NumFrames() {
         return iOffsets.Count();
@@ -268,7 +304,9 @@ private:
 
 public:
 	CCameraPlugin(MCameraObserver *observer);
-	CCameraPlugin(MCameraObserver2 *observer);
+#ifdef EKA2
+    CCameraPlugin(MCameraObserver2 *observer);
+#endif
 	~CCameraPlugin();
 
 	void ConstructL(TInt aCameraIndex);

@@ -18,17 +18,21 @@
 package com.github.eka2l1.emu.overlay;
 
 import android.content.Context;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.PointF;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.content.res.AppCompatResources;
+import com.github.eka2l1.R;
 
 import com.github.eka2l1.emu.Emulator;
 import com.github.eka2l1.emu.Keycode;
@@ -36,8 +40,6 @@ import com.github.eka2l1.emu.Keycode;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 
 
 public class VirtualKeyboard implements Overlay, Runnable {
@@ -56,35 +58,17 @@ public class VirtualKeyboard implements Overlay, Runnable {
         void layoutChanged(VirtualKeyboard vk);
     }
 
-    public static class VirtualKey {
+    protected class VirtualKey {
 
         private RectF rect;
         private int keyCode, secondKeyCode;
         private final String label;
         private boolean selected;
         private boolean visible;
-        boolean opaque = true;
+        private boolean opaque = true;
         private int corners = 0;
-
-        /** Last time a key-down was emitted. Used to auto-repeat the
-         *  key so the game keeps receiving "click" events while the
-         *  user holds the key. Symbian input is event-based — a key
-         *  press without the matching release is interpreted by the
-         *  OS as the user switching to menu-navigation mode rather
-         *  than "walk" mode. */
-        private long lastPressTime = 0L;
-        /** Auto-repeat interval in ms. Short enough that a held
-         *  direction keeps the character moving at a comfortable
-         *  pace; long enough that the input thread isn't overwhelmed. */
-        private static final long REPEAT_INTERVAL_MS = 100L;
-
-        /** Back-reference to the enclosing keyboard. Static nested
-         *  classes don't have an implicit reference to the outer
-         *  instance, so the owner is set explicitly when the key is
-         *  created. The key needs access to the shared colour table,
-         *  the shape and the paint objects — all of which live on the
-         *  outer instance. */
-        VirtualKeyboard owner;
+        private Drawable icon;
+        private int iconColor;
 
         VirtualKey(int keyCode, String label) {
             this.keyCode = keyCode;
@@ -98,6 +82,12 @@ public class VirtualKeyboard implements Overlay, Runnable {
             this.secondKeyCode = secondKeyCode;
         }
 
+        // Drawn in place of the label, which still names the key in the settings.
+        void setIcon(Drawable icon, int color) {
+            this.icon = icon == null ? null : icon.mutate();
+            this.iconColor = color;
+        }
+
         int getKeyCode() {
             return keyCode;
         }
@@ -108,10 +98,6 @@ public class VirtualKeyboard implements Overlay, Runnable {
 
         void setSelected(boolean flag) {
             selected = flag;
-        }
-
-        boolean isSelected() {
-            return selected;
         }
 
         public void setVisible(boolean flag) {
@@ -135,87 +121,50 @@ public class VirtualKeyboard implements Overlay, Runnable {
             return visible && rect.contains(x, y);
         }
 
-        /** Send a down event for this key. */
-        public void press() {
-            Emulator.pressKey(keyCode, 0);
-            if (secondKeyCode != 0) {
-                Emulator.pressKey(secondKeyCode, 0);
-            }
-        }
-
-        /** Send an up event for this key. */
-        public void release() {
-            Emulator.pressKey(keyCode, 1);
-            if (secondKeyCode != 0) {
-                Emulator.pressKey(secondKeyCode, 1);
-            }
-        }
-
-        /** Fire a single press/release cycle and update the
-         *  last-emit timestamp so {@link #tickRepeat()} can be used
-         *  to keep the key ticking at a steady cadence while the
-         *  user holds the touch down. */
-        public void emitClick() {
-            press();
-            release();
-            lastPressTime = android.os.SystemClock.uptimeMillis();
-        }
-
-        /** If the auto-repeat interval has elapsed, re-emit a
-         *  press/release pair. Returns true if anything was emitted
-         *  so callers can skip extra work. */
-        public boolean tickRepeat() {
-            long now = android.os.SystemClock.uptimeMillis();
-            if (now - lastPressTime >= REPEAT_INTERVAL_MS) {
-                lastPressTime = now;
-                press();
-                release();
-                return true;
-            }
-            return false;
-        }
-
-        /** Reset the auto-repeat timer (call when the user lifts
-         *  their finger). */
-        public void resetRepeat() {
-            lastPressTime = 0L;
-        }
-
         public void paint(Canvas g) {
             int bgColor;
             int fgColor;
             if (selected) {
-                bgColor = owner.colors[BACKGROUND_SELECTED];
-                fgColor = owner.colors[FOREGROUND_SELECTED];
+                bgColor = colors[BACKGROUND_SELECTED];
+                fgColor = colors[FOREGROUND_SELECTED];
             } else {
-                bgColor = owner.colors[BACKGROUND];
-                fgColor = owner.colors[FOREGROUND];
+                bgColor = colors[BACKGROUND];
+                fgColor = colors[FOREGROUND];
             }
-            int olColor = owner.colors[OUTLINE];
+            int olColor = colors[OUTLINE];
             if (opaque) {
                 bgColor |= 0xFF000000;
                 fgColor |= 0xFF000000;
                 olColor |= 0xFF000000;
             }
-            owner.fillPaint.setColor(bgColor);
-            owner.textPaint.setColor(fgColor);
-            owner.drawPaint.setColor(olColor);
+            fillPaint.setColor(bgColor);
+            textPaint.setColor(fgColor);
+            drawPaint.setColor(olColor);
 
-            switch (owner.shape) {
+            switch (shape) {
                 case ROUND_RECT_SHAPE:
-                    g.drawRoundRect(rect, corners, corners, owner.fillPaint);
-                    g.drawRoundRect(rect, corners, corners, owner.drawPaint);
+                    g.drawRoundRect(rect, corners, corners, fillPaint);
+                    g.drawRoundRect(rect, corners, corners, drawPaint);
                     break;
                 case RECT_SHAPE:
-                    g.drawRect(rect, owner.fillPaint);
-                    g.drawRect(rect, owner.drawPaint);
+                    g.drawRect(rect, fillPaint);
+                    g.drawRect(rect, drawPaint);
                     break;
                 case OVAL_SHAPE:
-                    g.drawArc(rect, 0, 360, false, owner.fillPaint);
-                    g.drawArc(rect, 0, 360, false, owner.drawPaint);
+                    g.drawArc(rect, 0, 360, false, fillPaint);
+                    g.drawArc(rect, 0, 360, false, drawPaint);
                     break;
             }
-            g.drawText(label, rect.centerX(), rect.centerY() - owner.textCenterOffset, owner.textPaint);
+            if (icon != null) {
+                int half = (int) (Math.min(rect.width(), rect.height()) * 0.3f);
+                int cx = (int) rect.centerX();
+                int cy = (int) rect.centerY();
+                icon.setBounds(cx - half, cy - half, cx + half, cy + half);
+                icon.setTint(iconColor == 0 ? fgColor : (fgColor & 0xFF000000) | (iconColor & 0x00FFFFFF));
+                icon.draw(g);
+            } else {
+                g.drawText(label, rect.centerX(), rect.centerY() - textCenterOffset, textPaint);
+            }
         }
 
         public String getLabel() {
@@ -236,428 +185,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
         }
     }
 
-
-    /**
-     * A {@link VirtualKey} subclass that renders and behaves as a virtual
-     * 8-direction joystick. It is owned by the enclosing
-     * {@link VirtualKeyboard} just like the regular keys, which means it
-     * inherits the entire editing UX for free:
-     *
-     * <ul>
-     *     <li>It can be shown or hidden via
-     *         {@link VirtualKeyboard#setKeyVisibility(int, boolean)} — the
-     *         "Hide buttons" dialog picks it up automatically.</li>
-     *     <li>It can be dragged and scaled exactly like any other key in
-     *         edit / scale mode.</li>
-     *     <li>It picks up its colours from the same {@code colors[]} table
-     *         the keyboard uses, including the per-color alpha values.</li>
-     *     <li>It is persisted in the same {@code VirtualKeyboardLayout}
-     *         file the keyboard writes to.</li>
-     * </ul>
-     *
-     * <p>Eight-direction dispatch: the angle of the touch point relative
-     * to the centre is snapped to one of eight 45&deg; sectors (the
-     * threshold between sectors is 22.5&deg;). The result is converted
-     * into the key codes defined by {@link DirectionMap} (default:
-     * UP/DOWN/LEFT/RIGHT plus a second key for diagonals). On release
-     * every direction key that is still held is released.</p>
-     *
-     * <p>Snap-to-neighbour has been intentionally disabled for joysticks
-     * — the stick is positioned freely and only clamped to the screen
-     * rectangle.</p>
-     */
-    public static class JoystickKey extends VirtualKey {
-
-        /** Direction index — used both internally and on disk, so the
-         *  order is fixed. */
-        public static final int DIR_UP = 0;
-        public static final int DIR_UP_RIGHT = 1;
-        public static final int DIR_RIGHT = 2;
-        public static final int DIR_DOWN_RIGHT = 3;
-        public static final int DIR_DOWN = 4;
-        public static final int DIR_DOWN_LEFT = 5;
-        public static final int DIR_LEFT = 6;
-        public static final int DIR_UP_LEFT = 7;
-
-        public static final int[] DEFAULT_PRIMARY = {
-                Keycode.KEY_UP, Keycode.KEY_UP,   Keycode.KEY_RIGHT,
-                Keycode.KEY_DOWN, Keycode.KEY_DOWN, Keycode.KEY_LEFT,
-                Keycode.KEY_LEFT,  Keycode.KEY_UP
-        };
-        public static final int[] DEFAULT_SECONDARY = {
-                0, Keycode.KEY_RIGHT, 0,
-                Keycode.KEY_RIGHT, 0, Keycode.KEY_LEFT,
-                0, Keycode.KEY_LEFT
-        };
-
-        /** Owns the eight direction key codes. */
-        public static class DirectionMap {
-            public final int[] primary;
-            public final int[] secondary;
-
-            public DirectionMap() {
-                this(DEFAULT_PRIMARY, DEFAULT_SECONDARY);
-            }
-
-            public DirectionMap(int[] primary, int[] secondary) {
-                this.primary = primary.clone();
-                this.secondary = secondary.clone();
-            }
-
-            public void writeTo(DataOutputStream dos) throws IOException {
-                dos.writeInt(primary.length);
-                for (int v : primary) dos.writeInt(v);
-                for (int v : secondary) dos.writeInt(v);
-            }
-
-            public static DirectionMap readFrom(DataInputStream dis) throws IOException {
-                int n = dis.readInt();
-                int[] p = new int[n];
-                int[] s = new int[n];
-                for (int i = 0; i < n; i++) p[i] = dis.readInt();
-                for (int i = 0; i < n; i++) s[i] = dis.readInt();
-                return new DirectionMap(p, s);
-            }
-        }
-
-        private DirectionMap directionMap = new DirectionMap();
-
-        /** Back-reference to the enclosing keyboard. Static nested
-         *  classes don't have an implicit reference to the outer
-         *  instance, so the owner is set explicitly when the joystick
-         *  is created. */
-        private VirtualKeyboard owner;
-
-        public void setOwner(VirtualKeyboard owner) {
-            this.owner = owner;
-        }
-
-        /** Direction that is currently held down (-1 = none). */
-        private int activeDirection = -1;
-
-        /** Knob position relative to the centre, in pixels. */
-        private float knobOffsetX;
-        private float knobOffsetY;
-
-        /** Reusable paint objects, allocated lazily. */
-        private Paint stickFillPaint;
-        private Paint stickRingPaint;
-        private Paint stickKnobPaint;
-        private Paint stickLabelPaint;
-
-        public JoystickKey() {
-            super(0, "Joystick");
-            setVisible(false); // hidden until the user adds it via the menu
-        }
-
-        public void setDirectionMap(DirectionMap map) {
-            if (map == null) return;
-            this.directionMap = map;
-        }
-
-        public DirectionMap getDirectionMap() {
-            return directionMap;
-        }
-
-        /**
-         * Knob radius as a fraction of the outer ring radius. Scaled by
-         * {@link #innerScale} so the user can resize the inner ball
-         * independently from the outer ring.
-         */
-        private float innerScale = 0.45f;
-
-        /**
-         * Outer-ring scale factor. Stored on the joystick itself (not on
-         * the keyboard) so each stick can be sized independently and the
-         * setting persists in the layout file.
-         */
-        private float outerScale = 1.0f;
-
-        public float getInnerScale() {
-            return innerScale;
-        }
-
-        public void setInnerScale(float s) {
-            innerScale = Math.max(0.2f, Math.min(0.9f, s));
-        }
-
-        public float getOuterScale() {
-            return outerScale;
-        }
-
-        public void setOuterScale(float s) {
-            outerScale = Math.max(0.5f, Math.min(2.5f, s));
-        }
-
-        /** Set the outer-ring diameter in pixels. Keeps the centre. */
-        public void setOuterDiameter(float diameter) {
-            float cx = getRect().centerX();
-            float cy = getRect().centerY();
-            getRect().set(cx - diameter / 2f, cy - diameter / 2f,
-                    cx + diameter / 2f, cy + diameter / 2f);
-        }
-
-        @Override
-        public boolean contains(float x, float y) {
-            if (!isVisible()) return false;
-            // Hit-test the outer ring (the whole stick is one big circle).
-            float cx = getRect().centerX();
-            float cy = getRect().centerY();
-            float r = Math.min(getRect().width(), getRect().height()) / 2f;
-            float dx = x - cx;
-            float dy = y - cy;
-            return dx * dx + dy * dy <= r * r;
-        }
-
-        @Override
-        public void paint(Canvas g) {
-            if (!isVisible()) return;
-            ensurePaints();
-
-            // Outer ring centre and outer radius (driven by outerScale).
-            float cx = getRect().centerX();
-            float cy = getRect().centerY();
-            float rOuter = Math.min(getRect().width(), getRect().height()) / 2f;
-
-            // Inner ball centre is offset by the knob position; the ball
-            // radius is a fraction of the outer radius, scaled by
-            // innerScale. The two scales are independent so the user can
-            // resize the ring and the ball independently.
-            float knobCx = cx + knobOffsetX;
-            float knobCy = cy + knobOffsetY;
-            float rKnob = rOuter * innerScale;
-
-            int bg = owner.colors[BACKGROUND];
-            int ring = owner.colors[OUTLINE];
-            int knob = owner.colors[isSelected() ? BACKGROUND_SELECTED : BACKGROUND];
-            int fg = owner.colors[FOREGROUND];
-
-            stickFillPaint.setColor((bg & 0x00FFFFFF) | 0x40000000);
-            stickRingPaint.setColor(ring | 0xFF000000);
-            stickKnobPaint.setColor(knob | 0xFF000000);
-            stickLabelPaint.setColor(fg | 0xFF000000);
-
-            // Outer ring (fixed) — the hit area the user touches.
-            g.drawCircle(cx, cy, rOuter, stickFillPaint);
-            stickRingPaint.setStrokeWidth(3f);
-            g.drawCircle(cx, cy, rOuter, stickRingPaint);
-
-            // Inner ball (movable) — the visual indicator of direction.
-            g.drawCircle(knobCx, knobCy, rKnob, stickKnobPaint);
-
-            stickLabelPaint.setTextAlign(Paint.Align.CENTER);
-            stickLabelPaint.setTextSize(rKnob * 0.55f);
-            g.drawText("JOY", knobCx, knobCy + rKnob * 0.18f, stickLabelPaint);
-        }
-
-        private void ensurePaints() {
-            if (stickFillPaint != null) return;
-            stickFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            stickFillPaint.setStyle(Paint.Style.FILL);
-
-            stickRingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            stickRingPaint.setStyle(Paint.Style.STROKE);
-
-            stickKnobPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            stickKnobPaint.setStyle(Paint.Style.FILL);
-
-            stickLabelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            stickLabelPaint.setStyle(Paint.Style.FILL);
-        }
-
-        /**
-         * Compute the direction index from the knob's current position
-         * (relative to the outer-ring centre), or -1 inside the dead
-         * zone. The knob offset itself is what tells us which direction
-         * the user is pointing at, not the latest touch position.
-         */
-        private int directionForKnob() {
-            float cx = getRect().centerX();
-            float cy = getRect().centerY();
-            float dx = knobOffsetX;
-            float dy = knobOffsetY;
-            float dist = (float) Math.hypot(dx, dy);
-            float r = Math.min(getRect().width(), getRect().height()) / 2f;
-            // Very small dead-zone so even a near-centre touch still
-            // resolves to a direction. Some N-Gage games refuse to
-            // accept a key press unless it's clearly off-axis.
-            float deadZone = r * 0.08f;
-            if (dist < deadZone) return -1;
-            double deg = Math.toDegrees(Math.atan2(dy, dx));
-            if (deg < 0) deg += 360.0;
-            double shifted = (deg + 22.5) % 360.0;
-            int sector = (int) (shifted / 45.0);
-            switch (sector) {
-                case 0: return DIR_RIGHT;
-                case 1: return DIR_DOWN_RIGHT;
-                case 2: return DIR_DOWN;
-                case 3: return DIR_DOWN_LEFT;
-                case 4: return DIR_LEFT;
-                case 5: return DIR_UP_LEFT;
-                case 6: return DIR_UP;
-                case 7: return DIR_UP_RIGHT;
-                default: return -1;
-            }
-        }
-
-        /**
-         * Update knob position based on where the user is currently
-         * touching. The knob offset equals the touch offset relative
-         * to the outer ring centre, but the knob stays visually
-         * "anchored" to the touch: if the user drags past the rim,
-         * the knob is clamped to a point inside the ring along the
-         * same direction, never jumps to the rim centre.
-         */
-        private void updateKnob(float touchX, float touchY) {
-            float cx = getRect().centerX();
-            float cy = getRect().centerY();
-            float r = Math.min(getRect().width(), getRect().height()) / 2f;
-            float ox = touchX - cx;
-            float oy = touchY - cy;
-            float dist = (float) Math.hypot(ox, oy);
-            // Clamp the knob so it never escapes the outer ring.
-            if (dist > r) {
-                float k = r / dist;
-                ox *= k;
-                oy *= k;
-            }
-            knobOffsetX = ox;
-            knobOffsetY = oy;
-        }
-
-        /** Last time a press event was emitted (SystemClock.uptimeMillis).
-         *  No longer used for auto-repeat, but kept in case future
-         *  games need it. */
-        private long lastPressTime = 0L;
-        /** Auto-repeat interval for held direction, in ms. Unused
-         *  for now; the held-direction model keeps the key down
-         *  instead of repeatedly clicking. */
-        private static final long REPEAT_INTERVAL_MS = 220L;
-
-        /** Called by VirtualKeyboard when the user touches inside this
-         *  stick. The first touch point becomes the new knob position;
-         *  the direction is then derived from the knob offset. */
-        public void onPointerPressed(float x, float y) {
-            // First contact: place the knob at the touch point. The user
-            // is directly grabbing the ball on a real joystick, so the
-            // ball should follow the finger from the very first frame.
-            updateKnob(x, y);
-            int dir = directionForKnob();
-            // Release any previously held direction before pressing
-            // the new one — this matches how a real hardware stick
-            // behaves (one direction at a time, no "up + down" toggles
-            // on a transition).
-            if (activeDirection >= 0 && activeDirection != dir) {
-                releaseActiveDirection();
-            }
-            activeDirection = dir;
-            lastPressTime = android.os.SystemClock.uptimeMillis();
-            if (dir >= 0) {
-                // Send the down event only. The matching up event is
-                // sent on pointerReleased (or when the direction
-                // changes). This mirrors how the regular VirtualKey
-                // path works: press = down, release = up, hold =
-                // stay-down. That is what the game needs to keep the
-                // character moving while the user holds the stick
-                // off-centre.
-                pressDirection(dir);
-            }
-        }
-
-        /** Called by VirtualKeyboard while the finger drags. */
-        public void onPointerDragged(float x, float y) {
-            updateKnob(x, y);
-            int dir = directionForKnob();
-            if (dir != activeDirection) {
-                // Moved to a new direction: release the old down, then
-                // press the new one. The two down events are never
-                // concurrent because the up happens first.
-                if (activeDirection >= 0) {
-                    releaseActiveDirection();
-                }
-                activeDirection = dir;
-                lastPressTime = android.os.SystemClock.uptimeMillis();
-                if (dir >= 0) {
-                    pressDirection(dir);
-                }
-            }
-            // If the user dragged back to the dead-zone, release
-            // whatever direction is held.
-            else if (dir < 0 && activeDirection >= 0) {
-                releaseActiveDirection();
-            }
-        }
-
-        /** Called by VirtualKeyboard when the finger lifts. */
-        public void onPointerReleased() {
-            releaseActiveDirection();
-            lastPressTime = 0L;
-            knobOffsetX = 0;
-            knobOffsetY = 0;
-        }
-
-        /** Force-release any held direction. Used when the keyboard hides. */
-        public void releaseAll() {
-            releaseActiveDirection();
-            lastPressTime = 0L;
-            knobOffsetX = 0;
-            knobOffsetY = 0;
-        }
-
-        private void pressDirection(int dir) {
-            if (dir < 0 || dir >= directionMap.primary.length) return;
-            Emulator.pressKey(directionMap.primary[dir], 0);
-            if (directionMap.secondary[dir] != 0) {
-                Emulator.pressKey(directionMap.secondary[dir], 0);
-            }
-        }
-
-        private void releaseDirection(int dir) {
-            if (dir < 0 || dir >= directionMap.primary.length) return;
-            Emulator.pressKey(directionMap.primary[dir], 1);
-            if (directionMap.secondary[dir] != 0) {
-                Emulator.pressKey(directionMap.secondary[dir], 1);
-            }
-        }
-
-        private void releaseActiveDirection() {
-            if (activeDirection >= 0) {
-                releaseDirection(activeDirection);
-                activeDirection = -1;
-            }
-        }
-
-        /** Per-instance persistent layout. The keyboard writes a single
-         *  LAYOUT_JOYSTICKS block for all joysticks; each sub-record is
-         *  self-describing. */
-        public void writeLayout(DataOutputStream dos) throws IOException {
-            dos.writeInt(0x4A4F5901); // "JOY" + version
-            dos.writeFloat(getRect().left);
-            dos.writeFloat(getRect().top);
-            dos.writeFloat(getRect().right);
-            dos.writeFloat(getRect().bottom);
-            dos.writeBoolean(isVisible());
-            directionMap.writeTo(dos);
-        }
-
-        public void readLayout(DataInputStream dis) throws IOException {
-            int sig = dis.readInt();
-            if (sig != 0x4A4F5901) {
-                throw new IOException("unexpected joystick signature 0x"
-                        + Integer.toHexString(sig));
-            }
-            float l = dis.readFloat();
-            float t = dis.readFloat();
-            float r = dis.readFloat();
-            float b = dis.readFloat();
-            getRect().set(l, t, r, b);
-            setVisible(dis.readBoolean());
-            directionMap = DirectionMap.readFrom(dis);
-        }
-    }
-    private static final int KEYBOARD_SIZE = 25;
-
-
+    private static final int KEYBOARD_SIZE = 55;
     static final int SCREEN = -1;
 
     static final int KEY_NUM1 = 0;
@@ -685,33 +213,20 @@ public class VirtualKeyboard implements Overlay, Runnable {
     static final int KEY_DOWN = 22;
     static final int KEY_DOWN_RIGHT = 23;
     static final int KEY_FIRE = 24;
+    static final int KEY_CALL = 25;
+    static final int KEY_END = 26;
+    static final int KEY_EDIT = 27;
+    static final int KEY_A = 28;
+    static final int KEY_SPACE = KEY_A + 26;
+
+    // Keys from here on are the letter keys, listed apart from the phone keys.
+    private static final int LETTER_KEYS_START = KEY_A;
+    private static final String[] LETTER_ROWS = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
+    private static final int SPACE_KEY_COLUMNS = 4;
 
     private static final int LAYOUT_SIGNATURE = 0x564B4C00;
     private static final int LAYOUT_OLD_VERSION = 1;
-    /**
-     * v2 introduced the per-key visibility flag (writeBoolean between
-     * hashCode and the snap fields).
-     * <p>v3 also persists the absolute rectangle (left/top/right/bottom)
-     * for every key. The snap graph alone can't recover the position of
-     * keys the user dragged in free-form edit mode — those end up with
-     * {@code snapOrigins = SCREEN} and {@code snapModes = NO_SNAP}, so
-     * on the next launch {@code RectSnap.snap} with {@code NO_SNAP}
-     * leaves {@code rect.left/top} at zero and the keys all stack at
-     * the top-left corner. Storing the rect lets the next session
-     * restore exactly where the user left them.</p>
-     */
-    private static final int LAYOUT_VERSION = 3;
-    /** Bytes consumed by the LAYOUT_KEYS record for a single key, in
-     *  the v3 layout (see {@link #LAYOUT_VERSION}). The legacy v2 layout
-     *  is one byte shorter because it omits the boolean visibility flag
-     *  — but v3 always writes the visibility, so v3 uses 21+16=37. */
-    private static final int LAYOUT_KEYS_RECORD_BYTES_V3 = 4 /* hashCode */
-            + 1 /* visible */ + 4 /* snapOrigin */ + 4 /* snapMode */
-            + 4 /* snapOffX */ + 4 /* snapOffY */
-            + 4 /* rectL */ + 4 /* rectT */ + 4 /* rectR */ + 4 /* rectB */;
-    /** Bytes consumed by the LAYOUT_KEYS record for a single key, in
-     *  the v2 layout (hashCode + visible + origin + mode + offX + offY). */
-    private static final int LAYOUT_KEYS_RECORD_BYTES_V2 = 4 + 1 + 4 + 4 + 4 + 4;
+    private static final int LAYOUT_VERSION = 2;
 
     private static final int NUM_VARIANTS = 4;
 
@@ -719,11 +234,6 @@ public class VirtualKeyboard implements Overlay, Runnable {
     public static final int LAYOUT_KEYS = 0;
     public static final int LAYOUT_SCALES = 1;
     public static final int LAYOUT_COLORS = 2;
-    /**
-     * Block id for the joystick list. The block contains a 4-byte count
-     * followed by that many self-describing joystick records.
-     */
-    public static final int LAYOUT_JOYSTICKS = 3;
 
     private int delay = -1;
     protected int shape;
@@ -742,9 +252,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
     public static final int FOREGROUND_SELECTED = 3;
     public static final int OUTLINE = 4;
 
-    /** Visible to package — {@link JoystickKey} reads colours from the
-     *  same table the keyboard uses. */
-    int[] colors = {
+    private int[] colors = {
             0xD0D0D0,
             0x000080,
             0x000080,
@@ -757,6 +265,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
     private static final int SCALE_DIAL_KEYS = 2;
     private static final int SCALE_DIGITS = 3;
     private static final int SCALE_FIRE_KEY = 4;
+    private static final int SCALE_LETTERS = 5;
 
     private static final float SCALE_SNAP_RADIUS = 0.05f;
 
@@ -765,7 +274,8 @@ public class VirtualKeyboard implements Overlay, Runnable {
             1,
             1,
             0.75f,
-            1.5f
+            1.5f,
+            0.6f
     };
 
     private int[][] keyScaleGroups = {
@@ -786,6 +296,9 @@ public class VirtualKeyboard implements Overlay, Runnable {
             {
                     KEY_DIAL,
                     KEY_CANCEL,
+                    KEY_CALL,
+                    KEY_END,
+                    KEY_EDIT,
             },
             {
                     KEY_NUM1,
@@ -803,10 +316,12 @@ public class VirtualKeyboard implements Overlay, Runnable {
             },
             {
                     KEY_FIRE
-            }
+            },
+            new int[KEYBOARD_SIZE - LETTER_KEYS_START]
     };
 
     private View overlayView;
+    private boolean landscape;
     private boolean obscuresVirtualScreen;
     private boolean feedback;
     private boolean forceOpacity;
@@ -835,28 +350,6 @@ public class VirtualKeyboard implements Overlay, Runnable {
     protected VirtualKey[] keypad;
     private VirtualKey[] associatedKeys;
 
-    /**
-     * Tracks which joystick (if any) is currently being driven by a given
-     * pointer in play mode. Indexed by pointer id; null means no active
-     * joystick for that finger.
-     */
-    private JoystickKey[] joystickAssoc;
-
-    /** Tracks the joystick being dragged/scaled in edit/scale mode. */
-    private int editedJoystickIndex = -1;
-    private float joyDragOffsetX;
-    private float joyDragOffsetY;
-    private float joyPrevScale;
-
-    /**
-     * Joysticks are stored separately from the fixed keypad array so the
-     * user can add and remove them at runtime. Each one is a full
-     * {@link JoystickKey} (a {@link VirtualKey} subclass) and behaves
-     * exactly like a regular key for editing, scaling, hiding, deleting
-     * and persistence.
-     */
-    protected final List<JoystickKey> joystickKeys = new ArrayList<>();
-
     protected LayoutListener listener;
 
     private Paint drawPaint = new Paint();
@@ -870,35 +363,58 @@ public class VirtualKeyboard implements Overlay, Runnable {
 
     public VirtualKeyboard(Context context, int variant) {
         keypad = new VirtualKey[KEYBOARD_SIZE];
+        landscape = context.getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
         associatedKeys = new VirtualKey[10]; // the average user usually has no more than 10 fingers...
-        joystickAssoc = new JoystickKey[10]; // same limit, one stick per finger
 
         for (int i = KEY_NUM1; i < 9; i++) {
-            keypad[i] = mkKey(Keycode.KEY_NUM1 + i, Integer.toString(1 + i));
+            keypad[i] = new VirtualKey(Keycode.KEY_NUM1 + i, Integer.toString(1 + i));
         }
 
-        keypad[KEY_NUM0] = mkKey(Keycode.KEY_NUM0, "0");
-        keypad[KEY_STAR] = mkKey(Keycode.KEY_STAR, "*");
-        keypad[KEY_POUND] = mkKey(Keycode.KEY_POUND, "#");
+        keypad[KEY_NUM0] = new VirtualKey(Keycode.KEY_NUM0, "0");
+        keypad[KEY_STAR] = new VirtualKey(Keycode.KEY_STAR, "*");
+        keypad[KEY_POUND] = new VirtualKey(Keycode.KEY_POUND, "#");
 
-        keypad[KEY_SOFT_LEFT] = mkKey(Keycode.KEY_SOFT_LEFT, "L");
-        keypad[KEY_SOFT_RIGHT] = mkKey(Keycode.KEY_SOFT_RIGHT, "R");
+        // The phone keys carry symbols, which leaves every letter to the letter keys.
+        keypad[KEY_SOFT_LEFT] = new VirtualKey(Keycode.KEY_SOFT_LEFT, context.getString(R.string.virtual_key_soft_left));
+        keypad[KEY_SOFT_LEFT].setIcon(AppCompatResources.getDrawable(context, R.drawable.ic_vk_soft_left), 0);
+        keypad[KEY_SOFT_RIGHT] = new VirtualKey(Keycode.KEY_SOFT_RIGHT, context.getString(R.string.virtual_key_soft_right));
+        keypad[KEY_SOFT_RIGHT].setIcon(AppCompatResources.getDrawable(context, R.drawable.ic_vk_soft_right), 0);
 
-        keypad[KEY_DIAL] = mkKey(Keycode.KEY_SEND, "D");
-        keypad[KEY_CANCEL] = mkKey(Keycode.KEY_CLEAR, "C");
+        // Retired, never shown. It keeps its slot because saved layouts name snap origins by index.
+        keypad[KEY_DIAL] = new VirtualKey(Keycode.KEY_SEND, "");
+        keypad[KEY_DIAL].setVisible(false);
+        keypad[KEY_CANCEL] = new VirtualKey(Keycode.KEY_CLEAR, context.getString(R.string.virtual_key_clear));
+        keypad[KEY_CANCEL].setIcon(AppCompatResources.getDrawable(context, R.drawable.ic_vk_clear), 0);
 
-        keypad[KEY_UP_LEFT] = mkKey(Keycode.KEY_UP, Keycode.KEY_LEFT, ARROW_UP_LEFT);
-        keypad[KEY_UP] = mkKey(Keycode.KEY_UP, ARROW_UP);
-        keypad[KEY_UP_RIGHT] = mkKey(Keycode.KEY_UP, Keycode.KEY_RIGHT, ARROW_UP_RIGHT);
+        keypad[KEY_UP_LEFT] = new VirtualKey(Keycode.KEY_UP, Keycode.KEY_LEFT, ARROW_UP_LEFT);
+        keypad[KEY_UP] = new VirtualKey(Keycode.KEY_UP, ARROW_UP);
+        keypad[KEY_UP_RIGHT] = new VirtualKey(Keycode.KEY_UP, Keycode.KEY_RIGHT, ARROW_UP_RIGHT);
 
-        keypad[KEY_LEFT] = mkKey(Keycode.KEY_LEFT, ARROW_LEFT);
-        keypad[KEY_RIGHT] = mkKey(Keycode.KEY_RIGHT, ARROW_RIGHT);
+        keypad[KEY_LEFT] = new VirtualKey(Keycode.KEY_LEFT, ARROW_LEFT);
+        keypad[KEY_RIGHT] = new VirtualKey(Keycode.KEY_RIGHT, ARROW_RIGHT);
 
-        keypad[KEY_DOWN_LEFT] = mkKey(Keycode.KEY_DOWN, Keycode.KEY_LEFT, ARROW_DOWN_LEFT);
-        keypad[KEY_DOWN] = mkKey(Keycode.KEY_DOWN, ARROW_DOWN);
-        keypad[KEY_DOWN_RIGHT] = mkKey(Keycode.KEY_DOWN, Keycode.KEY_RIGHT, ARROW_DOWN_RIGHT);
+        keypad[KEY_DOWN_LEFT] = new VirtualKey(Keycode.KEY_DOWN, Keycode.KEY_LEFT, ARROW_DOWN_LEFT);
+        keypad[KEY_DOWN] = new VirtualKey(Keycode.KEY_DOWN, ARROW_DOWN);
+        keypad[KEY_DOWN_RIGHT] = new VirtualKey(Keycode.KEY_DOWN, Keycode.KEY_RIGHT, ARROW_DOWN_RIGHT);
 
-        keypad[KEY_FIRE] = mkKey(Keycode.KEY_FIRE, "F");
+        keypad[KEY_FIRE] = new VirtualKey(Keycode.KEY_FIRE, context.getString(R.string.virtual_key_ok));
+        keypad[KEY_FIRE].setIcon(AppCompatResources.getDrawable(context, R.drawable.ic_vk_ok), 0);
+
+        keypad[KEY_CALL] = new VirtualKey(Keycode.KEY_CALL, "Call");
+        keypad[KEY_CALL].setIcon(AppCompatResources.getDrawable(context, R.drawable.ic_vk_call), 0x34C759);
+        keypad[KEY_END] = new VirtualKey(Keycode.KEY_END, "End");
+        keypad[KEY_END].setIcon(AppCompatResources.getDrawable(context, R.drawable.ic_vk_call_end), 0xFF3B30);
+        keypad[KEY_EDIT] = new VirtualKey(Keycode.KEY_EDIT, context.getString(R.string.virtual_key_edit));
+        keypad[KEY_EDIT].setIcon(AppCompatResources.getDrawable(context, R.drawable.ic_vk_edit), 0);
+
+        for (int i = 0; i < 26; i++) {
+            keypad[KEY_A + i] = new VirtualKey(Keycode.KEY_A + i, String.valueOf((char) ('A' + i)));
+        }
+        keypad[KEY_SPACE] = new VirtualKey(Keycode.KEY_SPACE, context.getString(R.string.virtual_key_space));
+        keypad[KEY_SPACE].setIcon(AppCompatResources.getDrawable(context, R.drawable.ic_vk_space), 0);
+        for (int i = LETTER_KEYS_START; i < KEYBOARD_SIZE; i++) {
+            keyScaleGroups[SCALE_LETTERS][i - LETTER_KEYS_START] = i;
+        }
 
         snapOrigins = new int[keypad.length];
         snapModes = new int[keypad.length];
@@ -966,6 +482,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 }
                 keypad[KEY_DIAL].setVisible(false);
                 keypad[KEY_CANCEL].setVisible(false);
+                resetOptionalKeys();
                 break;
             case 1:
                 keyScales[SCALE_JOYSTICK] = 1;
@@ -1006,6 +523,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 }
                 keypad[KEY_DIAL].setVisible(false);
                 keypad[KEY_CANCEL].setVisible(false);
+                resetOptionalKeys();
                 break;
             case 2:
                 keyScales[SCALE_JOYSTICK] = 1;
@@ -1034,6 +552,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 }
                 keypad[KEY_DIAL].setVisible(false);
                 keypad[KEY_CANCEL].setVisible(false);
+                resetOptionalKeys();
                 break;
             case 3:
                 keyScales[SCALE_JOYSTICK] = 1;
@@ -1064,7 +583,49 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 for (int i = KEY_DIAL; i < KEYBOARD_SIZE; i++) {
                     keypad[i].setVisible(false);
                 }
+                resetOptionalKeys();
                 break;
+        }
+    }
+
+    protected void resetOptionalKeys() {
+        setSnap(KEY_CALL, KEY_SOFT_LEFT, RectSnap.EXT_NORTH);
+        setSnap(KEY_END, KEY_SOFT_RIGHT, RectSnap.EXT_NORTH);
+        keypad[KEY_CALL].setVisible(false);
+        keypad[KEY_END].setVisible(false);
+        setSnap(KEY_EDIT, KEY_CALL, RectSnap.EXT_NORTH);
+        keypad[KEY_EDIT].setVisible(false);
+        resetLetterKeys();
+    }
+
+    private static int letterKey(char letter) {
+        return KEY_A + letter - 'A';
+    }
+
+    // A QWERTY block with every key switched off. It hangs from the middle of the left edge
+    // in portrait and from the top centre in landscape, where the phone keys fill both sides.
+    protected void resetLetterKeys() {
+        keyScales[SCALE_LETTERS] = 0.6f;
+        int anchor = landscape ? LETTER_ROWS[0].length() / 2 : 0;
+        for (int row = 0; row < LETTER_ROWS.length; row++) {
+            String letters = LETTER_ROWS[row];
+            int first = row == 0 ? anchor : 0;
+            if (row == 0) {
+                setSnap(letterKey(letters.charAt(first)), SCREEN, landscape ? RectSnap.INT_NORTH : RectSnap.INT_WEST);
+            } else {
+                // The third row starts under S, which centres it under the second.
+                setSnap(letterKey(letters.charAt(0)), letterKey(LETTER_ROWS[row - 1].charAt(row - 1)), RectSnap.EXT_SOUTH);
+            }
+            for (int i = first - 1; i >= 0; i--) {
+                setSnap(letterKey(letters.charAt(i)), letterKey(letters.charAt(i + 1)), RectSnap.EXT_WEST);
+            }
+            for (int i = first + 1; i < letters.length(); i++) {
+                setSnap(letterKey(letters.charAt(i)), letterKey(letters.charAt(i - 1)), RectSnap.EXT_EAST);
+            }
+        }
+        setSnap(KEY_SPACE, letterKey('V'), RectSnap.EXT_SOUTH);
+        for (int i = LETTER_KEYS_START; i < KEYBOARD_SIZE; i++) {
+            keypad[i].setVisible(false);
         }
     }
 
@@ -1095,10 +656,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
         dos.writeInt(LAYOUT_SIGNATURE);
         dos.writeInt(LAYOUT_VERSION);
         dos.writeInt(LAYOUT_KEYS);
-        // The block length encodes the record size so readers can detect
-        // which version wrote the file without checking LAYOUT_VERSION
-        // per record. v3 always carries the 16-byte rectangle.
-        dos.writeInt(keypad.length * LAYOUT_KEYS_RECORD_BYTES_V3 + 4);
+        dos.writeInt(keypad.length * 20 + 4);
         dos.writeInt(keypad.length);
         for (int i = 0; i < keypad.length; i++) {
             dos.writeInt(keypad[i].hashCode());
@@ -1107,19 +665,6 @@ public class VirtualKeyboard implements Overlay, Runnable {
             dos.writeInt(snapModes[i]);
             dos.writeFloat(snapOffsets[i].x);
             dos.writeFloat(snapOffsets[i].y);
-            // The absolute rectangle. This is the only piece of state
-            // that captures a free-form drag — snapModes for a dragged
-            // key collapses to NO_SNAP and snapOffsets to (0,0), so
-            // without persisting the rect the next session cannot
-            // restore the user's placement. Keys that have never been
-            // dragged still write their current rect, which is harmless
-            // because the snap chain will overwrite it on the next
-            // snapKeys() pass.
-            RectF r = keypad[i].getRect();
-            dos.writeFloat(r.left);
-            dos.writeFloat(r.top);
-            dos.writeFloat(r.right);
-            dos.writeFloat(r.bottom);
         }
         dos.writeInt(LAYOUT_SCALES);
         dos.writeInt(keyScales.length * 4 + 4);
@@ -1133,28 +678,9 @@ public class VirtualKeyboard implements Overlay, Runnable {
         for (int color : colors) {
             dos.writeInt(color);
         }
-        // Joystick block: a 4-byte count followed by that many records.
-        // Each record is self-describing (signature inside JoystickKey.writeLayout)
-        // so future format additions stay backwards compatible. We skip
-        // emitting the block entirely when there are no joysticks, which
-        // keeps the file format identical to legacy saves for users that
-        // never enabled the feature.
-        if (!joystickKeys.isEmpty()) {
-            dos.writeInt(LAYOUT_JOYSTICKS);
-            // The reader uses the count + each record's inner signature
-            // to delimit, so we don't need a block length header here.
-            dos.writeInt(0); // reserved length placeholder, ignored on read
-            dos.writeInt(joystickKeys.size());
-            for (JoystickKey j : joystickKeys) {
-                j.writeLayout(dos);
-            }
-        }
         dos.writeInt(LAYOUT_EOF);
         dos.writeInt(0);
     }
-
-    // Reflection helpers removed — the joystick block doesn't need them
-    // because the inner record signatures already delimit the records.
 
     public void readLayout(DataInputStream dis) throws IOException {
         if (dis.readInt() != LAYOUT_SIGNATURE) {
@@ -1173,21 +699,6 @@ public class VirtualKeyboard implements Overlay, Runnable {
             int count;
             switch (block) {
                 case LAYOUT_KEYS:
-                    // Detect v2 vs v3 by the block length. v3 stores
-                    // 4 extra floats (the rect) per key. A v2 file may
-                    // also have a slightly off length (legacy code
-                    // wrote keypad.length * 20 + 4 even though each
-                    // record actually occupied 21 bytes — that bug is
-                    // fixed in v3).
-                    boolean readRect = false;
-                    int expectedV3 = keypad.length * LAYOUT_KEYS_RECORD_BYTES_V3 + 4;
-                    int expectedV2 = keypad.length * LAYOUT_KEYS_RECORD_BYTES_V2 + 4;
-                    if (length == expectedV3) {
-                        readRect = true;
-                    } else if (length == expectedV2
-                            || length == keypad.length * 20 + 4 /* legacy buggy length */) {
-                        readRect = false;
-                    }
                     count = dis.readInt();
                     int hash;
                     boolean found;
@@ -1196,56 +707,30 @@ public class VirtualKeyboard implements Overlay, Runnable {
                         found = false;
                         for (int key = 0; key < keypad.length; key++) {
                             if (keypad[key].hashCode() == hash) {
-                                if (version != LAYOUT_OLD_VERSION) {
+                                if (version == LAYOUT_VERSION) {
                                     keypad[key].setVisible(dis.readBoolean());
                                 }
                                 snapOrigins[key] = dis.readInt();
                                 snapModes[key] = dis.readInt();
                                 snapOffsets[key].x = dis.readFloat();
                                 snapOffsets[key].y = dis.readFloat();
-                                if (readRect) {
-                                    // Restore the absolute rect. Without
-                                    // this, keys that were dragged in free
-                                    // form (snapModes == NO_SNAP) have no
-                                    // information left to anchor them —
-                                    // their rect.left/top starts at zero
-                                    // and they all stack at the top-left
-                                    // corner of the screen. For snap-driven
-                                    // keys this is harmless: snapKeys()
-                                    // will overwrite the rect from the
-                                    // snap chain on the next resize.
-                                    float rl = dis.readFloat();
-                                    float rt = dis.readFloat();
-                                    float rr = dis.readFloat();
-                                    float rb = dis.readFloat();
-                                    keypad[key].getRect().set(rl, rt, rr, rb);
-                                }
                                 found = true;
                                 break;
                             }
                         }
                         if (!found) {
-                            // Skip the rest of this record. v2 = 16 bytes
-                            // after hash (visible + origin + mode + offX
-                            // + offY = 1+4+4+4+4=17, but legacy skipped
-                            // 16 because it didn't know about the
-                            // visibility byte either — preserve that
-                            // buggy behaviour so we don't desync on v2
-                            // files where hashes don't match).
-                            int skipBytes = readRect ? LAYOUT_KEYS_RECORD_BYTES_V3
-                                                     : 16;
-                            dis.skip(skipBytes);
+                            dis.skip(16);
                         }
                     }
                     break;
                 case LAYOUT_SCALES:
                     count = dis.readInt();
-                    if (count == keyScales.length) {
-                        for (int i = 0; i < count; i++) {
-                            keyScales[i] = dis.readFloat();
+                    // Layouts saved before a scale group was added keep the groups they have.
+                    for (int i = 0; i < count; i++) {
+                        float scale = dis.readFloat();
+                        if (i < keyScales.length) {
+                            keyScales[i] = scale;
                         }
-                    } else {
-                        dis.skip(count * 4);
                     }
                     break;
                 case LAYOUT_COLORS:
@@ -1258,164 +743,91 @@ public class VirtualKeyboard implements Overlay, Runnable {
                         dis.skip(count * 4);
                     }
                     break;
-                case LAYOUT_JOYSTICKS:
-                    // Block format: 4-byte length (ignored), 4-byte count,
-                    // then that many joystick records. Each record
-                    // self-delimits via its 4-byte signature, so a malformed
-                    // length header can't break us.
-                    dis.readInt(); // reserved length
-                    int joyCount = dis.readInt();
-                    joystickKeys.clear();
-                    for (int i = 0; i < joyCount; i++) {
-                        JoystickKey j = new JoystickKey();
-                        j.setOwner(this);
-                        try {
-                            j.readLayout(dis);
-                        } catch (IOException ioe) {
-                            // One bad record shouldn't take down the whole
-                            // layout — just stop reading.
-                            break;
-                        }
-                        joystickKeys.add(j);
-                    }
-                    break;
                 default:
                     dis.skip(length);
                     break;
             }
         }
+        keypad[KEY_DIAL].setVisible(false);
+    }
+
+    // The phone keys in the order they are listed, which leaves the retired key out.
+    private static int phoneKey(int id) {
+        return id < KEY_DIAL ? id : id + 1;
     }
 
     public String[] getKeyNames() {
-        // Regular keys first (unchanged order), then one entry per joystick
-        // so the "Hide buttons" dialog sees them all.
-        int total = KEYBOARD_SIZE + joystickKeys.size();
-        String[] names = new String[total];
-        for (int i = 0; i < KEYBOARD_SIZE; i++) {
-            names[i] = keypad[i].getLabel();
-        }
-        for (int i = 0; i < joystickKeys.size(); i++) {
-            names[KEYBOARD_SIZE + i] = "Joystick " + (i + 1);
+        String[] names = new String[LETTER_KEYS_START - 1];
+        for (int i = 0; i < names.length; i++) {
+            names[i] = keypad[phoneKey(i)].getLabel();
         }
         return names;
     }
 
     public boolean[] getKeyVisibility() {
-        int total = KEYBOARD_SIZE + joystickKeys.size();
-        boolean[] states = new boolean[total];
-        for (int i = 0; i < KEYBOARD_SIZE; i++) {
-            states[i] = !keypad[i].isVisible();
-        }
-        for (int i = 0; i < joystickKeys.size(); i++) {
-            states[KEYBOARD_SIZE + i] = !joystickKeys.get(i).isVisible();
+        boolean[] states = new boolean[LETTER_KEYS_START - 1];
+        for (int i = 0; i < states.length; i++) {
+            states[i] = !keypad[phoneKey(i)].isVisible();
         }
         return states;
     }
 
-    public void setKeyVisibility(int id, boolean hidden) {
-        if (id >= 0 && id < KEYBOARD_SIZE) {
-            keypad[id].setVisible(!hidden);
-        } else if (id >= KEYBOARD_SIZE && id < KEYBOARD_SIZE + joystickKeys.size()) {
-            joystickKeys.get(id - KEYBOARD_SIZE).setVisible(!hidden);
-        } else {
-            return;
+    public void setPhoneKeyHidden(int id, boolean hidden) {
+        setKeyVisibility(phoneKey(id), hidden);
+    }
+
+    public String[] getLetterKeyNames() {
+        String[] names = new String[KEYBOARD_SIZE - LETTER_KEYS_START];
+        for (int i = 0; i < names.length; i++) {
+            names[i] = keypad[LETTER_KEYS_START + i].getLabel();
         }
+        return names;
+    }
+
+    public boolean[] getLetterKeysShown() {
+        boolean[] states = new boolean[KEYBOARD_SIZE - LETTER_KEYS_START];
+        for (int i = 0; i < states.length; i++) {
+            states[i] = keypad[LETTER_KEYS_START + i].isVisible();
+        }
+        return states;
+    }
+
+    public void setLetterKeyShown(int id, boolean shown) {
+        setKeyVisibility(LETTER_KEYS_START + id, !shown);
+    }
+
+    private void setKeyVisibility(int id, boolean hidden) {
+        if (hidden) {
+            releaseKey(keypad[id]);
+        }
+        keypad[id].setVisible(!hidden);
         snapKeys();
         repaint();
-        if (listener != null) listener.layoutChanged(this);
-    }
-
-    /**
-     * Create a fresh joystick centred at {@code (cx, cy)} with the given
-     * diameter (pixels). The new stick is added to the end of the editor
-     * list, made visible and persisted via the layout listener.
-     *
-     * @return the index of the new joystick in the {@link #joystickKeys}
-     *         list, or -1 if creation failed.
-     */
-    public int addJoystick(float cx, float cy, float diameter) {
-        if (diameter <= 0) return -1;
-        JoystickKey j = new JoystickKey();
-        j.setOwner(this);
-        j.getRect().set(cx - diameter / 2f, cy - diameter / 2f,
-                        cx + diameter / 2f, cy + diameter / 2f);
-        j.setVisible(true);
-        joystickKeys.add(j);
-        snapKeys();
-        repaint();
-        if (listener != null) listener.layoutChanged(this);
-        return joystickKeys.size() - 1;
-    }
-
-    /** Remove a joystick added via {@link #addJoystick}. */
-    public void removeJoystick(int index) {
-        if (index < 0 || index >= joystickKeys.size()) return;
-        JoystickKey j = joystickKeys.remove(index);
-        j.releaseAll();
-        snapKeys();
-        repaint();
-        if (listener != null) listener.layoutChanged(this);
-    }
-
-    public int getJoystickCount() {
-        return joystickKeys.size();
-    }
-
-    public JoystickKey getJoystick(int index) {
-        if (index < 0 || index >= joystickKeys.size()) return null;
-        return joystickKeys.get(index);
-    }
-
-    /** Current outer diameter of the joystick (in pixels), or 0 if
-     *  index out of range. Public helper so external classes (e.g.
-     *  {@code EmulatorActivity}) don't need to reach into the nested
-     *  {@code JoystickKey} class directly. */
-    public float getJoystickOuterSize(int index) {
-        JoystickKey j = getJoystick(index);
-        if (j == null) return 0f;
-        return Math.min(j.getRect().width(), j.getRect().height());
-    }
-
-    /** Current inner-ball fraction of the joystick (0.2 — 0.9), or
-     *  0 if index out of range. */
-    public float getJoystickInnerScale(int index) {
-        JoystickKey j = getJoystick(index);
-        if (j == null) return 0f;
-        return j.getInnerScale();
-    }
-
-    /** Resize the outer ring of an existing joystick. */
-    public void setJoystickOuterSize(int index, float diameter) {
-        JoystickKey j = getJoystick(index);
-        if (j == null) return;
-        j.setOuterDiameter(diameter);
-        snapKeys();
-        repaint();
-        if (listener != null) listener.layoutChanged(this);
-    }
-
-    /** Resize the inner ball of an existing joystick. */
-    public void setJoystickInnerSize(int index, float fraction) {
-        JoystickKey j = getJoystick(index);
-        if (j == null) return;
-        j.setInnerScale(fraction);
-        repaint();
-        if (listener != null) listener.layoutChanged(this);
-    }
-
-    /**
-     * Lookup hook so a {@link JoystickKey} can ask its owning keyboard
-     * "am I currently opaque?". {@link #snapKeys()} sets this flag on
-     * every regular key. Joysticks get the flag mirrored to their own
-     * {@code opaque} field.
-     */
-    public boolean isKeyOpaque(VirtualKey key) {
-        if (key == null) return false;
-        return key.opaque;
+        listener.layoutChanged(this);
     }
 
     public void setLayoutListener(LayoutListener listener) {
         this.listener = listener;
+    }
+
+    protected void releaseKey(VirtualKey key) {
+        for (int i = 0; i < associatedKeys.length; i++) {
+            if (associatedKeys[i] == key) {
+                Emulator.pressKey(key.getKeyCode(), 1);
+                if (key.getSecondKeyCode() != 0) {
+                    Emulator.pressKey(key.getSecondKeyCode(), 1);
+                }
+                associatedKeys[i] = null;
+            }
+        }
+        key.setSelected(false);
+    }
+
+    public void releaseKeys() {
+        for (VirtualKey key : keypad) {
+            releaseKey(key);
+        }
+        repaint();
     }
 
     protected void setSnap(int key, int origin, int mode) {
@@ -1423,25 +835,6 @@ public class VirtualKeyboard implements Overlay, Runnable {
         snapModes[key] = mode;
         snapOffsets[key] = new PointF();
         snapValid[key] = false;
-    }
-
-    /**
-     * Construct a regular key and wire it up to the owning keyboard in
-     * one step. {@link VirtualKey} is a static nested class so it has no
-     * implicit reference to the enclosing {@link VirtualKeyboard}; this
-     * helper injects the owner so paint() can reach the shared colour
-     * table, shape and paint objects.
-     */
-    private VirtualKey mkKey(int keyCode, String label) {
-        VirtualKey k = new VirtualKey(keyCode, label);
-        k.owner = this;
-        return k;
-    }
-
-    private VirtualKey mkKey(int keyCode, int secondKeyCode, String label) {
-        VirtualKey k = new VirtualKey(keyCode, secondKeyCode, label);
-        k.owner = this;
-        return k;
     }
 
     private boolean findSnap(int target, int origin) {
@@ -1498,53 +891,6 @@ public class VirtualKeyboard implements Overlay, Runnable {
         for (VirtualKey key : keypad) {
             key.opaque &= !obscuresVirtualScreen || forceOpacity;
         }
-        // Joysticks live outside the snap graph entirely — they only need
-        // their opaque flag refreshed so they pick up the per-color alpha.
-        for (JoystickKey j : joystickKeys) {
-            j.opaque = !(j.isVisible() && RectF.intersects(j.getRect(), virtualScreen))
-                    || forceOpacity;
-        }
-    }
-
-    /** Clamp a rect to the visible screen so a key never escapes the
-     *  surface while the user is dragging it. Used for both regular keys
-     *  and joysticks in edit mode. */
-    private void clampToScreen(RectF rect) {
-        if (screen == null) return;
-        if (rect.left < screen.left) {
-            rect.offset(screen.left - rect.left, 0);
-        }
-        if (rect.top < screen.top) {
-            rect.offset(0, screen.top - rect.top);
-        }
-        if (rect.right > screen.right) {
-            rect.offset(screen.right - rect.right, 0);
-        }
-        if (rect.bottom > screen.bottom) {
-            rect.offset(0, screen.bottom - rect.bottom);
-        }
-    }
-
-    /**
-     * Mark every key that depends on {@code anchor} (directly or transitively)
-     * as needing re-resolution. Used after a manual drag so the snap chain
-     * picks up the new position on the next {@link #snapKeys()}.
-     */
-    private void invalidateSnapDependents(int anchor) {
-        for (int i = 0; i < snapOrigins.length; i++) {
-            if (i == anchor) continue;
-            int origin = snapOrigins[i];
-            int safety = snapOrigins.length;
-            while (origin != SCREEN && origin != anchor && safety-- > 0) {
-                int next = snapOrigins[origin];
-                if (next == origin) break;
-                origin = next;
-            }
-            if (origin == anchor) {
-                snapValid[i] = false;
-            }
-        }
-        snapValid[anchor] = false;
     }
 
     private void highlightGroup(int group) {
@@ -1563,8 +909,6 @@ public class VirtualKeyboard implements Overlay, Runnable {
             listener.layoutChanged(this);
         }
         layoutEditMode = mode;
-        editedIndex = -1;
-        editedJoystickIndex = -1;
         switch (mode) {
             case LAYOUT_SCALES:
                 editedIndex = 0;
@@ -1578,7 +922,7 @@ public class VirtualKeyboard implements Overlay, Runnable {
     }
 
     private void resizeKey(int key, float size) {
-        keypad[key].resize(size, size);
+        keypad[key].resize(key == KEY_SPACE ? size * SPACE_KEY_COLUMNS : size, size);
         snapValid[key] = false;
     }
 
@@ -1595,12 +939,13 @@ public class VirtualKeyboard implements Overlay, Runnable {
         this.virtualScreen = virtualScreen;
         float width = screen.width();
         float height = screen.height();
-        boolean landscape = width > height;
+        landscape = width > height;
         float maxSize = Math.max(screen.width(), screen.height());
         float minSize = Math.min(screen.width(), screen.height());
         boolean nonWide = maxSize / minSize < 2;
         snapRadius = keyScales[0];
-        for (int i = 1; i < keyScales.length; i++) {
+        // The letter keys are small; they stay out so the other keys keep their snap distance.
+        for (int i = 1; i < SCALE_LETTERS; i++) {
             if (keyScales[i] < snapRadius) {
                 snapRadius = keyScales[i];
             }
@@ -1625,16 +970,14 @@ public class VirtualKeyboard implements Overlay, Runnable {
                     key.paint(canvas);
                 }
             }
-            for (JoystickKey j : joystickKeys) {
-                if (j.isVisible()) {
-                    j.paint(canvas);
-                }
-            }
         }
     }
 
     protected void repaint() {
-        overlayView.postInvalidate();
+        // Keys are configured before the keyboard is attached to its view.
+        if (overlayView != null) {
+            overlayView.postInvalidate();
+        }
     }
 
     /**
@@ -1664,30 +1007,15 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 if (pointer > associatedKeys.length) {
                     return checkPointerHandled(x, y);
                 }
-                // Joysticks get first crack at the event because their
-                // circular hit-test is more forgiving than a rectangular
-                // key sitting next to them.
-                for (JoystickKey j : joystickKeys) {
-                    if (j.isVisible() && j.contains(x, y)) {
-                        joystickAssoc[pointer] = j;
-                        j.setSelected(true);
-                        j.onPointerPressed(x, y);
-                        repaint();
-                        return true;
-                    }
-                }
                 for (VirtualKey aKeypad : keypad) {
                     if (aKeypad.contains(x, y)) {
                         vibrate();
                         associatedKeys[pointer] = aKeypad;
                         aKeypad.setSelected(true);
-                        // Send only the down event on press — the matching
-                        // up event is sent when the finger is released (or
-                        // dragged off the key). Symbian's event-based
-                        // input is fired on the down transition; some
-                        // games also expect a sustained down while the
-                        // user holds the key.
-                        aKeypad.press();
+                        Emulator.pressKey(associatedKeys[pointer].getKeyCode(), 0);
+                        if (associatedKeys[pointer].getSecondKeyCode() != 0) {
+                            Emulator.pressKey(associatedKeys[pointer].getSecondKeyCode(), 0);
+                        }
                         repaint();
                         return true;
                     }
@@ -1695,51 +1023,17 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 break;
             case LAYOUT_KEYS:
                 editedIndex = -1;
-                editedJoystickIndex = -1;
-                // Joysticks first.
-                for (int i = 0; i < joystickKeys.size(); i++) {
-                    JoystickKey j = joystickKeys.get(i);
-                    if (j.isVisible() && j.contains(x, y)) {
-                        editedJoystickIndex = i;
-                        joyDragOffsetX = x - j.getRect().left;
-                        joyDragOffsetY = y - j.getRect().top;
-                        j.setSelected(true);
+                for (int i = 0; i < keypad.length; i++) {
+                    if (keypad[i].contains(x, y)) {
+                        editedIndex = i;
+                        RectF rect = keypad[i].getRect();
+                        offsetX = x - rect.left;
+                        offsetY = y - rect.top;
                         break;
-                    }
-                }
-                if (editedJoystickIndex < 0) {
-                    for (int i = 0; i < keypad.length; i++) {
-                        if (keypad[i].contains(x, y)) {
-                            editedIndex = i;
-                            RectF rect = keypad[i].getRect();
-                            offsetX = x - rect.left;
-                            offsetY = y - rect.top;
-                            break;
-                        }
                     }
                 }
                 break;
             case LAYOUT_SCALES:
-                // Joysticks first.
-                int joyIndex = -1;
-                for (int i = 0; i < joystickKeys.size(); i++) {
-                    if (joystickKeys.get(i).isVisible() && joystickKeys.get(i).contains(x, y)) {
-                        joyIndex = i;
-                        break;
-                    }
-                }
-                if (joyIndex >= 0) {
-                    editedJoystickIndex = joyIndex;
-                    JoystickKey j = joystickKeys.get(joyIndex);
-                    j.setSelected(true);
-                    joyDragOffsetX = x;
-                    joyDragOffsetY = y;
-                    // Use the joystick's current diameter / default as the
-                    // "prevScale" so the gesture feels 1:1 with the keyboard.
-                    joyPrevScale = Math.min(j.getRect().width(), j.getRect().height());
-                    repaint();
-                    break;
-                }
                 int index = -1;
                 for (int group = 0; group < keyScaleGroups.length && index < 0; group++) {
                     for (int key = 0; key < keyScaleGroups[group].length && index < 0; key++) {
@@ -1771,23 +1065,9 @@ public class VirtualKeyboard implements Overlay, Runnable {
                 if (pointer > associatedKeys.length) {
                     return checkPointerHandled(x, y);
                 }
-                if (joystickAssoc[pointer] != null) {
-                    JoystickKey j = joystickAssoc[pointer];
-                    if (!j.contains(x, y)) {
-                        j.onPointerReleased();
-                        j.setSelected(false);
-                        joystickAssoc[pointer] = null;
-                        repaint();
-                        return pointerPressed(pointer, x, y);
-                    }
-                    j.onPointerDragged(x, y);
-                    repaint();
-                    return true;
-                }
                 if (associatedKeys[pointer] == null) {
                     return pointerPressed(pointer, x, y);
                 } else if (!associatedKeys[pointer].contains(x, y)) {
-                    // User dragged off the key — release it.
                     Emulator.pressKey(associatedKeys[pointer].getKeyCode(), 1);
                     if (associatedKeys[pointer].getSecondKeyCode() != 0) {
                         Emulator.pressKey(associatedKeys[pointer].getSecondKeyCode(), 1);
@@ -1798,72 +1078,43 @@ public class VirtualKeyboard implements Overlay, Runnable {
                     pointerPressed(pointer, x, y);
 
                     return true;
-                } else {
-                    // Still on the same key: do nothing. The key has
-                    // already been pressed (down) since pointerPressed
-                    // fired; keeping it down is what tells Symbian
-                    // "the user is holding the key", which is what
-                    // the game needs to keep moving the character.
-                    // Sending repeated down/up pairs here would register
-                    // as a stream of clicks, not as a held key.
                 }
                 break;
             case LAYOUT_KEYS:
-                if (editedJoystickIndex >= 0) {
-                    JoystickKey j = joystickKeys.get(editedJoystickIndex);
-                    RectF rect = j.getRect();
-                    float w = rect.width();
-                    float h = rect.height();
-                    float newLeft = x - joyDragOffsetX;
-                    float newTop = y - joyDragOffsetY;
-                    rect.set(newLeft, newTop, newLeft + w, newTop + h);
-                    clampToScreen(rect);
-                    repaint();
-                    break;
-                }
                 if (editedIndex >= 0) {
                     RectF rect = keypad[editedIndex].getRect();
                     rect.offsetTo(x - offsetX, y - offsetY);
-                    // Magnetic snapping to neighbouring keys has been
-                    // intentionally disabled — the user is in full control
-                    // of where each key sits. We still clamp to the screen
-                    // so a key never escapes the surface.
                     snapModes[editedIndex] = RectSnap.NO_SNAP;
-                    snapOrigins[editedIndex] = SCREEN;
-                    snapOffsets[editedIndex].set(0, 0);
-                    snapValid[editedIndex] = false;
-                    clampToScreen(rect);
-                    invalidateSnapDependents(editedIndex);
+                    for (int i = 0; i < keypad.length; i++) {
+                        if (i != editedIndex && keypad[i].isVisible() && findSnap(editedIndex, i)) {
+                            break;
+                        }
+                    }
+                    if (snapModes[editedIndex] == RectSnap.NO_SNAP) {
+                        snapModes[editedIndex] = RectSnap.getSnap(rect, screen, snapOffsets[editedIndex]);
+                        snapOrigins[editedIndex] = SCREEN;
+                        if (Math.abs(snapOffsets[editedIndex].x) <= snapRadius) {
+                            snapOffsets[editedIndex].x = 0;
+                        }
+                        if (Math.abs(snapOffsets[editedIndex].y) <= snapRadius) {
+                            snapOffsets[editedIndex].y = 0;
+                        }
+                    }
+                    snapKey(editedIndex, 0);
+                    snapKeys();
                     repaint();
                 }
                 break;
             case LAYOUT_SCALES:
-                if (editedJoystickIndex >= 0) {
-                    JoystickKey j = joystickKeys.get(editedJoystickIndex);
-                    float dx = x - joyDragOffsetX;
-                    float dy = joyDragOffsetY - y;
-                    float delta = (Math.abs(dx) > Math.abs(dy)) ? dx : dy;
-                    float ref = Math.max(screen != null ? screen.width() : 1080f, 1f);
-                    float newSize = joyPrevScale + delta / ref * 4f;
-                    newSize = Math.max(48f, Math.min(ref * 0.5f, newSize));
-                    RectF rect = j.getRect();
-                    float cx = rect.centerX();
-                    float cy = rect.centerY();
-                    rect.set(cx - newSize / 2f, cy - newSize / 2f,
-                             cx + newSize / 2f, cy + newSize / 2f);
-                    clampToScreen(rect);
-                    repaint();
-                    break;
-                }
-                float keydx = x - offsetX;
-                float keydy = offsetY - y;
-                float keyDelta;
-                if (Math.abs(keydx) > Math.abs(keydy)) {
-                    keyDelta = keydx;
+                float dx = x - offsetX;
+                float dy = offsetY - y;
+                float delta;
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    delta = dx;
                 } else {
-                    keyDelta = keydy;
+                    delta = dy;
                 }
-                float scale = prevScale + keyDelta / Math.max(screen.width(), screen.height());
+                float scale = prevScale + delta / Math.max(screen.width(), screen.height());
                 if (Math.abs(1 - scale) <= SCALE_SNAP_RADIUS) {
                     scale = 1;
                 } else {
@@ -1893,49 +1144,19 @@ public class VirtualKeyboard implements Overlay, Runnable {
             if (pointer > associatedKeys.length) {
                 return checkPointerHandled(x, y);
             }
-            if (joystickAssoc[pointer] != null) {
-                joystickAssoc[pointer].onPointerReleased();
-                joystickAssoc[pointer].setSelected(false);
-                joystickAssoc[pointer] = null;
-                repaint();
-                return true;
-            }
             if (associatedKeys[pointer] != null) {
-                // Send the up event to mirror the down we sent on
-                // pointerPressed. This restores the original
-                // "press=down, release=up, hold=stay-down" behaviour
-                // that directional keys need to keep the character
-                // moving while the user holds the touch.
                 Emulator.pressKey(associatedKeys[pointer].getKeyCode(), 1);
                 if (associatedKeys[pointer].getSecondKeyCode() != 0) {
                     Emulator.pressKey(associatedKeys[pointer].getSecondKeyCode(), 1);
                 }
                 associatedKeys[pointer].setSelected(false);
-                associatedKeys[pointer].resetRepeat();
                 associatedKeys[pointer] = null;
                 repaint();
 
                 return true;
             }
         } else if (layoutEditMode == LAYOUT_KEYS) {
-            if (editedJoystickIndex >= 0) {
-                joystickKeys.get(editedJoystickIndex).setSelected(false);
-                editedJoystickIndex = -1;
-                if (listener != null) listener.layoutChanged(this);
-                repaint();
-                return true;
-            }
             editedIndex = -1;
-            if (listener != null) listener.layoutChanged(this);
-        } else if (layoutEditMode == LAYOUT_SCALES) {
-            if (editedJoystickIndex >= 0) {
-                joystickKeys.get(editedJoystickIndex).setSelected(false);
-                editedJoystickIndex = -1;
-                if (listener != null) listener.layoutChanged(this);
-                repaint();
-                return true;
-            }
-            if (listener != null) listener.layoutChanged(this);
         }
         return checkPointerHandled(x, y);
     }
@@ -1957,12 +1178,6 @@ public class VirtualKeyboard implements Overlay, Runnable {
             synchronized (waiter) {
                 waiter.notifyAll();
             }
-        }
-        // Make sure no joystick stays "pressed" while the keyboard is
-        // hidden — otherwise the game keeps receiving a held direction
-        // even though the user lifted their finger.
-        for (JoystickKey j : joystickKeys) {
-            j.releaseAll();
         }
     }
 

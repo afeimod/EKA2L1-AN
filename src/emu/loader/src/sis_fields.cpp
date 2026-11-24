@@ -18,8 +18,9 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/path_types.h>
 #include <loader/sis_fields.h>
-#include <miniz.h>
+#include <zlib.h>
 
 #include <common/advstream.h>
 #include <common/log.h>
@@ -49,7 +50,7 @@ namespace eka2l1 {
             }
         }
 
-        sis_parser::sis_parser(const std::string name) {
+        sis_parser::sis_parser(const host_path &name) {
             stream = std::make_shared<common::ro_std_file_stream>(name, true);
         }
 
@@ -276,7 +277,7 @@ namespace eka2l1 {
                     compressed.compressed_data.resize(us);
                     stream->read(reinterpret_cast<char *>(compressed.compressed_data.data()), us);
 
-                    mz_stream stream;
+                    z_stream stream;
 
                     stream.avail_in = 0;
                     stream.next_in = 0;

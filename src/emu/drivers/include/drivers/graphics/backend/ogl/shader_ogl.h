@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/path_types.h>
 #include <drivers/graphics/shader.h>
 
 #include <cstdint>
@@ -14,15 +15,11 @@ namespace eka2l1::drivers {
         ~ogl_shader_module() override;
 
         explicit ogl_shader_module();
-        explicit ogl_shader_module(const std::string &path, const shader_module_type type, const std::string &extra_header = "");
+        explicit ogl_shader_module(const host_path &path, const shader_module_type type, const std::string &extra_header = "");
         explicit ogl_shader_module(const char *data, const std::size_t size, const shader_module_type type);
 
         bool create(graphics_driver *driver, const char *data, const std::size_t size, const shader_module_type type,
             std::string *compile_log = nullptr) override;
-
-        bool is_valid() const {
-            return shader != 0;
-        }
 
         std::uint32_t shader_handle() const {
             return shader;

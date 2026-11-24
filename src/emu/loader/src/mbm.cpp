@@ -18,6 +18,7 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <common/path_types.h>
 #include <common/bitmap.h>
 #include <common/buffer.h>
 #include <common/log.h>
@@ -27,6 +28,8 @@
 #include <loader/mbm.h>
 
 namespace eka2l1::loader {
+    static constexpr std::uint32_t ROM_BITMAP_COMPRESSION_BASE = 50;
+
     bool sbm_header::internalize(common::ro_stream &stream) {
         std::uint64_t total_read = 0;
         total_read += stream.read(&bitmap_size, sizeof(std::uint32_t));
@@ -102,6 +105,11 @@ namespace eka2l1::loader {
                 return false;
             }
 
+            // ROM bitmaps are stored as in-memory CBitwiseBitmaps, whose RLE types are offset by 50.
+            if (is_rom_version && (sbm_headers[index].compression >= ROM_BITMAP_COMPRESSION_BASE)) {
+                sbm_headers[index].compression -= ROM_BITMAP_COMPRESSION_BASE;
+            }
+
             return true;
         };
 
@@ -112,6 +120,16 @@ namespace eka2l1::loader {
             }
         } else {
             for (const std::size_t i : index_to_loads) {
+                // A client may ask for a bitmap index this MBM does not have — the
+                // FBS client passes whatever the guest requested. Skip it instead of
+                // indexing the trailer out of bounds; the caller checks the result
+                // with is_header_loaded() and reports not-found. The out-of-bounds
+                // read is silent undefined behaviour with an unhardened libc++ and
+                // an abort with a hardened one.
+                if (i >= trailer.sbm_offsets.size()) {
+                    continue;
+                }
+
                 if (!do_load_header(i))
                     return false;
 
@@ -266,7 +284,7 @@ namespace eka2l1::loader {
         return true;
     }
 
-    bool mbm_file::save_bitmap_to_file(const std::size_t index, const char *name) {
+    bool mbm_file::save_bitmap_to_file(const std::size_t index, const host_path &name) {
         if (!is_header_loaded(index)) {
             return false;
         }

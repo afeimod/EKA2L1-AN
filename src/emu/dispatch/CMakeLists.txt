@@ -48,6 +48,8 @@ add_library(epocdispatch
         include/dispatch/libraries/gles2/def.h
         include/dispatch/libraries/gles2/gles2.h
         include/dispatch/libraries/gles2/register.h
+        include/dispatch/libraries/featmgr/functions.h
+        include/dispatch/libraries/featmgr/register.h
         include/dispatch/libraries/sysutils/functions.h
         include/dispatch/libraries/sysutils/register.h
         include/dispatch/libraries/buffer_pusher.h
@@ -57,9 +59,12 @@ add_library(epocdispatch
         include/dispatch/def.h
         include/dispatch/dispatcher.h
         include/dispatch/hui.h
+        include/dispatch/image.h
         include/dispatch/management.h
         include/dispatch/register.h
         include/dispatch/screen.h
+        include/dispatch/tls.h
+        include/dispatch/tone.h
         include/dispatch/video.h
         src/libraries/egl/def.cpp
         src/libraries/egl/egl.cpp
@@ -68,6 +73,7 @@ add_library(epocdispatch
         src/libraries/gles1/shadergen.cpp
         src/libraries/gles1/shaderman.cpp
         src/libraries/gles2/gles2.cpp
+        src/libraries/featmgr/functions.cpp
         src/libraries/sysutils/functions.cpp
         src/libraries/buffer_pusher.cpp
         src/libraries/register.cpp
@@ -75,8 +81,11 @@ add_library(epocdispatch
         src/camera.cpp
         src/dispatcher.cpp
         src/hui.cpp
+        src/image.cpp
         src/register.cpp
         src/screen.cpp
+        src/tls.cpp
+        src/tone.cpp
         src/video.cpp
         ${GNUVG_SOURCES})
 
@@ -90,6 +99,7 @@ target_link_libraries(epocdispatch PRIVATE
         drivers
         epoc
         epockern
+        stb
         epocpkg
         epocservs
         glm

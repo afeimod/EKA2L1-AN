@@ -290,12 +290,12 @@
                 app:layout_constraintVertical_bias="0.475" />
 
             <TextView
-                android:id="@+id/tvScreenCustomLayout"
+                android:id="@+id/tvScreenMode"
                 android:layout_width="0dp"
                 android:layout_height="@dimen/height_config_row"
                 android:layout_marginStart="5dp"
                 android:gravity="center_vertical"
-                android:text="@string/pref_screen_custom_layout"
+                android:text="@string/pref_guest_screen_mode"
                 android:textAppearance="?android:attr/textAppearanceSmall"
                 android:textColor="?attr/textColorSecondary"
                 android:textSize="15sp"
@@ -304,31 +304,41 @@
                 app:layout_constraintTop_toBottomOf="@+id/textView4"
                 app:layout_constraintWidth_min="wrap" />
 
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/cbScreenCustomLayout"
-                style="@style/SwitchStyle"
+            <Spinner
+                android:id="@+id/spScreenMode"
                 android:layout_width="0dp"
                 android:layout_height="@dimen/height_config_row"
-                android:layout_marginHorizontal="5dp"
                 android:textColor="?attr/textColorSecondary"
                 android:textSize="15sp"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@+id/barrierScreenConfig"
                 app:layout_constraintTop_toBottomOf="@+id/textView4" />
 
-            <Button
-                android:id="@+id/cmdEditScreenPosition"
-                style="@style/Widget.AppCompat.Button.Colored"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+            <TextView
+                android:id="@+id/tvScreenGravity"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/height_config_row"
                 android:layout_marginStart="5dp"
-                android:layout_marginTop="4dp"
-                android:layout_marginEnd="5dp"
-                android:text="@string/pref_edit_screen_position"
-                android:textAllCaps="false"
-                app:layout_constraintEnd_toEndOf="parent"
+                android:gravity="center_vertical"
+                android:text="@string/pref_screen_gravity"
+                android:textAppearance="?android:attr/textAppearanceSmall"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="15sp"
+                app:layout_constraintEnd_toStartOf="@+id/barrierScreenConfig"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/tvScreenCustomLayout" />
+                app:layout_constraintTop_toBottomOf="@+id/tvScreenMode"
+                app:layout_constraintWidth_min="wrap" />
+
+            <Spinner
+                android:id="@+id/spScreenGravity"
+                android:layout_width="0dp"
+                android:layout_height="@dimen/height_config_row"
+                android:entries="@array/pref_screen_gravity_entries"
+                android:textColor="?attr/textColorSecondary"
+                android:textSize="15sp"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toEndOf="@+id/barrierScreenConfig"
+                app:layout_constraintTop_toBottomOf="@+id/tvScreenMode" />
 
             <TextView
                 android:id="@+id/tvScaleType"
@@ -342,7 +352,7 @@
                 android:textSize="15sp"
                 app:layout_constraintEnd_toStartOf="@+id/barrierScreenConfig"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/cmdEditScreenPosition"
+                app:layout_constraintTop_toBottomOf="@+id/tvScreenGravity"
                 app:layout_constraintWidth_min="wrap" />
 
             <Spinner
@@ -354,7 +364,7 @@
                 android:textSize="15sp"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@+id/barrierScreenConfig"
-                app:layout_constraintTop_toBottomOf="@+id/cmdEditScreenPosition" />
+                app:layout_constraintTop_toBottomOf="@+id/tvScreenGravity" />
 
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/cbShowNotch"
@@ -419,7 +429,7 @@
                 android:layout_width="10dp"
                 android:layout_height="match_parent"
                 app:barrierDirection="end"
-                app:constraint_referenced_ids="cmdScreenBack,textView4,tvScaleType,tvScreenCustomLayout"
+                app:constraint_referenced_ids="cmdScreenBack,textView4,tvScreenMode,tvScaleType,tvScreenGravity"
                 tools:layout_editor_absoluteX="114dp"
                 tools:layout_editor_absoluteY="5dp" />
 
@@ -476,7 +486,7 @@
                 android:layout_marginTop="6dp"
                 android:background="?bg_config_card"
                 android:visibility="gone"
-                app:constraint_referenced_ids="spVKType,cbVKFeedback,etVKBack,etVKSelFore,textView7,cmdVKSelFore,cmdVKFore,etVKOutline,cmdVKBack,sbVKAlpha,sbVKForeAlpha,sbVKBackAlpha,sbVKSelForeAlpha,sbVKSelBackAlpha,sbVKOutlineAlpha,cmdVKSelBack,etVKHideDelay,textView13,spButtonsShape,tvOpacity,cmdVKOutline,textView12,etVKFore,etVKSelBack"
+                app:constraint_referenced_ids="spVKType,cbVKFeedback,etVKBack,etVKSelFore,textView7,cmdVKSelFore,cmdVKFore,etVKOutline,cmdVKBack,sbVKAlpha,cmdVKSelBack,etVKHideDelay,textView13,spButtonsShape,tvOpacity,cmdVKOutline,textView12,etVKFore,etVKSelBack"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
@@ -577,7 +587,7 @@
                 android:layout_height="@dimen/height_config_row"
                 android:layout_marginStart="5dp"
                 android:gravity="center_vertical"
-                android:text="@string/pref_vk_alpha_default"
+                android:text="@string/pref_vk_alpha"
                 android:textColor="?attr/textColorSecondary"
                 android:textSize="15sp"
                 app:layout_constrainedWidth="true"
@@ -586,27 +596,14 @@
                 app:layout_constraintTop_toBottomOf="@+id/cbVKFeedback"
                 app:layout_constraintWidth_min="wrap" />
 
-            <TextView
-                android:id="@+id/tvVKAlphaDefaultValue"
-                android:layout_width="wrap_content"
-                android:layout_height="@dimen/height_config_row"
-                android:layout_marginEnd="5dp"
-                android:gravity="center_vertical"
-                android:minWidth="42dp"
-                android:textColor="?attr/textColorSecondary"
-                android:textSize="13sp"
-                app:layout_constraintBottom_toBottomOf="@id/tvOpacity"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/cbVKFeedback" />
-
             <SeekBar
                 android:id="@+id/sbVKAlpha"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="5dp"
-                android:max="100"
+                android:max="255"
                 app:layout_constraintBottom_toBottomOf="@id/tvOpacity"
-                app:layout_constraintEnd_toStartOf="@+id/tvVKAlphaDefaultValue"
+                app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
                 app:layout_constraintTop_toBottomOf="@+id/cbVKFeedback" />
             <!-- End keys opacity -->
@@ -687,29 +684,6 @@
                 app:layout_constraintTop_toBottomOf="@+id/textView12"
                 tools:ignore="UnusedAttribute" />
 
-            <SeekBar
-                android:id="@+id/sbVKForeAlpha"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:max="100"
-                app:layout_constraintEnd_toStartOf="@+id/tvVKForeAlphaValue"
-                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/etVKFore" />
-
-            <TextView
-                android:id="@+id/tvVKForeAlphaValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:gravity="center_vertical"
-                android:minWidth="42dp"
-                android:textColor="?attr/textColorSecondary"
-                android:textSize="12sp"
-                app:layout_constraintBottom_toBottomOf="@+id/sbVKForeAlpha"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="@+id/sbVKForeAlpha" />
-
             <Button
                 android:id="@+id/cmdVKBack"
                 android:layout_width="0dp"
@@ -740,29 +714,6 @@
                 app:layout_constraintTop_toBottomOf="@+id/etVKFore"
                 tools:ignore="UnusedAttribute" />
 
-            <SeekBar
-                android:id="@+id/sbVKBackAlpha"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:max="100"
-                app:layout_constraintEnd_toStartOf="@+id/tvVKBackAlphaValue"
-                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/etVKBack" />
-
-            <TextView
-                android:id="@+id/tvVKBackAlphaValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:gravity="center_vertical"
-                android:minWidth="42dp"
-                android:textColor="?attr/textColorSecondary"
-                android:textSize="12sp"
-                app:layout_constraintBottom_toBottomOf="@+id/sbVKBackAlpha"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="@+id/sbVKBackAlpha" />
-
             <Button
                 android:id="@+id/cmdVKSelFore"
                 android:layout_width="0dp"
@@ -774,7 +725,7 @@
                 app:layout_constraintBottom_toTopOf="@+id/etVKSelBack"
                 app:layout_constraintEnd_toStartOf="@+id/barrierInputConfig"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@+id/sbVKBackAlpha"
+                app:layout_constraintTop_toBottomOf="@+id/etVKBack"
                 app:layout_constraintWidth_min="wrap" />
 
             <EditText
@@ -790,31 +741,8 @@
                 android:textDirection="ltr"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/sbVKBackAlpha"
+                app:layout_constraintTop_toBottomOf="@+id/etVKBack"
                 tools:ignore="UnusedAttribute" />
-
-            <SeekBar
-                android:id="@+id/sbVKSelForeAlpha"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:max="100"
-                app:layout_constraintEnd_toStartOf="@+id/tvVKSelForeAlphaValue"
-                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/etVKSelFore" />
-
-            <TextView
-                android:id="@+id/tvVKSelForeAlphaValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:gravity="center_vertical"
-                android:minWidth="42dp"
-                android:textColor="?attr/textColorSecondary"
-                android:textSize="12sp"
-                app:layout_constraintBottom_toBottomOf="@+id/sbVKSelForeAlpha"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="@+id/sbVKSelForeAlpha" />
 
 
             <Button
@@ -845,31 +773,8 @@
                 android:textDirection="ltr"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/sbVKSelForeAlpha"
+                app:layout_constraintTop_toBottomOf="@+id/etVKSelFore"
                 tools:ignore="UnusedAttribute" />
-
-            <SeekBar
-                android:id="@+id/sbVKSelBackAlpha"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:max="100"
-                app:layout_constraintEnd_toStartOf="@+id/tvVKSelBackAlphaValue"
-                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/etVKSelBack" />
-
-            <TextView
-                android:id="@+id/tvVKSelBackAlphaValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:gravity="center_vertical"
-                android:minWidth="42dp"
-                android:textColor="?attr/textColorSecondary"
-                android:textSize="12sp"
-                app:layout_constraintBottom_toBottomOf="@+id/sbVKSelBackAlpha"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="@+id/sbVKSelBackAlpha" />
 
 
             <Button
@@ -899,31 +804,8 @@
                 android:textDirection="ltr"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/sbVKSelBackAlpha"
+                app:layout_constraintTop_toBottomOf="@+id/etVKSelBack"
                 tools:ignore="UnusedAttribute" />
-
-            <SeekBar
-                android:id="@+id/sbVKOutlineAlpha"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:max="100"
-                app:layout_constraintEnd_toStartOf="@+id/tvVKOutlineAlphaValue"
-                app:layout_constraintStart_toEndOf="@+id/barrierInputConfig"
-                app:layout_constraintTop_toBottomOf="@+id/etVKOutline" />
-
-            <TextView
-                android:id="@+id/tvVKOutlineAlphaValue"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="5dp"
-                android:gravity="center_vertical"
-                android:minWidth="42dp"
-                android:textColor="?attr/textColorSecondary"
-                android:textSize="12sp"
-                app:layout_constraintBottom_toBottomOf="@+id/sbVKOutlineAlpha"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toTopOf="@+id/sbVKOutlineAlpha" />
 
             <androidx.constraintlayout.widget.Barrier
                 android:id="@+id/barrierInputConfig"

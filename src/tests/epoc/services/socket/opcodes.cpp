@@ -1,0 +1,296 @@
+/*
+ * Copyright (c) 2026 EKA2L1 Team.
+ *
+ * This file is part of EKA2L1 project.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+#include <catch2/catch.hpp>
+#include <cstddef>
+
+#include <services/socket/server.h>
+#include <utils/err.h>
+
+using namespace eka2l1;
+
+TEST_CASE("RConnection named opens retain the client ABI", "[internet][connection]") {
+    REQUIRE(socket_cn_open_with_name == 64);
+    REQUIRE(socket_cn_name == 66);
+    REQUIRE(socket_cn_control == 83);
+    REQUIRE(socket_reform_cn_open_with_name == 73);
+    REQUIRE(socket_reform_cn_name == 152);
+    REQUIRE(socket_reform_cn_control == 16);
+    REQUIRE(socket_reform_cn_start == 74);
+    REQUIRE(socket_reform_cn_set_start_preferences == 75);
+    REQUIRE(socket_reform_cn_get_int_setting == 77);
+    REQUIRE(socket_reform_cn_get_des_setting == 80);
+    REQUIRE(socket_reform_cn_close == 151);
+    REQUIRE(sizeof(epoc::security_policy) == 8);
+    // rm-409 esock.dll export 56 packages these three words before sending opcode 83.
+    REQUIRE(sizeof(epoc::socket::connection_control_description) == 12);
+    REQUIRE(offsetof(epoc::socket::connection_control_description, option) == 0);
+    REQUIRE(offsetof(epoc::socket::connection_control_description, descriptor) == 4);
+    REQUIRE(offsetof(epoc::socket::connection_control_description, max_length) == 8);
+}
+
+TEST_CASE("Named connection clones require an enabled matching security policy", "[internet][connection]") {
+    epoc::socket::connection_registry registry;
+    auto source = registry.create();
+    auto reference = registry.create_reference();
+    reference->state = source;
+    epoc::security_info caller{};
+    std::shared_ptr<epoc::socket::connection_state> clone;
+    REQUIRE(registry.clone(u"missing", caller, clone) == epoc::error_not_found);
+    REQUIRE(registry.clone(reference->name, caller, clone) == epoc::error_permission_denied);
+
+    epoc::security_policy policy({epoc::cap_network_srv});
+    policy.type = epoc::security_policy::s3;
+    policy.sec_id = 0x20003B78;
+    REQUIRE(reference->enable_clone(std::string(reinterpret_cast<const char *>(&policy), sizeof(policy))));
+    caller.secure_id = policy.sec_id;
+    REQUIRE(registry.clone(reference->name, caller, clone) == epoc::error_permission_denied);
+    caller.caps.set(epoc::cap_network_srv);
+    REQUIRE(registry.clone(reference->name, caller, clone) == epoc::error_not_ready);
+    source->advance(epoc::socket::conn_progress_link_layer_open);
+    REQUIRE(registry.clone(reference->name, caller, clone) == epoc::error_none);
+    REQUIRE(clone == source);
+    caller.secure_id++;
+    REQUIRE(registry.clone(reference->name, caller, clone) == epoc::error_permission_denied);
+    REQUIRE_FALSE(clone);
+    caller.secure_id--;
+    reference->clone_enabled = false;
+    REQUIRE(registry.clone(reference->name, caller, clone) == epoc::error_permission_denied);
+}
+
+TEST_CASE("Closing a named handle invalidates its name without closing clones", "[internet][connection]") {
+    epoc::socket::connection_registry registry;
+    auto source = registry.create();
+    source->info = {1, 7, 3};
+    source->advance(epoc::socket::conn_progress_link_layer_open);
+    auto reference = registry.create_reference();
+    reference->state = source;
+    epoc::security_policy policy;
+    REQUIRE(reference->enable_clone(std::string(reinterpret_cast<const char *>(&policy), sizeof(policy))));
+    auto name = reference->name;
+    std::shared_ptr<epoc::socket::connection_state> clone, another;
+    REQUIRE(registry.clone(name, {}, clone) == epoc::error_none);
+    source.reset();
+    reference.reset();
+    REQUIRE(registry.enumerate().size() == 1);
+    REQUIRE(registry.clone(name, {}, another) == epoc::error_not_found);
+    REQUIRE(registry.create_reference()->name != name);
+    clone.reset();
+    REQUIRE(registry.enumerate().empty());
+}
+
+TEST_CASE("Malformed clone policies do not enable connection sharing", "[internet][connection]") {
+    epoc::socket::connection_reference reference;
+    REQUIRE_FALSE(reference.enable_clone(std::string(7, '\0')));
+    REQUIRE_FALSE(reference.enable_clone(std::string(9, '\0')));
+    REQUIRE_FALSE(reference.enable_clone(std::string(8, '\xFF')));
+    std::string bad_cap(8, '\xFF');
+    bad_cap[0] = epoc::security_policy::c3;
+    bad_cap[1] = epoc::cap_limit;
+    REQUIRE_FALSE(reference.enable_clone(bad_cap));
+    REQUIRE_FALSE(reference.clone_enabled);
+}
+
+TEST_CASE("RSocket CancelAll retains its ROM-specific request numbers", "socket_opcodes") {
+    // rm-409 esock.dll RSocket::CancelAll sends 0x24; SOCKMES.H defines the reformed 142.
+    REQUIRE(socket_so_cancel_all == 0x24);
+    REQUIRE(socket_reform_so_cancel_all == 142);
+    REQUIRE(socket_old_so_cancel_all == 0x20);
+}
+
+TEST_CASE("Pre-reform RConnection enumeration is distinct from string settings", "[internet][connection]") {
+    // rm-409 esock.dll exports 7, 9 and 6 send these operation IDs respectively.
+    REQUIRE(socket_cn_get_long_des_setting == 0x50);
+    REQUIRE(socket_cn_enumerate_connections == 0x51);
+    REQUIRE(socket_cn_get_connection_info == 0x52);
+    REQUIRE(socket_cn_attach == 0x54);
+}
+
+TEST_CASE("RConnection snapshots retain only active network connections", "[internet][connection]") {
+    epoc::socket::connection_registry registry;
+    auto first = registry.create();
+    auto second = registry.create();
+    REQUIRE(registry.enumerate().empty());
+    first->info = {1, 7, 3};
+    first->active = true;
+    second->info = {1, 7, 3};
+    second->active = true;
+    auto snapshot = registry.enumerate();
+    REQUIRE(snapshot.size() == 1);
+    REQUIRE(snapshot[0].iap_id == 7);
+    REQUIRE(snapshot[0].network_id == 3);
+    REQUIRE(snapshot[0].version == 1);
+    REQUIRE(sizeof(snapshot[0]) == 12);
+    second->info.iap_id = 8;
+    REQUIRE(registry.enumerate().size() == 2);
+    first.reset();
+    REQUIRE(registry.enumerate().size() == 1);
+    second->active = false;
+    REQUIRE(registry.enumerate().empty());
+    REQUIRE(snapshot[0].iap_id == 7);
+}
+
+TEST_CASE("RConnection attachment shares shutdown and monitor does not retain the interface", "[internet][connection]") {
+    epoc::socket::connection_registry registry;
+    auto starter = registry.create();
+    starter->info = {1, 7, 3};
+    starter->advance(epoc::socket::conn_progress_link_layer_open);
+    auto attached = registry.find({1, 7, 3});
+    REQUIRE(attached == starter);
+    REQUIRE_FALSE(registry.find({1, 7, 4}));
+    std::weak_ptr<epoc::socket::connection_state> monitor = attached;
+    std::vector<std::int32_t> stages;
+    attached->observers[&stages] = [&](std::int32_t stage) { stages.push_back(stage); };
+    starter.reset();
+    REQUIRE(registry.enumerate().size() == 1);
+    attached->advance(epoc::socket::conn_progress_link_layer_closed);
+    REQUIRE_FALSE(monitor.lock()->active);
+    REQUIRE(registry.enumerate().empty());
+    REQUIRE_FALSE(registry.find({1, 7, 3}));
+    attached->advance(epoc::socket::conn_progress_link_layer_open);
+    attached.reset();
+    REQUIRE(monitor.expired());
+    REQUIRE(stages == std::vector<std::int32_t>{8000, 7000, 8000, 4500});
+}
+
+// These are numbers on the wire: the guest's RSocketServ client sends the value,
+// so renumbering the enum silently routes requests to the wrong handler.
+//
+// The reference is Symbian's own message table,
+// esockserver/csock/SOCKMES.H (TESockMessages), quoted below by name and
+// decimal value.
+
+TEST_CASE("reformed_socket_opcodes_match_symbian_esock_message_table", "socket_opcodes") {
+    // ESoRead = 39, ESoSetOpt = 49.
+    REQUIRE(socket_reform_so_read == 0x27);
+    REQUIRE(socket_reform_so_set_opt == 0x31);
+
+    // ENDCreate = 66, ENDQuery = 67, ENDAdd = 68, ENDRemove = 69.
+    REQUIRE(socket_reform_ndb_open == 0x42);
+    REQUIRE(socket_reform_ndb_query == 0x43);
+    REQUIRE(socket_reform_ndb_add == 0x44);
+    REQUIRE(socket_reform_ndb_remove == 0x45);
+
+    // ESoCreateWithConnection = 70 immediately follows ENDRemove, which pins the
+    // end of the net database block.
+    REQUIRE(socket_reform_so_open_with_conn == 0x46);
+
+    // ESoIoctl = 51, ESoGetDiscData = 52, ESoShutdown = 53.
+    REQUIRE(socket_reform_so_ioctl == 0x33);
+    REQUIRE(socket_reform_so_shutdown == 0x35);
+
+    // The cancel/close variants live in a separate block from 128 up:
+    // ESoCancelAccept = 141, EHRCancel = 145, EHRClose = 146,
+    // ENDCancel = 149, ENDClose = 150.
+    REQUIRE(socket_reform_so_cancel_accept == 0x8D);
+    REQUIRE(socket_reform_hr_cancel == 0x91);
+    REQUIRE(socket_reform_hr_close == 0x92);
+    REQUIRE(socket_reform_ndb_cancel == 0x95);
+    REQUIRE(socket_reform_ndb_close == 0x96);
+}
+
+// The pre-S^3 table is not in any published header. It is recoverable anyway,
+// because it runs the same subsession families in the same order as the table
+// above, with two differences: there is no RecvOneOrMoreNoLength, and each
+// family ends with its own Cancel and Close instead of collecting them into a
+// separate block. Values EKA2L1 already serves real guests with bracket every
+// value derived here, so each block is closed on both sides.
+
+TEST_CASE("legacy_socket_read_sits_between_recv_one_or_more_and_write", "socket_opcodes") {
+    // Order per SOCKMES.H: ESoRecv, ESoRecvNoLength, ESoRecvOneOrMore,
+    // [ESoRecvOneOrMoreNoLength], ESoRead, ESoWrite. Dropping the bracketed one
+    // leaves exactly one free slot between the two known values.
+    REQUIRE(socket_so_recv_one_or_more == 0x0C);
+    REQUIRE(socket_so_write == 0x0E);
+    REQUIRE(socket_so_read == 0x0D);
+}
+
+TEST_CASE("legacy_host_resolver_block_is_contiguous_and_ends_in_cancel_close", "socket_opcodes") {
+    // Order per SOCKMES.H: EHRCreate, EHRGetByName, EHRNext, EHRGetByAddress,
+    // EHRGetHostName, EHRSetHostName. Open and GetByName anchor the start,
+    // Close anchors the end.
+    REQUIRE(socket_hr_open == 0x28);
+    REQUIRE(socket_hr_get_by_name == 0x29);
+    REQUIRE(socket_hr_close == 0x2F);
+
+    REQUIRE(socket_hr_next == 0x2A);
+    REQUIRE(socket_hr_get_by_address == 0x2B);
+    REQUIRE(socket_hr_get_host_name == 0x2C);
+    REQUIRE(socket_hr_set_host_name == 0x2D);
+
+    // Cancel precedes Close in every family of the reformed table
+    // (EHRCancel 145 / EHRClose 146, ESRCancel 147 / ESRClose 148,
+    // ENDCancel 149 / ENDClose 150), which leaves 0x2E for Cancel.
+    REQUIRE(socket_hr_cancel == 0x2E);
+}
+
+TEST_CASE("legacy_net_database_block_fills_the_gap_before_open_with_connection", "socket_opcodes") {
+    // Between these two anchors sit the rest of the service resolver family
+    // (RegisterService, RemoveService, Cancel, Close -- four slots, 0x33..0x36)
+    // and then the whole net database family.
+    REQUIRE(socket_sr_get_by_number == 0x32);
+    REQUIRE(socket_so_open_with_connection == 0x3D);
+
+    // ENDCreate, ENDQuery, ENDAdd, ENDRemove, then Cancel and Close: six slots,
+    // 0x37..0x3C. The count closes the gap exactly, with no room to spare.
+    REQUIRE(socket_ndb_open == 0x37);
+    REQUIRE(socket_ndb_query == 0x38);
+    REQUIRE(socket_ndb_add == 0x39);
+    REQUIRE(socket_ndb_remove == 0x3A);
+    REQUIRE(socket_ndb_cancel == 0x3B);
+    REQUIRE(socket_ndb_close == 0x3C);
+}
+
+TEST_CASE("legacy_socket_shutdown_sits_between_close_and_the_cancel_run", "socket_opcodes") {
+    // The legacy table keeps every socket operation in one run, so it ends the way the
+    // EKA1 one does: Close, Shutdown, CancelIoctl, then the four cancels. Close and
+    // CancelRecv are values EKA2L1 already serves real guests with, and the two slots
+    // between them take Shutdown and CancelIoctl in that order.
+    REQUIRE(socket_so_close == 0x1D);
+    REQUIRE(socket_so_cancel_recv == 0x20);
+    REQUIRE(socket_so_shutdown == 0x1E);
+}
+
+TEST_CASE("RConnection interface monitors receive one event per link transition", "[internet][connection]") {
+    using namespace epoc::socket;
+    static_assert(sizeof(interface_notification) == 16);
+    connection_registry registry;
+    std::vector<interface_notification> events;
+    auto observer = std::make_shared<interface_observer>(
+        [&](const interface_notification &event) { events.push_back(event); });
+    registry.observe_interfaces(observer);
+
+    auto connection = registry.create();
+    connection->info = {1, 7, 3};
+    connection->advance(conn_progress_connection_opened);
+    connection->advance(conn_progress_link_layer_open);
+    REQUIRE(events.size() == 1);
+    REQUIRE(events[0].info.iap_id == 7);
+    REQUIRE(events[0].info.network_id == 3);
+    REQUIRE(events[0].state == 0);
+
+    connection.reset();
+    REQUIRE(events.size() == 2);
+    REQUIRE(events[1].state == 1);
+
+    observer.reset();
+    auto second = registry.create();
+    second->advance(conn_progress_link_layer_open);
+    REQUIRE(events.size() == 2);
+}

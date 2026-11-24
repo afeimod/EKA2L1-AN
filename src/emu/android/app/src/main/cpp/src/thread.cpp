@@ -18,6 +18,7 @@
  */
 
 #include <android/thread.h>
+#include <android/input_dialog.h>
 #include <common/thread.h>
 #include <drivers/audio/audio.h>
 #include <drivers/graphics/graphics.h>
@@ -36,30 +37,25 @@ namespace eka2l1::android {
         eka2l1::common::set_thread_name(graphics_driver_thread_name);
         eka2l1::common::set_thread_priority(eka2l1::common::thread_priority_high);
 
-        state.window = std::make_unique<eka2l1::drivers::emu_window_android>();
+        state.window = std::make_unique<drivers::emu_window_android>();
         state.window->init("Hello there", eka2l1::vec2(0, 0),
-            eka2l1::drivers::emu_window_flag_maximum_size);
+            drivers::emu_window_flag_maximum_size);
         state.window->set_userdata(&state);
 
         // We got window and context ready (OpenGL, let makes stuff now)
         // TODO: Configurable
-        state.graphics_driver = eka2l1::drivers::create_graphics_driver(eka2l1::drivers::graphic_api::opengl,
+        state.graphics_driver = drivers::create_graphics_driver(drivers::graphic_api::opengl,
                 state.window->get_window_system_info());
-        
-        if (!state.graphics_driver) {
-            LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Failed to create graphics driver!");
-            return -1;
-        }
-        
         state.symsys->set_graphics_driver(state.graphics_driver.get());
 
-        eka2l1::drivers::emu_window_android *window = state.window.get();
+        drivers::emu_window_android *window = state.window.get();
 
         window->surface_change_hook = [&state](void *new_surface) {
             state.graphics_driver->update_surface(new_surface);
         };
 
         state.graphics_driver->set_display_hook([window, &state]() {
+            if (state.debug_control_enabled) state.debug_frames.fetch_add(1, std::memory_order_relaxed);
             window->swap_buffer();
             window->poll_events();
 
@@ -70,20 +66,15 @@ namespace eka2l1::android {
         });
 
         state.graphics_init_done.set();
-        
-        // Register draw callback after window and graphics_driver are created
-        // This ensures all necessary components are initialized before registering callbacks
-        if (state.stage_two_inited) {
-            LOG_INFO(eka2l1::FRONTEND_CMDLINE, "Registering draw callbacks from graphics thread...");
-            state.register_draw_callback();
-        }
-        
         return 0;
     }
 
     static int graphics_driver_thread_deinitialization(emulator &state) {
-        // graphics_sema was already notified by init_threads(), no need to wait again
+        if (state.stage_two_inited)
+            state.graphics_sema.wait();
+
         state.graphics_driver.reset();
+
         return 0;
     }
 
@@ -91,7 +82,7 @@ namespace eka2l1::android {
         int result = graphics_driver_thread_initialization(state);
 
         if (result != 0) {
-            LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Graphics driver initialization failed with code {}", result);
+            LOG_ERROR(FRONTEND_CMDLINE, "Graphics driver initialization failed with code {}", result);
             return;
         }
 
@@ -101,7 +92,7 @@ namespace eka2l1::android {
         result = graphics_driver_thread_deinitialization(state);
 
         if (result != 0) {
-            LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Graphics driver deinitialization failed with code {}", result);
+            LOG_ERROR(FRONTEND_CMDLINE, "Graphics driver deinitialization failed with code {}", result);
             return;
         }
     }
@@ -110,18 +101,14 @@ namespace eka2l1::android {
         eka2l1::common::set_thread_name(os_thread_name);
         eka2l1::common::set_thread_priority(eka2l1::common::thread_priority_high);
 
-        // Drain input events at the top of every loop iteration. The UI
-        // thread enqueues them through the JNI bridge without taking the
-        // kernel lock; we replay them here where it's safe.
         while (!state.should_emu_quit) {
-            drain_pending_input_events_for(state);
 #if !defined(NDEBUG)
             try {
 #endif
                 state.symsys->loop();
 #if !defined(NDEBUG)
             } catch (std::exception &exc) {
-                LOG_ERROR(eka2l1::FRONTEND_CMDLINE, "Main loop exited with exception: ", exc.what());
+                LOG_ERROR(FRONTEND_CMDLINE, "Main loop exited with exception: ", exc.what());
                 state.should_emu_quit = true;
                 break;
             }
@@ -142,21 +129,19 @@ namespace eka2l1::android {
 
         const bool result = state.stage_two();
 
-        // Instantiate UI and High-level interface threads
-        if (result) {
-            os_thread_obj = std::make_unique<std::thread>(os_thread, std::ref(state));
-        }
-
-        // Run graphics driver on main entry.
         state.graphics_init_done.reset();
         gr_thread_obj = std::make_unique<std::thread>(graphics_driver_thread, std::ref(state));
         state.graphics_init_done.wait();
+
+        if (result) {
+            os_thread_obj = std::make_unique<std::thread>(os_thread, std::ref(state));
+        }
 
         return result;
     }
 
     void init_threads(emulator &state) {
-        // Continue graphics initialization - signal graphics thread to proceed
+        // Continue graphics initialization
         state.graphics_sema.notify();
     }
 
@@ -189,11 +174,6 @@ namespace eka2l1::android {
     }
 
     void press_key(emulator &state, int key, int key_state) {
-        if (!state.winserv) {
-            LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Attempted to press key but winserv is not initialized!");
-            return;
-        }
-        
         eka2l1::drivers::input_event evt;
         evt.type_ = eka2l1::drivers::input_event_type::key_raw;
         evt.key_.state_ = static_cast<eka2l1::drivers::key_state>(key_state);
@@ -202,11 +182,6 @@ namespace eka2l1::android {
     }
 
     void touch_screen(emulator &state, int x, int y, int z, int action, int pointer_id) {
-        if (!state.winserv) {
-            LOG_WARN(eka2l1::FRONTEND_CMDLINE, "Attempted to touch screen but winserv is not initialized!");
-            return;
-        }
-        
         eka2l1::drivers::input_event evt;
         evt.type_ = eka2l1::drivers::input_event_type::touch;
         evt.mouse_.pos_x_ = static_cast<int>(x);
@@ -217,5 +192,24 @@ namespace eka2l1::android {
         evt.mouse_.action_ = static_cast<eka2l1::drivers::mouse_action>(action);
         evt.mouse_.raw_screen_pos_ = false;
         state.winserv->queue_input_from_driver(evt);
+    }
+}
+namespace eka2l1::android {
+    void prepare_control_reset(emulator &state) {
+        if (state.should_graphics_pause.exchange(false)) state.pause_graphics_sema.notify();
+    }
+
+    bool control_boot_device(emulator &state, int index) {
+        prepare_control_reset(state);
+        if (state.debug_backend) state.debug_backend->reset_session();
+        if (!os_thread_obj) state.symsys->startup();
+        if (!state.symsys->set_device(static_cast<std::uint8_t>(index))) return false;
+        state.conf.device = index;
+        state.conf.serialize();
+        if (!state.stage_two_inited) {
+            if (!state.stage_two()) return false;
+            if (!os_thread_obj) os_thread_obj = std::make_unique<std::thread>(os_thread, std::ref(state));
+        }
+        return true;
     }
 }

@@ -23,10 +23,8 @@ import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
@@ -67,10 +65,9 @@ import com.github.eka2l1.config.ProfilesFragment;
 import com.github.eka2l1.emu.Emulator;
 import com.github.eka2l1.emu.EmulatorActivity;
 import com.github.eka2l1.info.AboutDialogFragment;
-import com.github.eka2l1.j2me.J2meAppListDialog;
-import com.github.eka2l1.j2me.JarInstaller;
 import com.github.eka2l1.settings.AppDataStore;
 import com.github.eka2l1.settings.SettingsFragment;
+import com.github.eka2l1.util.AppUtils;
 import com.github.eka2l1.util.FileUtils;
 import com.github.eka2l1.util.LogUtils;
 import com.github.eka2l1.util.ZipUtils;
@@ -106,8 +103,7 @@ import static com.github.eka2l1.emu.Constants.*;
 
 import org.w3c.dom.Text;
 
-public class AppsListFragment extends Fragment
-        implements com.github.eka2l1.j2me.J2meAppListDialog.Launcher {
+public class AppsListFragment extends Fragment {
     private CompositeDisposable compositeDisposable;
     private AppsListAdapter adapter;
     private RecyclerView rvApplist;
@@ -119,18 +115,15 @@ public class AppsListFragment extends Fragment
             FileUtils.getFilePicker(),
             this::onSisResult);
     private final ActivityResultLauncher<Void> openSDCardLauncher = registerForActivityResult(
-            FileUtils.getDirPicker(),
+            FileUtils.getNativeDirPicker(),
             this::onSDCardResult);
     private final ActivityResultLauncher<Void> openNGageGameLauncher = registerForActivityResult(
-            FileUtils.getDirPicker(),
+            FileUtils.getNativeDirPicker(),
             this::onNGageGameResult
     );
     private final ActivityResultLauncher<String[]> openPreconfiguredPackZIPLauncher = registerForActivityResult(
             FileUtils.getFilePicker(),
             this::onPreconfiguredPackZIPResult);
-    private final ActivityResultLauncher<String[]> openJ2meJarLauncher = registerForActivityResult(
-            FileUtils.getFilePicker(),
-            this::onJ2meJarResult);
     private final ActivityResultLauncher pickLaunchFileDirectory = registerForActivityResult(
             FileUtils.getDirPicker(true),
             this::onLaunchFileDirPickResult);
@@ -281,12 +274,7 @@ public class AppsListFragment extends Fragment
     }
 
     private void restart() {
-        PackageManager packageManager = requireContext().getPackageManager();
-        Intent intent = packageManager.getLaunchIntentForPackage(requireContext().getPackageName());
-        ComponentName componentName = intent.getComponent();
-        Intent mainIntent = Intent.makeRestartActivityTask(componentName);
-        startActivity(mainIntent);
-        Runtime.getRuntime().exit(0);
+        AppUtils.restart(requireContext());
     }
 
     @Override
@@ -328,114 +316,6 @@ public class AppsListFragment extends Fragment
         installNGageGame(path);
     }
 
-    /**
-     * Handle the result of the JAR/JAD file picker.
-     *
-     * The picker returns either a file:// or content:// URI. We pass it
-     * straight to {@link JarInstaller}, which is responsible for staging
-     * the bytes into the emulator data dir (because the JNI install
-     * path expects an fopen()-able file). The Single runs on the IO
-     * scheduler and we observe the result on the main thread.
-     */
-    private void onJ2meJarResult(String path) {
-        if (path == null) {
-            return;
-        }
-        if (!Emulator.isInitialized()) {
-            Toast.makeText(getContext(), R.string.error, Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        final Uri uri = Uri.parse(path);
-        final String emulatorDir = Emulator.getEmulatorDir();
-        if (emulatorDir == null) {
-            Toast.makeText(getContext(), R.string.error, Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        JarInstaller.install(requireContext(), emulatorDir, uri)
-                .subscribeOn(Schedulers.io())
-                .observeOn(AndroidSchedulers.mainThread())
-                .subscribeWith(new DisposableSingleObserver<Emulator.J2meInstallResult>() {
-                    @Override
-                    public void onSuccess(Emulator.J2meInstallResult result) {
-                        String msg = getString(R.string.j2me_install_done,
-                                result.name, result.version, result.author);
-                        Toast.makeText(getContext(), msg, Toast.LENGTH_LONG).show();
-                        // Open the J2ME app list straight away so the user
-                        // sees their newly-installed game without hunting
-                        // for it in the menu.
-                        J2meAppListDialog.newInstance()
-                                .show(getParentFragmentManager(), "j2me_app_list");
-                    }
-
-                    @Override
-                    public void onError(@NonNull Throwable e) {
-                        int msgRes;
-                        if (e instanceof Emulator.J2meInstallException) {
-                            int code = ((Emulator.J2meInstallException) e).getErrorCode();
-                            msgRes = mapInstallError(code);
-                        } else {
-                            // IOException raised during the copy stage —
-                            // typically a bad URI permission or a network
-                            // URI we can't resolve.
-                            msgRes = R.string.j2me_copy_failed;
-                        }
-                        new AlertDialog.Builder(getContext())
-                                .setTitle(R.string.j2me_install_failed_title)
-                                .setMessage(msgRes)
-                                .setPositiveButton(android.R.string.ok, null)
-                                .show();
-                    }
-                });
-    }
-
-    /** Translate a native install_error code into a user-facing string. */
-    private int mapInstallError(int code) {
-        switch (code) {
-            case Emulator.INSTALL_J2ME_ERROR_NOT_FOUND:
-                return R.string.j2me_err_not_found;
-            case Emulator.INSTALL_J2ME_ERROR_INVALID:
-                return R.string.j2me_err_invalid;
-            case Emulator.INSTALL_J2ME_ERROR_MIDP2_UNSUPPORTED:
-                return R.string.j2me_err_midp2;
-            case Emulator.INSTALL_J2ME_ERROR_DB:
-                return R.string.j2me_err_db;
-            case Emulator.INSTALL_J2ME_ERROR_PLATFORM:
-                return R.string.j2me_err_platform;
-            default:
-                return R.string.j2me_err_unknown;
-        }
-    }
-
-    @Override
-    public void launch(long appId) {
-        // The MIDlet runner spawns a Symbian KMID process; the running
-        // screen is the same EmulatorActivity used for SIS apps, so we
-        // dispatch through the existing activity launch path. We pass a
-        // sentinel UID + name so the activity knows not to look up an
-        // app registry entry — the JNI bridge will dispatch straight to
-        // eka2l1::j2me::launch via a small helper we add to Emulator.
-        Intent intent = new Intent(getActivity(), EmulatorActivity.class);
-        intent.putExtra(KEY_APP_UID, appId);
-        intent.putExtra(KEY_APP_NAME, "MIDlet");
-        // deviceCode is required by EmulatorActivity for some bookkeeping
-        // (config dir resolution). Use the currently active device.
-        try {
-            int currentId = Emulator.getCurrentDevice();
-            String[] codes = Emulator.getDeviceFirmwareCodes();
-            String deviceCode = (codes != null && currentId >= 0 && currentId < codes.length)
-                    ? codes[currentId] : "epoc6";
-            intent.putExtra(KEY_DEVICE_CODE, deviceCode);
-        } catch (Throwable t) {
-            intent.putExtra(KEY_DEVICE_CODE, "epoc6");
-        }
-        // Mark this as a J2ME launch so EmulatorActivity can route to
-        // launchJ2meApp instead of the Symbian app-registry path.
-        intent.putExtra("j2meLaunch", true);
-        startActivity(intent);
-    }
-
     @SuppressWarnings("ResultOfMethodCallIgnored")
     @SuppressLint("CheckResult")
     private void installApp(String path) {
@@ -461,83 +341,54 @@ public class AppsListFragment extends Fragment
             return;
         }
 
-        final String folderName = FileUtils.getFilenameFromPath(getContext(), path);
+        String folderName = FileUtils.getFilenameFromPath(getContext(), path);
 
-        final Pattern cidPattern = Pattern.compile("[0-9a-fA-F]+-[0-9a-fA-F]+-[0-9a-fA-F]+-[0-9a-fA-F]+");
-        final Matcher matcher = cidPattern.matcher(folderName);
+        Pattern cidPattern = Pattern.compile("[0-9a-fA-F]+-[0-9a-fA-F]+-[0-9a-fA-F]+-[0-9a-fA-F]+");
+        Matcher matcher = cidPattern.matcher(folderName);
 
-        final boolean mmcIdFoundInFolderName = matcher.find();
+        boolean mmcIdFoundInFolderName = matcher.find();
 
-        // Mounting an SD card is heavy I/O — push to a background thread
-        // so the UI thread never blocks on it (this used to ANR).
-        final java.util.concurrent.ExecutorService ex =
-                java.util.concurrent.Executors.newSingleThreadExecutor();
-        ex.execute(() -> {
-            Emulator.mountSdCard(path);
-            if (mmcIdFoundInFolderName) {
-                Emulator.setCurrentMMCID(matcher.group());
-            }
-            if (getActivity() == null) {
-                ex.shutdown();
-                return;
-            }
-            getActivity().runOnUiThread(() -> {
-                if (mmcIdFoundInFolderName) {
-                    Toast.makeText(getContext(), R.string.mounted_mmc_ok_and_use_id_in_folder_name, Toast.LENGTH_LONG).show();
-                } else {
-                    Toast.makeText(getContext(), R.string.completed, Toast.LENGTH_SHORT).show();
-                }
-                // Refresh the installed-app list now that the SD card
-                // (which often carries the games) is mounted.
-                prepareApps();
-                ex.shutdown();
-            });
-        });
+        Emulator.mountSdCard(path);
+
+        if (mmcIdFoundInFolderName) {
+            Emulator.setCurrentMMCID(matcher.group());
+            Toast.makeText(getContext(), R.string.mounted_mmc_ok_and_use_id_in_folder_name, Toast.LENGTH_LONG).show();
+        } else {
+            Toast.makeText(getContext(), R.string.completed, Toast.LENGTH_SHORT).show();
+        }
+
+        prepareApps();
     }
 
     private void installNGageGame(String path) {
-        // Run the native install call on a background thread; the result
-        // dispatch is back on the UI thread. Otherwise the JNI call can
-        // block the UI long enough to trip an ANR.
-        final java.util.concurrent.ExecutorService ex =
-                java.util.concurrent.Executors.newSingleThreadExecutor();
-        ex.execute(() -> {
-            final int result = Emulator.installNGageGame(path);
-            if (getActivity() == null) {
-                ex.shutdown();
-                return;
+        int result = Emulator.installNGageGame(path);
+        if (result == 0) {
+            Toast.makeText(getContext(), R.string.completed, Toast.LENGTH_SHORT).show();
+            restart();
+        } else {
+            int errorResId = R.string.error;
+            switch (result) {
+                case Emulator.INSTALL_NG_GAME_ERROR_NO_GAME_DATA_FOLDER:
+                    errorResId = R.string.install_ng_game_cant_find_data_folder;
+                    break;
+
+                case Emulator.INSTALL_NG_GAME_ERROR_MORE_THAN_ONE_DATA_FOLDER:
+                    errorResId = R.string.install_ng_game_more_than_one_game;
+                    break;
+
+                case Emulator.INSTALL_NG_GAME_ERROR_NO_GAME_REGISTERATION_INFO:
+                    errorResId = R.string.install_ng_game_no_game_info_file;
+                    break;
+
+                case Emulator.INSTALL_NG_GAME_ERROR_REGISTERATION_CORRUPTED:
+                    errorResId = R.string.install_ng_game_corrupted_game_info;
+                    break;
+
+                default:
+                    break;
             }
-            getActivity().runOnUiThread(() -> {
-                if (result == 0) {
-                    Toast.makeText(getContext(), R.string.completed, Toast.LENGTH_SHORT).show();
-                    restart();
-                } else {
-                    int errorResId = R.string.error;
-                    switch (result) {
-                        case Emulator.INSTALL_NG_GAME_ERROR_NO_GAME_DATA_FOLDER:
-                            errorResId = R.string.install_ng_game_cant_find_data_folder;
-                            break;
-
-                        case Emulator.INSTALL_NG_GAME_ERROR_MORE_THAN_ONE_DATA_FOLDER:
-                            errorResId = R.string.install_ng_game_more_than_one_game;
-                            break;
-
-                        case Emulator.INSTALL_NG_GAME_ERROR_NO_GAME_REGISTERATION_INFO:
-                            errorResId = R.string.install_ng_game_no_game_info_file;
-                            break;
-
-                        case Emulator.INSTALL_NG_GAME_ERROR_REGISTERATION_CORRUPTED:
-                            errorResId = R.string.install_ng_game_corrupted_game_info;
-                            break;
-
-                        default:
-                            break;
-                    }
-                    Toast.makeText(getContext(), errorResId, Toast.LENGTH_SHORT).show();
-                }
-                ex.shutdown();
-            });
-        });
+            Toast.makeText(getContext(), errorResId, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void setToggleGridIconStatus(MenuItem item, boolean isGrid) {
@@ -725,17 +576,6 @@ public class AppsListFragment extends Fragment
                     .commit();
         } else if (itemId == R.id.action_install_ng_game) {
             openNGageGameLauncher.launch(null);
-        } else if (itemId == R.id.action_install_j2me_app) {
-            // J2ME is a Java standard — it runs on any device profile
-            // that ships a compatible Java VM. The native backend now
-            // forwards every device's install request to the KMID-based
-            // path, so we no longer gate this menu by Symbian version.
-            // Picker accepts jar/jad/kjx so the user can pre-stage the
-            // JAD alongside the JAR if they have one.
-            openJ2meJarLauncher.launch(new String[]{".jar", ".jad", ".kjx"});
-        } else if (itemId == R.id.action_open_j2me_list) {
-            J2meAppListDialog.newInstance()
-                    .show(getParentFragmentManager(), "j2me_app_list");
         } else if (itemId == R.id.action_install_preconfigured_pack) {
             openPreconfiguredZIPFilePicker();
         } else if (itemId == R.id.action_switch_devices) {

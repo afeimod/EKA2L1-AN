@@ -19,16 +19,21 @@
 
 #pragma once
 
+#include <common/path_types.h>
 #include <cstdint>
 
 #include <dispatch/management.h>
 #include <dispatch/libraries/egl/def.h>
 
+#include <drivers/audio/clip_writer.h>
 #include <drivers/audio/dsp.h>
 #include <drivers/audio/player.h>
+#include <drivers/audio/stream.h>
 #include <drivers/camera/camera.h>
 #include <dispatch/video.h>
 #include <dispatch/hui.h>
+#include <dispatch/tls.h>
+#include <dispatch/tone.h>
 
 #include <drivers/itc.h>
 
@@ -38,6 +43,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <vector>
 #include <map>
 
@@ -51,6 +57,7 @@ namespace eka2l1 {
 
     namespace kernel {
         class chunk;
+        class process;
     }
 
     namespace hle {
@@ -69,7 +76,8 @@ namespace eka2l1::dispatch {
 
     enum dsp_medium_type {
         DSP_MEDIUM_TYPE_EPOC_STREAM = 0,
-        DSP_MEDIUM_TYPE_EPOC_PLAYER = 1
+        DSP_MEDIUM_TYPE_EPOC_PLAYER = 1,
+        DSP_MEDIUM_TYPE_EPOC_TONE = 2
     };
 
     enum camera_image_stack_type {
@@ -84,9 +92,22 @@ namespace eka2l1::dispatch {
 
         dsp_medium_type type_;
 
+        // Unique ID of the process that created this medium, so that everything it owns can
+        // be torn down when it dies without running its guest destructors. Stored as an ID
+        // rather than a pointer: the process object may already be gone by then.
+        std::uint64_t owner_process_id_;
+
     public:
         explicit dsp_medium(dsp_manager *manager, dsp_medium_type type);
         virtual ~dsp_medium() {}
+
+        void owner_process_id(const std::uint64_t id) {
+            owner_process_id_ = id;
+        }
+
+        std::uint64_t owner_process_id() const {
+            return owner_process_id_;
+        }
 
         virtual std::uint32_t volume() const {
             return logical_volume_;
@@ -131,11 +152,70 @@ namespace eka2l1::dispatch {
         std::uint32_t stored_repeat_times;
         std::uint32_t stored_trailing_silence_us;
 
+        std::uint64_t last_position_query_us_ = 0;
+
+        // The clip a recorder utility opened; its format applies to the destination settings.
+        std::unique_ptr<drivers::clip_writer> record_clip_;
+        host_path record_clip_path_;
+
+        std::unique_ptr<drivers::audio_input_stream> record_stream_;
+        std::mutex record_lock_;
+        std::vector<std::int16_t> pending_samples_;
+        std::uint64_t recorded_frame_count_ = 0;
+
         explicit dsp_epoc_player(dsp_manager *manager, const std::uint32_t init_flags);
         ~dsp_epoc_player() override;
 
+        bool open_record_clip(const eka2l1::host_path &file_path);
+
+        // Captured audio is encoded as it is flushed; the guest watches the clip grow to estimate free space.
+        bool start_recording(drivers::audio_driver *driver, const eka2l1::host_path &file_path);
+        bool flush_recording();
+        bool stop_recording();
+        bool is_recording() const {
+            return record_stream_ != nullptr;
+        }
+
+        std::uint64_t recorded_duration_us();
+
         void volume(const std::uint32_t volume) override;
         std::uint32_t max_volume() const override;
+
+        std::uint32_t volume() const override {
+            return dsp_medium::volume();
+        }
+    };
+
+    struct dsp_epoc_tone : public dsp_medium {
+        tone_program program_;
+        std::int32_t repeats_ = 0;
+        std::uint64_t trailing_silence_us_ = 0;
+
+        // DevSound's defaults (CMMFDevSoundSvrImp).
+        std::int32_t dtmf_tone_on_us_ = 250000;
+        std::uint32_t dtmf_tone_off_us_ = 50000;
+        std::uint32_t dtmf_pause_us_ = 250000;
+
+        std::unique_ptr<tone_generator> generator_;
+        std::unique_ptr<drivers::audio_output_stream> stream_;
+
+        epoc::notify_info done_info_;
+
+        // Identifies the play a scheduled completion belongs to.
+        std::uint32_t play_generation_ = 0;
+
+        explicit dsp_epoc_tone(dsp_manager *manager);
+        ~dsp_epoc_tone() override;
+
+        // Sound is best effort: without an output stream the tone still lasts as long, silently.
+        void play(drivers::audio_driver *driver);
+        void stop();
+
+        void volume(const std::uint32_t volume) override;
+
+        std::uint32_t max_volume() const override {
+            return 10;
+        }
 
         std::uint32_t volume() const override {
             return dsp_medium::volume();
@@ -186,11 +266,30 @@ namespace eka2l1::dispatch {
                 }
             }
 
+            if constexpr (std::is_same_v<T, dsp_epoc_tone>) {
+                if (medium->type() != DSP_MEDIUM_TYPE_EPOC_TONE) {
+                    return nullptr;
+                }
+            }
+
             return reinterpret_cast<T *>(medium);
         }
 
         bool remove_object(const object_manager<dsp_medium>::handle handle) {
             return mediums_.remove_object(handle);
+        }
+
+        /**
+         * \brief   Take every medium a process owns out of the manager, without destroying them.
+         *
+         * \param   process_id  Unique ID of the owning process.
+         * \param   out         Vector the detached mediums are appended to.
+         */
+        void detach_objects_of_process(const std::uint64_t process_id,
+            std::vector<std::unique_ptr<dsp_medium>> &out) {
+            mediums_.detach_objects_if([process_id](const dsp_medium &medium) {
+                return medium.owner_process_id() == process_id;
+            }, out);
         }
 
         dsp_epoc_audren_sema *audio_renderer_semaphore() {
@@ -223,7 +322,7 @@ namespace eka2l1::dispatch {
         void construct(ntimer *timing);
         void destroy(drivers::graphics_driver *drv);
 
-        void wait_vsync(epoc::screen *scr, epoc::notify_info &info);
+        void wait_vsync(std::uint64_t delay_us, epoc::notify_info &info);
         void cancel_wait_vsync(const epoc::notify_info &info);
 
         drivers::handle transfer_data_to_texture(drivers::graphics_driver *drv, drivers::graphics_command_builder &builder,
@@ -270,11 +369,38 @@ namespace eka2l1::dispatch {
         screen_post_transferer post_transferer_;
         std::unique_ptr<egl_controller> egl_controller_;
         ehui_controller hui_controller_;
+        tls_controller tls_controller_;
 
         std::map<std::uint32_t, address> static_string_addrs_;
         std::map<std::string, address> symbol_lookup_;
 
         bool graphics_string_added_;
+
+        // Mediums whose owner process died, waiting to be destroyed on the emulation thread.
+        // See on_process_exit() for why the destruction can not happen where they are orphaned.
+        std::vector<std::unique_ptr<dsp_medium>> mediums_pending_destroy_;
+        std::mutex mediums_pending_destroy_lock_;
+        std::atomic<bool> has_mediums_pending_destroy_;
+
+        // Players whose done-notification the audio render thread could not complete because
+        // the kernel lock was taken. See defer_player_notify().
+        std::vector<std::uint32_t> players_notify_deferred_;
+        std::mutex players_notify_deferred_lock_;
+        std::atomic<bool> has_players_notify_deferred_;
+
+        // Streams whose buffer-ready notification the audio render thread could not complete
+        // because the kernel lock was taken. See defer_stream_buffer_notify().
+        std::vector<std::uint32_t> streams_notify_deferred_;
+        std::mutex streams_notify_deferred_lock_;
+        std::atomic<bool> has_streams_notify_deferred_;
+
+        std::size_t process_exit_callback_handle_;
+
+        void on_process_exit(kernel::process *pr);
+
+        // Deliver the handed-over notifications. The kernel lock must already be held.
+        void complete_deferred_player_notifies_locked();
+        void complete_deferred_stream_notifies_locked();
 
     public:
         window_server *winserv_;
@@ -290,11 +416,43 @@ namespace eka2l1::dispatch {
         void set_graphics_driver(drivers::graphics_driver *driver);
         void shutdown(drivers::graphics_driver *driver);
 
-        bool patch_libraries(const std::u16string &path, const patch_info *patches,
+        bool patch_libraries(const guest_path &path, const patch_info *patches,
             const std::size_t patch_count);
 
         void resolve(eka2l1::system *sys, const std::uint32_t function_ord);
         void update_all_screens(eka2l1::system *sys);
+
+        /**
+         * \brief   Destroy the objects orphaned by processes that exited, and deliver the guest
+         *          audio notifications the render thread had to hand over.
+         *
+         * Must be called from the emulation thread, with no kernel lock held.
+         */
+        void flush_pending_teardown();
+
+        /**
+         * \brief   Hand a player's done-notification over to the emulation thread.
+         *
+         * The audio backend fires the play-done callback on its own render thread, and that
+         * thread must never block on the kernel lock: a guest thread stops or destroys a player
+         * from a dispatch call that runs under the kernel lock, and the host stop waits for the
+         * render callback in flight. Completing the notification from there would deadlock the
+         * two. The emulation thread completes whatever request the player has armed by then,
+         * which is what the render thread would have completed had it been able to take the
+         * lock right away.
+         */
+        void defer_player_notify(const std::uint32_t player_handle);
+
+        /**
+         * \brief   Hand a DSP stream's buffer-ready notification over to the emulation thread.
+         *
+         * Same constraint as defer_player_notify(): the render thread can not block on the
+         * kernel lock. Dropping the notification instead and retrying on the next render
+         * callback is what starves a streaming guest - the retry only comes one hardware
+         * buffer later, and under the dispatch traffic of a busy title the lock is taken often
+         * enough that several retries in a row miss, which drains the ring buffer.
+         */
+        void defer_stream_buffer_notify(const std::uint32_t stream_handle);
 
         dsp_manager &get_dsp_manager() {
             return dsp_manager_;
@@ -310,6 +468,10 @@ namespace eka2l1::dispatch {
 
         ehui_controller &get_hui_controller() {
             return hui_controller_;
+        }
+
+        tls_controller &get_tls_controller() {
+            return tls_controller_;
         }
 
         address add_static_string(const std::uint32_t key, const std::string &value);

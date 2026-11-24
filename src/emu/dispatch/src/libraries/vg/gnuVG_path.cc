@@ -251,8 +251,9 @@ namespace gnuVG {
 			ma.memrealloc = GvgAllocator::gvg_realloc;
 
 		}
-		if(!tess)
-			tess = tessNewTess(ma_p);
+		if(tess)
+			tessDeleteTess(tess);
+		tess = tessNewTess(ma_p);
 	}
 
 	void Path::vgDrawPath_fill_regular(const GraphicState &state) {
@@ -580,10 +581,6 @@ namespace eka2l1::dispatch {
 		context->apply_state_changes(state);
 
 		p->vgDrawPath(state, paintModes);
-
-        if (context->cmd_builder_.need_flush()) {
-            context->flush_to_driver(sys->get_dispatcher()->get_egl_controller(), state.driver);
-        }
 	}
 
 }

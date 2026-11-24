@@ -31,7 +31,6 @@ import android.content.res.Configuration;
 import android.content.res.TypedArray;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.SparseIntArray;
@@ -47,7 +46,6 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.Button;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -61,11 +59,9 @@ import androidx.appcompat.widget.Toolbar;
 
 import com.github.eka2l1.R;
 import com.github.eka2l1.applist.AppLaunchInfo;
-import com.github.eka2l1.j2me.JarInstaller;
 import com.github.eka2l1.config.ConfigActivity;
 import com.github.eka2l1.config.ProfileModel;
 import com.github.eka2l1.config.ProfilesManager;
-import com.github.eka2l1.config.ScreenPositionEditor;
 import com.github.eka2l1.emu.overlay.FixedKeyboard;
 import com.github.eka2l1.emu.overlay.OverlayView;
 import com.github.eka2l1.emu.overlay.VirtualKeyboard;
@@ -106,104 +102,22 @@ public class EmulatorActivity extends AppCompatActivity {
     private Toolbar toolbar;
     private OverlayView overlayView;
     private long uid;
-    private Intent j2meLaunchIntent;
     private boolean launched;
     private boolean statusBarEnabled;
     private boolean actionBarEnabled;
     private VirtualKeyboard keyboard;
-    /** Debounced, atomic writer for the keyboard layout file. */
-    private KeyLayoutSaver layoutSaver;
-
-    /**
-     * Active profile directory. Held in a field because some post-create
-     * flows (e.g. the in-game screen position editor) need access to it
-     * long after {@link #onCreate} returns.
-     */
-    private File configDir;
-
-    /**
-     * Container of the surface view. Used as the parent for the
-     * in-game {@link ScreenPositionEditor} overlay.
-     */
-    private FrameLayout emulatorContainer;
-
-    /**
-     * The in-game screen position editor (when active). Null when the
-     * user is not editing the screen rectangle.
-     */
-    private ScreenPositionEditor inGameEditor;
-    private Button inGameEditorDone;
+    private ViewCallbacks inputCallbacks;
     private float displayWidth;
     private float displayHeight;
     private SparseIntArray androidToSymbian;
     private ProfileModel params;
     private MenuItem actionScreenshot;
 
-    // Single-thread executor for native bridge calls. Anything that talks
-    // to the emulator core (launch_app, install, getApps) goes through here
-    // so the Android UI thread never blocks on a long native operation,
-    // which used to trigger ANR ('Input dispatching timed out').
-    private final java.util.concurrent.ExecutorService nativeCallExecutor =
-            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "EKA2L1-NativeBridge");
-                t.setPriority(Thread.NORM_PRIORITY + 1);
-                return t;
-            });
-
-    /**
-     * Run a native bridge call on a background executor. Use this for
-     * any {@code Emulator.*} call that may take more than a few hundred
-     * milliseconds (launch_app, installApp, mountSdCard, getApps, etc).
-     */
-    public void runNativeCall(Runnable r) {
-        nativeCallExecutor.execute(() -> {
-            try {
-                r.run();
-            } catch (Throwable t) {
-                android.util.Log.e("EKA2L1", "Native bridge call failed", t);
-            }
-        });
-    }
-
-    @Override
-    protected void onDestroy() {
-        try {
-            if (layoutSaver != null) {
-                // Persist any pending edit before tearing down so a fast
-                // "back out" never loses the user's last drag.
-                layoutSaver.flushNow();
-                layoutSaver.destroy();
-                layoutSaver = null;
-            }
-        } catch (Throwable ignore) {
-        }
-        try {
-            nativeCallExecutor.shutdown();
-        } catch (Throwable ignore) {
-        }
-        super.onDestroy();
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        // A low-memory kill while we're paused would lose any pending
-        // debounced edit. Flush synchronously here so the file on disk
-        // always matches the user's last in-game change.
-        if (layoutSaver != null) {
-            layoutSaver.flushNow();
-        }
-    }
-
     @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
-        final Intent intent = getIntent();
-        // Stash a reference for ViewCallbacks, which lives outside the
-        // onCreate scope. Inner-class captures of a local only work for
-        // effectively-final locals, but the callbacks fire long after
-        // onCreate returns so we still need a field.
-        j2meLaunchIntent = intent;
+        Intent intent = getIntent();
+        Emulator.configureDebugControl(this, intent);
         boolean externalIntent = intent.getBooleanExtra(KEY_APP_IS_SHORTCUT, false) || ACTION_LAUNCH_GAME.equals(intent.getAction())
                 || intent.getData() != null;
 
@@ -223,29 +137,10 @@ public class EmulatorActivity extends AppCompatActivity {
         String deviceCode;
 
         if (intent.getData() != null) {
-            Uri dataUri = intent.getData();
-
-            // J2ME / MIDlet (jar/jad) install path: stage the URI through
-            // JarInstaller, register it in the applist, then immediately
-            // launch via EmulatorActivity → Emulator.launchJ2meApp.
-            // The original .json launcher path is preserved below.
-            String dataPath = dataUri.getPath();
-            if (dataPath != null) {
-                String lower = dataPath.toLowerCase();
-                if (lower.endsWith(".jar") || lower.endsWith(".jad") || lower.endsWith(".kjx")) {
-                    // Defer the install work until after setContentView so
-                    // the user sees a non-blank window even if the IO
-                    // pipeline stalls for a moment.
-                    final Uri capturedUri = dataUri;
-                    getWindow().getDecorView().post(() -> handleJ2meExternalLaunch(capturedUri, intent));
-                    return;
-                }
-            }
-
             InputStream inputStream = null;
 
             try {
-                inputStream = getContentResolver().openInputStream(dataUri);
+                inputStream = getContentResolver().openInputStream(intent.getData());
             } catch (FileNotFoundException e) {
                 throw new RuntimeException(e);
             }
@@ -267,7 +162,6 @@ public class EmulatorActivity extends AppCompatActivity {
 
         String uidStr = Long.toHexString(uid).toUpperCase();
         File configDir = new File(Emulator.getConfigsDir(), uidStr);
-        this.configDir = configDir;
         String defProfile = dataStore.getString(PREF_DEFAULT_PROFILE, null);
 
         if (externalIntent && (params = ProfilesManager.loadConfig(configDir)) == null) {
@@ -292,8 +186,8 @@ public class EmulatorActivity extends AppCompatActivity {
         }
 
         SurfaceView surfaceView = findViewById(R.id.surface_view);
-        emulatorContainer = findViewById(R.id.emulator_container);
         ViewCallbacks callbacks = new ViewCallbacks(surfaceView);
+        inputCallbacks = callbacks;
         surfaceView.setFocusableInTouchMode(true);
         surfaceView.setWillNotDraw(true);
         surfaceView.setOnTouchListener(callbacks);
@@ -316,6 +210,7 @@ public class EmulatorActivity extends AppCompatActivity {
 
         Emulator.setContext(this);
         EmulatorCamera.setActivity(this);
+        EmulatorLocation.setActivity(this);
 
         if (deviceCode != null) {
             String []availableDevices = Emulator.getDeviceFirmwareCodes();
@@ -334,46 +229,31 @@ public class EmulatorActivity extends AppCompatActivity {
         displayWidth = display.getWidth();
         displayHeight = display.getHeight();
 
-        androidToSymbian = (params != null && params.keyMappings != null) ? params.keyMappings : KeyMapper.getDefaultKeyMap();
+        androidToSymbian = (params.keyMappings != null) ? params.keyMappings : KeyMapper.getDefaultKeyMap();
 
-        if (params != null && params.showKeyboard) {
+        if (params.showKeyboard && !ProfilesManager.hidesKeyboardByDefault(configDir, deviceCode)) {
             setVirtualKeyboard(uidStr);
         }
-        if (params != null && params.showKeyboard && keyboard instanceof FixedKeyboard) {
+        if (keyboard instanceof FixedKeyboard) {
             setOrientation(ORIENTATION_PORTRAIT);
-        } else if (params != null) {
+        } else {
             setOrientation(params.orientation);
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             getWindow().getAttributes().layoutInDisplayCutoutMode =
-                    (params != null && params.screenShowNotch) ?
+                    params.screenShowNotch ?
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES :
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER;
         }
 
-        final boolean hasBackground = params != null && ProfilesManager.getBackgroundFile(configDir).exists();
+        final boolean hasBackground = ProfilesManager.getBackgroundFile(configDir).exists();
 
-        // Always go through the extended setter so that switching the
-        // free-form layout on/off doesn't require a separate code path.
-        final boolean customLayout = params != null && params.screenCustomLayout;
-        final float cx1 = params != null ? params.screenCustomX1 : 0.0f;
-        final float cy1 = params != null ? params.screenCustomY1 : 0.0f;
-        final float cx2 = params != null ? params.screenCustomX2 : 1.0f;
-        final float cy2 = params != null ? params.screenCustomY2 : 1.0f;
-        final float customScale = params != null ? params.screenScaleRatio : 100.0f;
-
-        Emulator.setScreenParamsEx(
-                params != null ? params.screenBackgroundColor : 0,
-                params != null ? params.screenScaleRatio : 100,
-                params != null ? params.screenScaleType : 0,
-                params != null ? params.screenGravity : 2,
-                customLayout,
-                cx1, cy1, cx2, cy2,
-                customScale,
+        Emulator.setScreenParams(params.screenBackgroundColor, params.screenScaleRatio,
+                params.screenScaleType, params.screenGravity,
                 hasBackground ? ProfilesManager.getBackgroundPath(configDir.getAbsolutePath()) : "",
-                params != null ? Math.max(0.0f, Math.min(params.screenBackgroundImageOpacity / 100.0f, 1.0f)) : 1.0f,
-                params != null && hasBackground ? params.screenBackgroundImageKeepAspectRatio : false);
+                Math.max(0.0f, Math.min(params.screenBackgroundImageOpacity / 100.0f, 1.0f)),
+                params.screenBackgroundImageKeepAspectRatio);
     }
 
     @Override
@@ -381,6 +261,8 @@ public class EmulatorActivity extends AppCompatActivity {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) {
             hideSystemUI();
+        } else if (inputCallbacks != null) {
+            inputCallbacks.releaseKeys();
         }
     }
 
@@ -447,9 +329,12 @@ public class EmulatorActivity extends AppCompatActivity {
         inflater.inflate(R.menu.emulator, menu);
         if (keyboard != null && !(keyboard instanceof FixedKeyboard)) {
             inflater.inflate(R.menu.emulator_keys, menu);
+        } else if (keyboard instanceof FixedKeyboard) {
+            inflater.inflate(R.menu.emulator_fixed_keys, menu);
+            menu.findItem(R.id.action_show_edit).setChecked(params.vkShowEditKey);
         }
         actionScreenshot = menu.findItem(R.id.action_screenshot);
-        if (getSupportActionBar() != null && !getSupportActionBar().isShowing()) {
+        if (!getSupportActionBar().isShowing()) {
             actionScreenshot.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
         }
         return super.onCreateOptionsMenu(menu);
@@ -464,6 +349,12 @@ public class EmulatorActivity extends AppCompatActivity {
             saveLog();
         } else if (id == R.id.action_screenshot) {
             saveScreenshot();
+        } else if (id == R.id.action_show_edit && keyboard instanceof FixedKeyboard) {
+            params.vkShowEditKey = !item.isChecked();
+            item.setChecked(params.vkShowEditKey);
+            ((FixedKeyboard) keyboard).setEditKeyVisible(params.vkShowEditKey);
+            ProfilesManager.saveConfig(params);
+            return true;
         } else if (keyboard != null) {
             handleVkOptions(id);
         }
@@ -495,8 +386,7 @@ public class EmulatorActivity extends AppCompatActivity {
         }
 
         SimpleDateFormat fileNameDateFormat = new SimpleDateFormat("yyyyMMdd-hhmmss");
-        String title = getSupportActionBar() != null ? getSupportActionBar().getTitle().toString() : "";
-        String fileName = destDir + getString(R.string.screenshot) + "_" + title + "_" + fileNameDateFormat.format(new Date()) + ".png";
+        String fileName = destDir + getString(R.string.screenshot) + "_" +  getSupportActionBar().getTitle() + "_" + fileNameDateFormat.format(new Date()) + ".png";
 
         if (Emulator.saveScreenshotTo(fileName)) {
             Toast.makeText(this, getString(R.string.take_screenshot_success, fileName), Toast.LENGTH_LONG).show();
@@ -522,189 +412,9 @@ public class EmulatorActivity extends AppCompatActivity {
             showSetLayoutDialog();
         } else if (id == R.id.action_hide_buttons) {
             showHideButtonDialog();
-        } else if (id == R.id.action_edit_screen_position) {
-            toggleInGameScreenPositionEditor();
-        } else if (id == R.id.action_add_joystick) {
-            addJoystick();
-        } else if (id == R.id.action_delete_joystick) {
-            showDeleteJoystickDialog();
-        } else if (id == R.id.action_joystick_outer_size) {
-            showJoystickOuterSizeDialog();
-        } else if (id == R.id.action_joystick_inner_size) {
-            showJoystickInnerSizeDialog();
+        } else if (id == R.id.action_letter_keys) {
+            showLetterKeysDialog();
         }
-    }
-
-    /**
-     * Add a fresh joystick centred at the bottom-left of the surface. The
-     * new stick is visible by default and shows up in the "Hide buttons"
-     * dialog under "Joystick N". The user can then drag / scale it like
-     * any other key.
-     */
-    private void addJoystick() {
-        if (keyboard == null) return;
-        // Diameter: roughly a quarter of the screen's shorter side, clamped
-        // to a comfortable range so a tiny screen still gets a usable stick.
-        float ref = Math.max(1, Math.min(displayWidth, displayHeight));
-        float diameter = Math.max(160f, Math.min(ref * 0.35f, 360f));
-        // Drop it somewhere that doesn't overlap the soft keys at the
-        // bottom of the typical Nokia layout — a bit above the bottom edge.
-        float cx = diameter * 0.9f;
-        float cy = displayHeight - diameter * 1.1f;
-        if (keyboard.addJoystick(cx, cy, diameter) < 0) {
-            return;
-        }
-        Toast.makeText(this, R.string.joystick_added, Toast.LENGTH_SHORT).show();
-    }
-
-    /**
-     * Show a small picker so the user can pick which joystick to remove.
-     * Joysticks are listed by their index in the order they were added.
-     */
-    private void showDeleteJoystickDialog() {
-        if (keyboard == null) return;
-        int count = keyboard.getJoystickCount();
-        if (count == 0) {
-            Toast.makeText(this, R.string.joystick_none, Toast.LENGTH_SHORT).show();
-            return;
-        }
-        String[] names = new String[count];
-        for (int i = 0; i < count; i++) {
-            names[i] = getString(R.string.joystick_n, i + 1);
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.delete_joystick)
-                .setItems(names, (dialog, which) -> {
-                    keyboard.removeJoystick(which);
-                    Toast.makeText(this, R.string.joystick_deleted, Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    /**
-     * Show (or remove) the in-game free-form screen position editor.
-     * <p>The editor is a transparent overlay placed on top of the
-     * SurfaceView. As the user drags the four corners or the screen
-     * body, a live callback pushes the new rectangle to
-     * {@link Emulator#setScreenParamsEx} so the running game is
-     * redrawn with the new size/position immediately — no need to
-     * restart the app to see the result.</p>
-     */
-    private void toggleInGameScreenPositionEditor() {
-        if (inGameEditor != null) {
-            finishInGameScreenPositionEditor();
-            return;
-        }
-        if (emulatorContainer == null || params == null) {
-            return;
-        }
-
-        // Switch on the free-form layout. Even before the user touches
-        // anything, the live callback below will keep the native side
-        // in sync with the editor's current rectangle.
-        params.screenCustomLayout = true;
-
-        ScreenPositionEditor editor = new ScreenPositionEditor(this);
-        // Seed from current profile, with a small inset on first use
-        // so all four handles are reachable on screen.
-        float x1 = params.screenCustomX1;
-        float y1 = params.screenCustomY1;
-        float x2 = params.screenCustomX2;
-        float y2 = params.screenCustomY2;
-        if (x1 == 0f && y1 == 0f && x2 == 1f && y2 == 1f) {
-            x1 = 0.15f; y1 = 0.15f; x2 = 0.85f; y2 = 0.85f;
-        }
-        editor.setRect(x1, y1, x2, y2);
-
-        // Make sure the editor is on top of the SurfaceView but
-        // doesn't intercept events outside its rectangle — the editor
-        // itself returns false from onTouch when the user doesn't
-        // touch a handle / the body, so the SurfaceView underneath
-        // can still receive touches outside the rect.
-        FrameLayout.LayoutParams editorLp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT);
-        emulatorContainer.addView(editor, emulatorContainer.getChildCount(), editorLp);
-
-        // Floating "Done" button so the user can leave edit mode.
-        Button done = new Button(this);
-        done.setText(R.string.pref_edit_screen_position_finish);
-        done.setAllCaps(false);
-        FrameLayout.LayoutParams doneLp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT);
-        doneLp.gravity = android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL;
-        doneLp.bottomMargin = dp(48);
-        emulatorContainer.addView(done, emulatorContainer.getChildCount(), doneLp);
-
-        done.setOnClickListener(v -> finishInGameScreenPositionEditor());
-
-        editor.setListener((nx1, ny1, nx2, ny2, confirm) -> pushScreenRectToNative(nx1, ny1, nx2, ny2));
-
-        inGameEditor = editor;
-        inGameEditorDone = done;
-        Toast.makeText(this, R.string.pref_edit_screen_position_started, Toast.LENGTH_SHORT).show();
-    }
-
-    /**
-     * Tear down the in-game editor overlay, persist the new rectangle
-     * to the profile, and apply it natively.
-     */
-    private void finishInGameScreenPositionEditor() {
-        if (inGameEditor == null) {
-            return;
-        }
-        float x1 = inGameEditor.getX1();
-        float y1 = inGameEditor.getY1();
-        float x2 = inGameEditor.getX2();
-        float y2 = inGameEditor.getY2();
-
-        if (params != null) {
-            params.screenCustomLayout = true;
-            params.screenCustomX1 = x1;
-            params.screenCustomY1 = y1;
-            params.screenCustomX2 = x2;
-            params.screenCustomY2 = y2;
-            ProfilesManager.saveConfig(params);
-        }
-
-        pushScreenRectToNative(x1, y1, x2, y2);
-
-        if (emulatorContainer != null) {
-            emulatorContainer.removeView(inGameEditor);
-            if (inGameEditorDone != null) {
-                emulatorContainer.removeView(inGameEditorDone);
-            }
-        }
-        inGameEditor = null;
-        inGameEditorDone = null;
-        Toast.makeText(this, R.string.pref_screen_position_saved, Toast.LENGTH_SHORT).show();
-    }
-
-    /**
-     * Forward the four normalized corners to the native renderer. Used
-     * by the in-game editor on every drag move.
-     */
-    private void pushScreenRectToNative(float x1, float y1, float x2, float y2) {
-        if (params == null || configDir == null) return;
-        final boolean hasBackground = ProfilesManager.getBackgroundFile(configDir).exists();
-        Emulator.setScreenParamsEx(
-                params.screenBackgroundColor,
-                params.screenScaleRatio,
-                params.screenScaleType,
-                params.screenGravity,
-                true,
-                x1, y1, x2, y2,
-                params.screenScaleRatio,
-                hasBackground ? ProfilesManager.getBackgroundPath(configDir.getAbsolutePath()) : "",
-                Math.max(0.0f, Math.min(params.screenBackgroundImageOpacity / 100.0f, 1.0f)),
-                hasBackground && params.screenBackgroundImageKeepAspectRatio);
-    }
-
-    private int dp(int v) {
-        float density = getResources().getDisplayMetrics().density;
-        return Math.round(v * density);
     }
 
     private void showSetLayoutDialog() {
@@ -720,110 +430,18 @@ public class EmulatorActivity extends AppCompatActivity {
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
                 .setTitle(R.string.hide_buttons)
                 .setMultiChoiceItems(keyboard.getKeyNames(), keyboard.getKeyVisibility(),
-                        (dialogInterface, i, b) -> keyboard.setKeyVisibility(i, b))
+                        (dialogInterface, i, b) -> keyboard.setPhoneKeyHidden(i, b))
                 .setPositiveButton(android.R.string.ok, null);
         builder.show();
     }
 
-    /**
-     * Show a SeekBar dialog to resize the outer ring of an existing
-     * joystick. The user can pick a diameter between 80dp and the
-     * shorter screen side.
-     */
-    private void showJoystickOuterSizeDialog() {
-        if (keyboard.getJoystickCount() == 0) {
-            Toast.makeText(this, R.string.joystick_none, Toast.LENGTH_SHORT).show();
-            return;
-        }
-        String[] names = new String[keyboard.getJoystickCount()];
-        for (int i = 0; i < keyboard.getJoystickCount(); i++) {
-            names[i] = getString(R.string.joystick_n, i + 1);
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.joystick_outer_size)
-                .setItems(names, (dialog, which) ->
-                        showJoystickSizeSeekbar(which, true))
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    /**
-     * Show a SeekBar dialog to resize the inner ball of an existing
-     * joystick, as a fraction of the outer ring radius. Range 0.2 — 0.9.
-     */
-    private void showJoystickInnerSizeDialog() {
-        if (keyboard.getJoystickCount() == 0) {
-            Toast.makeText(this, R.string.joystick_none, Toast.LENGTH_SHORT).show();
-            return;
-        }
-        String[] names = new String[keyboard.getJoystickCount()];
-        for (int i = 0; i < keyboard.getJoystickCount(); i++) {
-            names[i] = getString(R.string.joystick_n, i + 1);
-        }
-        new AlertDialog.Builder(this)
-                .setTitle(R.string.joystick_inner_size)
-                .setItems(names, (dialog, which) ->
-                        showJoystickSizeSeekbar(which, false))
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    /**
-     * Show a vertical SeekBar that lets the user adjust either the
-     * outer ring diameter (in pixels) or the inner-ball fraction
-     * depending on {@code outer}.
-     */
-    private void showJoystickSizeSeekbar(int index, boolean outer) {
-        android.widget.SeekBar seek = new android.widget.SeekBar(this);
-        seek.setMax(100);
-        float minPx = 80 * getResources().getDisplayMetrics().density; // 80dp
-        float maxPx = Math.min(displayWidth, displayHeight) * 0.8f;
-        // Initial value: map current size to 0..100
-        if (outer) {
-            float current = Math.max(minPx, Math.min(maxPx,
-                    keyboard.getJoystickOuterSize(index)));
-            seek.setProgress((int) ((current - minPx) * 100 / (maxPx - minPx)));
-            seek.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
-                @Override
-                public void onProgressChanged(android.widget.SeekBar sb, int progress, boolean fromUser) {
-                    if (!fromUser) return;
-                    float px = minPx + (maxPx - minPx) * progress / 100f;
-                    keyboard.setJoystickOuterSize(index, px);
-                }
-
-                @Override public void onStartTrackingTouch(android.widget.SeekBar sb) {}
-                @Override public void onStopTrackingTouch(android.widget.SeekBar sb) {}
-            });
-        } else {
-            float current = keyboard.getJoystickInnerScale(index);
-            seek.setProgress((int) ((current - 0.2f) * 100 / 0.7f));
-            seek.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
-                @Override
-                public void onProgressChanged(android.widget.SeekBar sb, int progress, boolean fromUser) {
-                    if (!fromUser) return;
-                    float frac = 0.2f + 0.7f * progress / 100f;
-                    keyboard.setJoystickInnerSize(index, frac);
-                }
-
-                @Override public void onStartTrackingTouch(android.widget.SeekBar sb) {}
-                @Override public void onStopTrackingTouch(android.widget.SeekBar sb) {}
-            });
-        }
-
-        // Wrap the SeekBar in a small padding container so it isn't
-        // flush against the dialog edges.
-        android.widget.FrameLayout wrap = new android.widget.FrameLayout(this);
-        int pad = (int) (24 * getResources().getDisplayMetrics().density);
-        wrap.setPadding(pad, pad, pad, 0);
-        wrap.addView(seek, new android.widget.FrameLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        new AlertDialog.Builder(this)
-                .setTitle(outer ? R.string.joystick_outer_size : R.string.joystick_inner_size)
-                .setView(wrap)
-                .setPositiveButton(android.R.string.ok, null)
-                .show();
+    private void showLetterKeysDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this)
+                .setTitle(R.string.letter_keys)
+                .setMultiChoiceItems(keyboard.getLetterKeyNames(), keyboard.getLetterKeysShown(),
+                        (dialogInterface, i, b) -> keyboard.setLetterKeyShown(i, b))
+                .setPositiveButton(android.R.string.ok, null);
+        builder.show();
     }
 
     private void setActionBar(String title) {
@@ -842,10 +460,6 @@ public class EmulatorActivity extends AppCompatActivity {
     }
 
     private void setVirtualKeyboard(String appDirName) {
-        if (params == null) {
-            return;
-        }
-        
         int vkType = params.vkType;
         if (vkType == VirtualKeyboard.CUSTOMIZABLE_TYPE) {
             keyboard = new VirtualKeyboard(this);
@@ -855,6 +469,9 @@ public class EmulatorActivity extends AppCompatActivity {
             keyboard = new FixedKeyboard(this);
         }
         keyboard.setHideDelay(params.vkHideDelay);
+        if (keyboard instanceof FixedKeyboard) {
+            ((FixedKeyboard) keyboard).setEditKeyVisible(params.vkShowEditKey);
+        }
         keyboard.setHasHapticFeedback(params.vkFeedback);
         keyboard.setButtonShape(params.vkButtonShape);
 
@@ -871,46 +488,29 @@ public class EmulatorActivity extends AppCompatActivity {
             }
         }
 
-        // Per-color alpha: each VK color gets its own alpha byte now. The legacy
-        // params.vkAlpha is preserved for backwards compatibility but only
-        // acts as a fallback when a color's per-color alpha wasn't set.
-        keyboard.setColor(VirtualKeyboard.BACKGROUND, params.getEffectiveBgAlpha() << 24 | params.vkBgColor);
-        keyboard.setColor(VirtualKeyboard.FOREGROUND, params.getEffectiveFgAlpha() << 24 | params.vkFgColor);
-        keyboard.setColor(VirtualKeyboard.BACKGROUND_SELECTED, params.getEffectiveBgAlphaSelected() << 24 | params.vkBgColorSelected);
-        keyboard.setColor(VirtualKeyboard.FOREGROUND_SELECTED, params.getEffectiveFgAlphaSelected() << 24 | params.vkFgColorSelected);
-        keyboard.setColor(VirtualKeyboard.OUTLINE, params.getEffectiveOutlineAlpha() << 24 | params.vkOutlineColor);
+        int vkAlpha = params.vkAlpha << 24;
+        keyboard.setColor(VirtualKeyboard.BACKGROUND, vkAlpha | params.vkBgColor);
+        keyboard.setColor(VirtualKeyboard.FOREGROUND, vkAlpha | params.vkFgColor);
+        keyboard.setColor(VirtualKeyboard.BACKGROUND_SELECTED, vkAlpha | params.vkBgColorSelected);
+        keyboard.setColor(VirtualKeyboard.FOREGROUND_SELECTED, vkAlpha | params.vkFgColorSelected);
+        keyboard.setColor(VirtualKeyboard.OUTLINE, vkAlpha | params.vkOutlineColor);
         overlayView.setOverlay(keyboard);
         keyboard.setView(overlayView);
 
         keyboard.setLayoutListener(vk -> {
-            // The old code wrote the layout file synchronously inside this
-            // callback, which fired for every pixel of a drag. The new
-            // KeyLayoutSaver debounces, deduplicates and writes atomically
-            // so the disk no longer thrashes during layout edits.
-            if (layoutSaver != null) {
-                layoutSaver.requestSave();
+            try {
+                File parentFile = new File(Emulator.getConfigsDir(), appDirName);
+                if (!parentFile.exists()) {
+                    parentFile.mkdirs();
+                }
+                FileOutputStream fos = new FileOutputStream(keyLayoutFile);
+                DataOutputStream dos = new DataOutputStream(fos);
+                vk.writeLayout(dos);
+                fos.close();
+            } catch (IOException ioe) {
+                ioe.printStackTrace();
             }
         });
-
-        // Wire up the saver. Every layout change funnels through one
-        // debounced atomic write, regardless of whether the change came
-        // from dragging a key, resizing a group, or adding / removing a
-        // joystick.
-        File parentFile = new File(Emulator.getConfigsDir(), appDirName);
-        if (!parentFile.exists()) {
-            //noinspection ResultOfMethodCallIgnored
-            parentFile.mkdirs();
-        }
-        if (layoutSaver == null) {
-            layoutSaver = new KeyLayoutSaver();
-        }
-        layoutSaver.removeTarget(keyLayoutFile);
-        layoutSaver.addTarget(keyLayoutFile, KeyLayoutSaver.fromStream(dos -> {
-            // The keyboard writes the legacy header + keys + scales +
-            // colors blocks; joysticks (if any) are appended inside the
-            // LAYOUT_JOYSTICKS block of the same writeLayout call.
-            keyboard.writeLayout(dos);
-        }));
     }
 
     private void hideSystemUI() {
@@ -934,7 +534,7 @@ public class EmulatorActivity extends AppCompatActivity {
     }
 
     private int convertAndroidKeyCode(int keyCode) {
-        return androidToSymbian != null ? androidToSymbian.get(keyCode, Integer.MAX_VALUE) : Integer.MAX_VALUE;
+        return androidToSymbian.get(keyCode, Integer.MAX_VALUE);
     }
 
     private void onPermissionResult(Map<String, Boolean> status) {
@@ -949,6 +549,17 @@ public class EmulatorActivity extends AppCompatActivity {
     private class ViewCallbacks implements View.OnTouchListener, SurfaceHolder.Callback, SurfaceHolder.Callback2, View.OnKeyListener {
         private final View view;
         private final FrameLayout rootView;
+        private final SparseIntArray heldKeys = new SparseIntArray();
+
+        private void releaseKeys() {
+            for (int i = 0; i < heldKeys.size(); i++) {
+                Emulator.pressKey(heldKeys.valueAt(i), 1);
+            }
+            heldKeys.clear();
+            if (keyboard != null) {
+                keyboard.releaseKeys();
+            }
+        }
 
         public ViewCallbacks(View view) {
             this.view = view;
@@ -963,59 +574,22 @@ public class EmulatorActivity extends AppCompatActivity {
         @Override
         public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
             Rect offsetViewBounds = new Rect(0, 0, width, height);
-            if (rootView != null) {
-                rootView.offsetDescendantRectToMyCoords(view, offsetViewBounds);
-            }
-            if (overlayView != null) {
-                overlayView.setTargetBounds(offsetViewBounds);
-            }
+            rootView.offsetDescendantRectToMyCoords(view, offsetViewBounds);
+            overlayView.setTargetBounds(offsetViewBounds);
             displayWidth = width;
             displayHeight = height;
             updateScreenSize();
 
             Emulator.surfaceChanged(holder.getSurface(), width, height);
-
-            // Delay game launch to ensure graphics are fully initialized
-            // This prevents black screen issues caused by race conditions.
-            // launchApp() is dispatched onto the background native-call
-            // executor so the UI thread is never held up by symsys
-            // initialisation (which used to trigger ANR).
             if (!launched) {
-                view.post(() -> {
-                    if (!launched) {
-                        // First ensure keyboard is visible before launching game
-                        if (keyboard != null) {
-                            keyboard.show();
-                        }
-                        // Small delay to let surface stabilize
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
-                        // J2ME / MIDlet launches bypass the Symbian
-                        // app-registry path and go straight through the
-                        // native j2me::launch helper, which spawns the
-                        // S60v1 KMID process. The UID we pass in the
-                        // Intent is the persistent j2me_applist id, not
-                        // an apa_app_registry uid. Read the flag off the
-                        // stashed field rather than the onCreate local,
-                        // which isn't visible from this inner class.
-                        final boolean j2meLaunch = j2meLaunchIntent != null
-                                && j2meLaunchIntent.getBooleanExtra("j2meLaunch", false);
-                        if (j2meLaunch) {
-                            runNativeCall(() -> Emulator.launchJ2meApp(uid));
-                        } else {
-                            runNativeCall(() -> Emulator.launchApp((int) uid));
-                        }
-                        launched = true;
-                    }
-                });
+                Emulator.launchApp((int) uid);
+                launched = true;
             }
         }
 
         @Override
         public void surfaceDestroyed(SurfaceHolder holder) {
+            releaseKeys();
             Emulator.surfaceDestroyed();
         }
 
@@ -1031,25 +605,28 @@ public class EmulatorActivity extends AppCompatActivity {
         }
 
         public boolean onKeyDown(int keyCode, KeyEvent event) {
-            keyCode = convertAndroidKeyCode(keyCode);
-            if (keyCode == Integer.MAX_VALUE) {
+            int scan = convertAndroidKeyCode(keyCode);
+            if (scan == Integer.MAX_VALUE) {
                 return false;
             }
-            if (event.getRepeatCount() == 0) {
-                if (keyboard == null || !keyboard.keyPressed(keyCode)) {
-                    Emulator.pressKey(keyCode, 0);
+            if (event.getRepeatCount() == 0 && heldKeys.indexOfKey(keyCode) < 0) {
+                boolean alreadyHeld = heldKeys.indexOfValue(scan) >= 0;
+                heldKeys.put(keyCode, scan);
+                if (!alreadyHeld && (keyboard == null || !keyboard.keyPressed(scan))) {
+                    Emulator.pressKey(scan, 0);
                 }
             }
             return true;
         }
 
         public boolean onKeyUp(int keyCode, KeyEvent event) {
-            keyCode = convertAndroidKeyCode(keyCode);
-            if (keyCode == Integer.MAX_VALUE) {
+            int scan = heldKeys.get(keyCode, Integer.MAX_VALUE);
+            if (scan == Integer.MAX_VALUE) {
                 return false;
             }
-            if (keyboard == null || !keyboard.keyReleased(keyCode)) {
-                Emulator.pressKey(keyCode, 1);
+            heldKeys.delete(keyCode);
+            if (heldKeys.indexOfValue(scan) < 0 && (keyboard == null || !keyboard.keyReleased(scan))) {
+                Emulator.pressKey(scan, 1);
             }
             return true;
         }
@@ -1057,13 +634,15 @@ public class EmulatorActivity extends AppCompatActivity {
         @Override
         @SuppressLint("ClickableViewAccessibility")
         public boolean onTouch(View v, MotionEvent event) {
-            // Check if params is null or touch input is disabled
-            boolean touchEnabled = (params != null) && params.touchInput;
-            
             switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_CANCEL:
+                    if (keyboard != null) {
+                        keyboard.releaseKeys();
+                    }
+                    return true;
+
                 case MotionEvent.ACTION_DOWN:
-                    // Only show keyboard if it's not already visible and game is launched
-                    if (keyboard != null && launched) {
+                    if (keyboard != null) {
                         keyboard.show();
                     }
                 case MotionEvent.ACTION_POINTER_DOWN:
@@ -1072,7 +651,7 @@ public class EmulatorActivity extends AppCompatActivity {
                     float x = event.getX(index);
                     float y = event.getY(index);
                     float z = event.getPressure(index) * 0x7FFFFFFF;    // Max pressure
-                    if ((keyboard == null || !keyboard.pointerPressed(id, x, y)) && touchEnabled) {
+                    if ((keyboard == null || !keyboard.pointerPressed(id, x, y)) && params.touchInput) {
                         Emulator.touchScreen((int) x, (int) y, (int)z, 0, id);
                     }
                     break;
@@ -1085,7 +664,7 @@ public class EmulatorActivity extends AppCompatActivity {
                             x = event.getHistoricalX(p, h);
                             y = event.getHistoricalY(p, h);
                             z = event.getHistoricalPressure(p, h) * 0x7FFFFFFF;    // Max pressure
-                            if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && touchEnabled) {
+                            if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && params.touchInput) {
                                 Emulator.touchScreen((int) x, (int) y, (int)z, 1, id);
                             }
                         }
@@ -1095,7 +674,7 @@ public class EmulatorActivity extends AppCompatActivity {
                         x = event.getX(p);
                         y = event.getY(p);
                         z = event.getPressure(p) * 0x7FFFFFFF;    // Max pressure
-                        if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && touchEnabled) {
+                        if ((keyboard == null || !keyboard.pointerDragged(id, x, y)) && params.touchInput) {
                             Emulator.touchScreen((int) x, (int) y, (int)z, 1, id);
                         }
                     }
@@ -1109,7 +688,7 @@ public class EmulatorActivity extends AppCompatActivity {
                     id = event.getPointerId(index);
                     x = event.getX(index);
                     y = event.getY(index);
-                    if ((keyboard == null || !keyboard.pointerReleased(id, x, y)) && touchEnabled) {
+                    if ((keyboard == null || !keyboard.pointerReleased(id, x, y)) && params.touchInput) {
                         Emulator.touchScreen((int) x, (int) y, (int)0, 2, id);
                     }
                     break;
@@ -1123,86 +702,5 @@ public class EmulatorActivity extends AppCompatActivity {
         public void surfaceRedrawNeeded(SurfaceHolder surfaceHolder) {
             Emulator.surfaceRedrawNeeded();
         }
-    }
-
-    /**
-     * Install + launch a JAR/JAD picked via a system Intent (file
-     * manager, browser, etc). We use the same {@link JarInstaller}
-     * pipeline the menu uses, and on success we re-launch this activity
-     * with a {@code j2meLaunch} intent extra so the existing
-     * surface-ready handler calls {@code Emulator.launchJ2meApp}.
-     *
-     * If the install fails (e.g. MIDP-2.0 only JAR), we surface the
-     * same error code translation as the menu flow, then finish().
-     */
-    private void handleJ2meExternalLaunch(Uri jarUri, Intent original) {
-        final String emulatorDir = Emulator.getEmulatorDir();
-        if (emulatorDir == null) {
-            Toast.makeText(this, R.string.error, Toast.LENGTH_SHORT).show();
-            finish();
-            return;
-        }
-
-        JarInstaller.install(this, emulatorDir, jarUri)
-                .subscribeOn(io.reactivex.schedulers.Schedulers.io())
-                .observeOn(io.reactivex.android.schedulers.AndroidSchedulers.mainThread())
-                .subscribe(new io.reactivex.observers.DisposableSingleObserver<Emulator.J2meInstallResult>() {
-                    @Override
-                    public void onSuccess(Emulator.J2meInstallResult result) {
-                        // Rebroadcast a launch intent so we go through the
-                        // existing surface-ready path with j2meLaunch=true.
-                        Intent launch = new Intent(EmulatorActivity.this, EmulatorActivity.class);
-                        launch.putExtra(KEY_APP_UID, result.appId);
-                        launch.putExtra(KEY_APP_NAME, result.name);
-                        try {
-                            int currentId = Emulator.getCurrentDevice();
-                            String[] codes = Emulator.getDeviceFirmwareCodes();
-                            String deviceCode = (codes != null && currentId >= 0 && currentId < codes.length)
-                                    ? codes[currentId] : "epoc6";
-                            launch.putExtra(KEY_DEVICE_CODE, deviceCode);
-                        } catch (Throwable t) {
-                            launch.putExtra(KEY_DEVICE_CODE, "epoc6");
-                        }
-                        launch.putExtra("j2meLaunch", true);
-                        startActivity(launch);
-                        finish();
-                    }
-
-                    @Override
-                    public void onError(Throwable e) {
-                        int msgRes;
-                        if (e instanceof Emulator.J2meInstallException) {
-                            int code = ((Emulator.J2meInstallException) e).getErrorCode();
-                            switch (code) {
-                                case Emulator.INSTALL_J2ME_ERROR_NOT_FOUND:
-                                    msgRes = R.string.j2me_err_not_found;
-                                    break;
-                                case Emulator.INSTALL_J2ME_ERROR_INVALID:
-                                    msgRes = R.string.j2me_err_invalid;
-                                    break;
-                                case Emulator.INSTALL_J2ME_ERROR_MIDP2_UNSUPPORTED:
-                                    msgRes = R.string.j2me_err_midp2;
-                                    break;
-                                case Emulator.INSTALL_J2ME_ERROR_DB:
-                                    msgRes = R.string.j2me_err_db;
-                                    break;
-                                case Emulator.INSTALL_J2ME_ERROR_PLATFORM:
-                                    msgRes = R.string.j2me_err_platform;
-                                    break;
-                                default:
-                                    msgRes = R.string.j2me_err_unknown;
-                                    break;
-                            }
-                        } else {
-                            msgRes = R.string.j2me_copy_failed;
-                        }
-                        new androidx.appcompat.app.AlertDialog.Builder(EmulatorActivity.this)
-                                .setTitle(R.string.j2me_install_failed_title)
-                                .setMessage(msgRes)
-                                .setPositiveButton(android.R.string.ok, (d, w) -> finish())
-                                .setCancelable(false)
-                                .show();
-                    }
-                });
     }
 }

@@ -25,7 +25,6 @@ namespace eka2l1::mem::flexible {
     control_flexible::control_flexible(arm::exclusive_monitor *monitor, page_table_allocator *alloc, config::state *conf, std::size_t psize_bits, const bool mem_map_old)
         : control_base(monitor, alloc, conf, psize_bits, mem_map_old)
         , rom_sec_(rom, global_data, page_size())
-        , code_sec_(ram_code_addr, dll_static_data, page_size())
         , kernel_mapping_sec_(kernel_mapping, kernel_mapping_end, page_size()) {
         // Instantiate the page directory manager
         dir_mngr_ = std::make_unique<page_directory_manager>(MAX_PAGE_DIR_ALLOW);
@@ -36,8 +35,12 @@ namespace eka2l1::mem::flexible {
     }
 
     control_flexible::~control_flexible() {
-        kern_addr_space_.reset();
+        // Destroy the chunks before the kernel address space. A shared chunk's
+        // fixed mapping is owned by kern_addr_space_, and tearing that mapping
+        // down (mapping::~mapping -> unmap / section deallocate) dereferences
+        // the address space, so the address space must outlive the chunks.
         chunk_mngr_.reset();
+        kern_addr_space_.reset();
     }
 
     mmu_base *control_flexible::get_or_create_mmu(arm::core *cc) {
@@ -64,7 +67,7 @@ namespace eka2l1::mem::flexible {
 
     static inline address is_address_all_visible_for_all_processes(const vm_address addr, const bool mem_map_old) {
         if (!mem_map_old) {
-            return (((addr >= ram_code_addr) && (addr < dll_static_data_flexible)) || (addr >= rom));
+            return addr >= rom;
         }
 
         return (((addr >= ram_code_addr_eka1) && (addr < ram_code_addr_eka1_end)) || (addr >= rom_eka1));
