@@ -1,5 +1,5 @@
 # Loader for EPOC image, etc...
-add_library(epocloader
+add_library(epocloader STATIC
         include/loader/e32img.h
         include/loader/fpsx.h
         include/loader/gdr.h

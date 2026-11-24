@@ -1,6 +1,6 @@
 
 
-add_library(epocutils
+add_library(epocutils STATIC
         include/utils/guest/actsched.h
         include/utils/guest/window.h
         include/utils/apacmd.h

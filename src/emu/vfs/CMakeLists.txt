@@ -1,5 +1,5 @@
 
-add_library(epocio
+add_library(epocio STATIC
         include/vfs/vfs.h
         src/vfs.cpp)
 
