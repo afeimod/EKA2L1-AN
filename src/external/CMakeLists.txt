@@ -360,6 +360,16 @@ option (BUNDLE_SPEEX "Bundle the speex library" ON)
 option (USE_SANITIZERS "Use sanitizers" OFF)
 
 if (NOT EKA2L1_IOS)
+    if (ANDROID)
+        set(EKA2L1_ANDROID_API_LEVEL ${CMAKE_SYSTEM_VERSION})
+        if (DEFINED CMAKE_ANDROID_API)
+            set(EKA2L1_ANDROID_API_LEVEL ${CMAKE_ANDROID_API})
+        endif()
+        # AAudio headers exist in the NDK even when targeting APIs below 26.
+        if (EKA2L1_ANDROID_API_LEVEL VERSION_LESS "26")
+            set(USE_AAUDIO OFF)
+        endif()
+    endif()
     # iOS uses a native AURemoteIO audio_driver (see
     # src/emu/drivers/.../audiounit_ios). cubeb's bundled cubeb_audiounit.cpp
     # targets macOS CoreAudio HAL and doesn't cleanly compile on the iOS SDK.
