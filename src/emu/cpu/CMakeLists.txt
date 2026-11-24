@@ -144,9 +144,11 @@ target_include_directories(cpu PUBLIC include)
 target_include_directories(cpu PRIVATE ${capstone_INCLUDE_DIRS})
 
 target_link_libraries(cpu PUBLIC common)
-target_link_libraries(cpu
-        PRIVATE
-        capstone)
+if (TARGET capstone_static)
+    target_link_libraries(cpu PRIVATE capstone_static)
+else()
+    target_link_libraries(cpu PRIVATE capstone)
+endif()
 
 # Differential test harness for the dyncom interpreter (self-A/B + golden ALU
 # oracle over randomized instruction streams). Standalone host tool, default OFF;

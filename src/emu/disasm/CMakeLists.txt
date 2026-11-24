@@ -5,4 +5,8 @@ add_library(disasm
 target_include_directories(disasm PUBLIC include)
 target_include_directories(disasm PUBLIC ${capstone_INCLUDE_DIRS})
 
-target_link_libraries(disasm PRIVATE capstone common)
+if (TARGET capstone_static)
+    target_link_libraries(disasm PRIVATE capstone_static common)
+else()
+    target_link_libraries(disasm PRIVATE capstone common)
+endif()
