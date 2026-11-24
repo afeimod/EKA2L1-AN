@@ -154,7 +154,7 @@ namespace eka2l1::drivers {
         }
         // The platform validates the peer before any application data is released.
         mbedtls_ssl_conf_authmode(&self.config, MBEDTLS_SSL_VERIFY_OPTIONAL);
-        mbedtls_ssl_conf_min_tls_version(&self.config, MBEDTLS_SSL_VERSION_TLS1_2);
+        mbedtls_ssl_conf_min_version(&self.config, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3);
         mbedtls_ssl_conf_rng(&self.config, mbedtls_ctr_drbg_random, &self.random);
         result = mbedtls_ssl_setup(&self.ssl, &self.config);
         if (result == 0) {
@@ -177,8 +177,10 @@ namespace eka2l1::drivers {
         if (result == 0 && !impl_->ready) {
             if (!impl_->local_peer) {
                 tls_certificate_chain chain;
-                for (auto *cert = mbedtls_ssl_get_peer_cert(&impl_->ssl); cert; cert = cert->next) {
-                    chain.emplace_back(cert->raw.p, cert->raw.p + cert->raw.len);
+                for (auto *cert = mbedtls_ssl_get_peer_cert(&impl_->ssl); cert;
+                     cert = cert->MBEDTLS_PRIVATE(next)) {
+                    const auto &raw = cert->MBEDTLS_PRIVATE(raw);
+                    chain.emplace_back(raw.p, raw.p + raw.len);
                 }
                 const auto flags = mbedtls_ssl_get_verify_result(&impl_->ssl);
                 if ((flags & MBEDTLS_X509_BADCERT_CN_MISMATCH) || !verify_system_certificate(chain, impl_->hostname)) {
@@ -254,7 +256,11 @@ namespace eka2l1::drivers {
 
     std::vector<std::uint8_t> tls_session::peer_certificate() const {
         const auto *cert = impl_->ready ? mbedtls_ssl_get_peer_cert(&impl_->ssl) : nullptr;
-        return cert ? std::vector<std::uint8_t>(cert->raw.p, cert->raw.p + cert->raw.len) : std::vector<std::uint8_t>{};
+        if (!cert) {
+            return {};
+        }
+        const auto &raw = cert->MBEDTLS_PRIVATE(raw);
+        return std::vector<std::uint8_t>(raw.p, raw.p + raw.len);
     }
 
     std::string tls_session::error() const {
