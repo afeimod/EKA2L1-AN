@@ -180,7 +180,8 @@ namespace eka2l1::drivers {
                 for (auto *cert = mbedtls_ssl_get_peer_cert(&impl_->ssl); cert;
                      cert = cert->MBEDTLS_PRIVATE(next)) {
                     const auto &raw = cert->MBEDTLS_PRIVATE(raw);
-                    chain.emplace_back(raw.p, raw.p + raw.len);
+                    const auto *data = raw.MBEDTLS_PRIVATE(p);
+                    chain.emplace_back(data, data + raw.MBEDTLS_PRIVATE(len));
                 }
                 const auto flags = mbedtls_ssl_get_verify_result(&impl_->ssl);
                 if ((flags & MBEDTLS_X509_BADCERT_CN_MISMATCH) || !verify_system_certificate(chain, impl_->hostname)) {
@@ -260,7 +261,8 @@ namespace eka2l1::drivers {
             return {};
         }
         const auto &raw = cert->MBEDTLS_PRIVATE(raw);
-        return std::vector<std::uint8_t>(raw.p, raw.p + raw.len);
+        const auto *data = raw.MBEDTLS_PRIVATE(p);
+        return std::vector<std::uint8_t>(data, data + raw.MBEDTLS_PRIVATE(len));
     }
 
     std::string tls_session::error() const {
