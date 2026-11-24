@@ -7,10 +7,6 @@ include(CheckSymbolExists)
 # subtree only, rather than making every caller pass the flag.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 
-# libarchive declares BUILD_SHARED_LIBS with option(); make CMP0077 NEW the
-# default for child projects so its project() call preserves the OFF value above.
-set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-
 # libarchive is the one archive reader in this tree: device dumps packed as .7z, N-Gage game cards as
 # .zip / .7z / .rar. It is here rather than a bare 7z decoder so that another container is a matter of
 # flipping options instead of another vendored codebase.
@@ -147,30 +143,10 @@ target_include_directories(pugixml PUBLIC pugixml/src)
 # fmt
 add_subdirectory(fmt)
 if (ANDROID)
-    # Backport fmtlib/fmt a2fd48e0 without changing the pinned dependency or its sources.
-    set(EKA2L1_FMT_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/fmt-android/include")
-    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/fmt/include/fmt"
-        DESTINATION "${EKA2L1_FMT_INCLUDE_DIR}")
-    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/fmt/include/fmt/base.h" EKA2L1_FMT_BASE)
-    set(EKA2L1_FMT_CONSTEVAL_OLD "#if !defined(__cpp_lib_is_constant_evaluated)")
-    set(EKA2L1_FMT_CONSTEVAL_NEW "#ifdef FMT_USE_CONSTEVAL\n// Use the provided definition.\n#elif !defined(__cpp_lib_is_constant_evaluated)")
-    if (NOT EKA2L1_FMT_BASE MATCHES "#ifdef FMT_USE_CONSTEVAL")
-        string(FIND "${EKA2L1_FMT_BASE}" "${EKA2L1_FMT_CONSTEVAL_OLD}" EKA2L1_FMT_CONSTEVAL_POS)
-        if (EKA2L1_FMT_CONSTEVAL_POS EQUAL -1)
-            message(FATAL_ERROR "fmt consteval detection changed; review the Android compatibility patch")
-        endif()
-        string(REPLACE "${EKA2L1_FMT_CONSTEVAL_OLD}" "${EKA2L1_FMT_CONSTEVAL_NEW}"
-            EKA2L1_FMT_BASE "${EKA2L1_FMT_BASE}")
-    endif()
-    file(WRITE "${EKA2L1_FMT_INCLUDE_DIR}/fmt/base.h" "${EKA2L1_FMT_BASE}")
-    target_include_directories(fmt BEFORE PUBLIC "$<BUILD_INTERFACE:${EKA2L1_FMT_INCLUDE_DIR}>")
-    # fmt uses malloc/free in a public header without including <stdlib.h>.
+    # fmt 11.2 uses malloc/free in a public header without including <stdlib.h>.
     target_compile_options(fmt PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include stdlib.h>")
-    target_compile_definitions(fmt PUBLIC FMT_USE_CONSTEVAL=0)
 endif()
-if (NOT TARGET fmt::fmt)
-    add_library(fmt::fmt ALIAS fmt)
-endif()
+add_library(fmt::fmt ALIAS fmt)
 set (fmt_DIR fmt)
 
 set(CMAKE_REQUIRED_QUIET 1)
