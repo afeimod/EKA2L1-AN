@@ -397,6 +397,9 @@ option(CAPSTONE_SYSZ_SUPPORT "SystemZ support" OFF)
 option(CAPSTONE_XCORE_SUPPORT "XCore support" OFF)
 option(CAPSTONE_X86_SUPPORT "x86 support" OFF)
 
+# Capstone uses its own BUILD_STATIC_LIBS option; BUILD_SHARED_LIBS alone does
+# not guarantee the static target exists when other subprojects change it.
+set(BUILD_STATIC_LIBS ON CACHE BOOL "Build Capstone static library" FORCE)
 add_subdirectory(capstone EXCLUDE_FROM_ALL)
 
 # libfat
